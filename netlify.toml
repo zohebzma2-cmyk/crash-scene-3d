@@ -1,0 +1,72 @@
+# Netlify config for crash-scene-3d. Nothing here has been deployed yet: see docs/DEPLOY.md.
+# Check the headers on any running copy with: npm run verify:headers -- <base-url>
+
+[build]
+  command = "npm run build"
+  publish = "apps/web/dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  # Same major as local development (package.json engines: >=22). Netlify also runs the
+  # function on this Node version.
+  NODE_VERSION = "22"
+
+[functions]
+  # esbuild compiles netlify/functions/api.mts and inlines the workspace code it imports
+  # (@csd/proxy, @csd/mapdata and @csd/core, TypeScript included) into one file. The two npm
+  # packages it needs at run time stay external and are copied into the function package:
+  #   @netlify/blobs  talks to the Blobs service and reads its context from the Netlify runtime
+  #   zod             used by the shared contracts
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/blobs", "zod"]
+
+# The function claims its own route in code (`export const config = { path: "/api/*" }` in
+# api.mts), so no [[redirects]] rule is needed or wanted: a redirect would add a second route
+# to the same function.
+
+[dev]
+  # `netlify dev` starts the Vite dev server and serves the function next to it on one origin.
+  # Vite runs on :4400 (not :5173, which `npm run dev` uses and other tools may already hold), so a
+  # bare `netlify dev` can never grab 5173. --strictPort makes Vite fail instead of picking another
+  # port, so command and targetPort always agree. Run: npx -y netlify-cli@27.9.0 dev --offline --filter @csd/web
+  command = "npm exec -w @csd/web -- vite --port 4400 --strictPort"
+  targetPort = 4400
+  port = 8888
+  autoLaunch = false
+
+# ---------------------------------------------------------------------------------------------
+# Headers. Netlify applies these to static files (the app). Responses from the function carry
+# their own headers (content-type, cache-control, nosniff) set in packages/proxy.
+# ---------------------------------------------------------------------------------------------
+
+# Every path. Strict CSP: the browser only talks to its own origin (everything else goes
+# through /api). Keep this string identical to CLAUDE.md rule 6 and DESIGN.md section 9.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "accelerometer=(), autoplay=(), bluetooth=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    # frame-ancestors 'none' (above) is the modern control; X-Frame-Options is for old browsers.
+    X-Frame-Options = "DENY"
+    # Two years. No preload, so a mistake can still be undone.
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains"
+
+# Vite output has content hashes in the file names, so these files never change.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The shell must always be revalidated so a new deploy is picked up at once.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

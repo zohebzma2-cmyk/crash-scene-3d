@@ -1,0 +1,24 @@
+{
+  "name": "crash-scene-3d-design-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "check:literals": "node scripts/check-literals.mjs",
+    "check": "npm run check:tokens && npm run check:literals && npm run check:contrast",
+    "compare": "node scripts/compare.mjs",
+    "sync:tokens": "node scripts/sync-tokens.mjs",
+    "canvas": "node scripts/build-canvas.mjs ${CANVAS_OUT:-../../.canvas-build}",
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "flow": "node scripts/flow.mjs",
+    "icons": "node scripts/build-icons.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4"
+  }
+}

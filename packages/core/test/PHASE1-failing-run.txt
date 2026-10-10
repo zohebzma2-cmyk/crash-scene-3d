@@ -1,0 +1,1823 @@
+
+ RUN  v5.0.1 <repo>
+
+ ❯ packages/core/test/projection.test.ts (6 tests | 6 failed) 4ms
+   ❯ projection: WGS84 <-> local East-North meters (6)
+     × puts the origin at (0, 0) 2ms
+     × round-trips local -> lat/lon -> local within 1 cm anywhere inside 500 m 0ms
+     × round-trips lat/lon -> local -> lat/lon within 1 cm (about 1e-7 degrees) 0ms
+     × is east-positive in x and north-positive in y 0ms
+     × is about 111.32 km per degree of latitude (within 0.5%) at mid latitudes 0ms
+     × shrinks east-west distances with cos(latitude), within 0.5% 0ms
+ ❯ packages/core/test/pose-at.test.ts (5 tests | 5 failed) 4ms
+   ❯ poseAt (5)
+     × returns the stored sample exactly at sample times (t = start + k * dt) 2ms
+     × interpolates linearly between samples 0ms
+     × clamps to the first sample before the window and to the last after rest 0ms
+     × turns the short way round when the heading wraps past north 0ms
+     × works for a one-sample track 0ms
+ ❯ packages/core/test/impact.test.ts (15 tests | 15 failed) 6ms
+   ❯ resolveImpact: planar impulse, no tangential impulse (8)
+     × applies J = -(1+e)(v_rel . n) / (1/m1 + 1/m2 + (r1 x n)^2/I1 + (r2 x n)^2/I2) 3ms
+     × changes spin by (r x J n) / I 0ms
+     × conserves total linear momentum and angular momentum about the impact point (1e-6 relative) 0ms
+     × gives the contact points a normal separation speed of e times their closing speed 0ms
+     × never adds kinetic energy 0ms
+     × reduces to the 1-D formula when the line of impact passes through both centres 0ms
+     × does nothing to bodies that are already separating 0ms
+     × is deterministic 0ms
+   ❯ slideToRest: friction slide at mu * g with the yaw rate decaying to zero (7)
+     × stops a vehicle alone at v on dry in v^2 / (2 * 0.7 * g) 0ms
+     × slides farther on slick roads, by exactly mu: wet 0.5, snow 0.25, ice 0.1 0ms
+     × slides along the direction of the initial velocity, never backwards, ending at rest 0ms
+     × starts from the given state at t = 0 0ms
+     × decays the yaw rate to zero without reversing it, and turns the vehicle the way it was spinning 0ms
+     × does not move a body that starts at rest 0ms
+     × is deterministic 0ms
+ ❯ packages/core/test/lanes.test.ts (13 tests | 13 failed) 5ms
+   ❯ lanePath: right-hand traffic (8)
+     × puts a northbound lane east of the centerline 2ms
+     × with one lane per direction, the lane centre is half a lane width east of the line (the plan's (i + 1/2) * w) 1ms
+     × puts a southbound lane west of the centerline, with points running south 0ms
+     × numbers lanes from the right: laneIndex 0 is the rightmost, the highest index is next to the centerline 0ms
+     × offsets an eastbound lane south of the line and a westbound lane north of it 0ms
+     × accepts a bearing within 90 degrees of the road's direction (headings are never exact) 0ms
+     × handles unequal lane counts: forward lanes right of the line, backward lanes left of it 0ms
+     × offsets to the right of travel on diagonal roads too 0ms
+   ❯ lanePath: one-way roads use the full width (3)
+     × centres a one-way road's lanes on the line: lane 0 rightmost, lane 1 in the middle, lane 2 leftmost 0ms
+     × puts a single lane of a one-way street on the centerline 0ms
+     × returns null for the direction a one-way road forbids 0ms
+   ❯ lanePath: bad input (2)
+     × returns null for an unknown road 0ms
+     × returns null for a lane the road doesn't have 0ms
+ ❯ packages/core/test/check-scene.test.ts (14 tests | 14 failed) 6ms
+   ❯ checkScene: scenes that fit (5)
+     × accepts a T-bone where B hits A's left side from the west, with or without road data 2ms
+     × accepts B hitting A's right side from the east 0ms
+     × accepts a rear-end: the faster follower hits the leader's rear 0ms
+     × counts rear-left and rear-right as hits in the rear 0ms
+     × treats backing as travelling opposite to the way the vehicle faces 0ms
+   ❯ checkScene: nothing moving (2)
+     × says so when every speed is 0 or the vehicles are parked 0ms
+     × does not say it when one vehicle moves, or when a 'not sure' speed could be above 0 0ms
+   ❯ checkScene: same direction, neither hit in the rear (2)
+     × flags two vehicles going the same way when neither is marked hit in the rear 0ms
+     × is quiet once one of them is marked hit in the rear 0ms
+   ❯ checkScene: the marked zone has to face where the other vehicle came from (3)
+     × flags a head-on where A is marked hit in the rear, naming the approach and the zone 0ms
+     × flags a T-bone where A is marked hit on its right but B came from its left 0ms
+     × lets any of the low, middle and high speed cases explain the hit 0ms
+   ❯ checkScene: vehicles that can't meet (2)
+     × says nothing could have reached a vehicle when no one moves relative to it 0ms
+     × returns plain text only, with no HTML and no placeholders 0ms
+ ❯ packages/core/test/streets.test.ts (11 tests | 11 failed) 6ms
+   ❯ streetsAtPin: roads within 25 m (3)
+     × lists the roads near the pin with their distance, and leaves out far ones 3ms
+     × draws the line at 25 m 0ms
+     × returns nothing when no road is near 0ms
+   ❯ streetsAtPin: legs split at the junction (3)
+     × gives four legs at a 4-way, with outward bearings and the junction point 0ms
+     × still finds the junction when the pin is 24 m up the street 0ms
+     × finds the same four legs when Main Street is stored as two ways with the same name 0ms
+   ❯ streetsAtPin: direction choices (5)
+     × offers a bound on each road, labelled like 'northbound on Main Street' 0ms
+     × offers only the legal bound on a one-way street 0ms
+     × offers no 'southbound' on a one-way northbound highway 0ms
+     × lists each named road once even when it is stored as several segments 0ms
+     × offers bounds for an unnamed parking aisle without a street name 0ms
+ ❯ packages/core/test/placement.test.ts (24 tests | 24 failed) 7ms
+   ❯ placeVehicles: T-bone at a 4-way, each vehicle straight (6)
+     × puts A in the rightmost northbound lane and B in the rightmost eastbound lane 3ms
+     × faces each vehicle along its road at impact 0ms
+     × makes the impact point the crossing of the two lane paths 0ms
+     × touches the marked zones to the impact point, bodies touching and not overlapping 0ms
+     × gives each lane path in travel order, running from before the impact point to past it 0ms
+     × uses the lane the claimant picked 0ms
+   ❯ placeVehicles: one-way cross street (2)
+     × puts B in the single lane of a one-way westbound Park Street and hits A's right side 0ms
+     × refuses a vehicle going the wrong way, naming it 0ms
+   ❯ placeVehicles: a left turn (3)
+     × approaches from the west leg travelling eastbound, in the leftmost lane for its direction 0ms
+     × ends the turn travelling north, past the impact point 0ms
+     × puts the impact point on B's lane, where A's path crosses it, with the zones touching 0ms
+   ❯ placeVehicles: rear-end on the highway (4)
+     × keeps both in the same lane with the follower's front touching the leader's rear 0ms
+     × takes the impact point as the pin's projection onto the shared lane 0ms
+     × honours a different shared lane 0ms
+     × gives a parked vehicle no path 0ms
+   ❯ placeVehicles: backing in a parking lot (3)
+     × sends the backing vehicle in the direction opposite to the way it faces 0ms
+     × puts A in the rightmost eastbound aisle lane and meets B's path on it 0ms
+     × runs the backing vehicle's path from before the impact point to past it 0ms
+   ❯ placeVehicles: no road data (flat template) (2)
+     × crosses lines through the pin along each bearing, with the zones touching 0ms
+     × works for a backing vehicle too 0ms
+   ❯ placeVehicles: buildings (2)
+     × leaves every vehicle clear of building footprints in ordinary scenes 0ms
+     × never places a vehicle on a building: it either avoids it or says why it can't 0ms
+   ❯ placeVehicles: zones that can't touch (2)
+     × says so in plain words, naming both vehicles, when both are marked 'rear' in a head-on 0ms
+     × does the same without any road data 0ms
+ ❯ packages/core/test/simulate.test.ts (43 tests | 43 failed) 8ms
+   ❯ simulate: result shape and time base (8)
+     × stamps the model, friction and restitution 3ms
+     × uses friction 0.7, 0.5, 0.25 and 0.1 for dry, wet, snow and ice 0ms
+     × steps at DT_S from -APPROACH_S to rest, every vehicle on the same clock 0ms
+     × matches the impact and rest poses to the track 0ms
+     × reports each vehicle's class mass, size and box inertia from the presets 0ms
+     × keeps every number finite 0ms
+     × is deterministic: the same input gives a deep-equal output 0ms
+     × uses the same placement as placeVehicles, so the mini map and the 3D scene agree 0ms
+   ❯ simulate: before impact (constant deceleration, 0 unless braking) (6)
+     × keeps constant speed on a straight line when nobody brakes 1ms
+     × faces A north and B east for the whole approach (compass headings) 0ms
+     × brakes with v(t) = v0 - a*t and s(t) = v0*t - a*t^2/2, and lists the deceleration it used 0ms
+     × holds a parked vehicle still until it is hit 0ms
+     × backs a vehicle along the direction opposite to the way it faces 0ms
+     × follows a left turn's path at constant speed, turning only to the left 0ms
+   ❯ simulate: impact (planar impulse, restitution 0.2, no tangential impulse) (3)
+     × T-bone: A keeps its northward speed and gains eastward speed, B only loses speed, neither spins 0ms
+     × rear-end: the follower slows, the leader speeds up, by the 1-D collision with e = 0.2 0ms
+     × runs a rear-end on the highway lane, and both vehicles stay in it 0ms
+   ❯ simulate: after impact (friction slide, yaw decay, rest) (4)
+     × slides ice farther than snow, wet and dry, in the ratio of the friction coefficients 0ms
+     × slows monotonically after impact and comes to rest and stays there 0ms
+     × reports the distance moved after impact consistent with the track, and the last vehicle to stop sets the rest time 0ms
+     × measures the gap at rest centre to centre 0ms
+   ❯ simulate: 'not sure' speeds (6)
+     × runs the posted limit minus 5, the limit, and the limit plus 5 0ms
+     × assumes a 25 mph limit when the claimant doesn't know it 0ms
+     × never runs a negative speed 0ms
+     × gives lo = mid = hi for a known speed 0ms
+     × returns the min and max over the three runs for every range, and the picture plays the middle run 0ms
+     × runs all 'not sure' vehicles together at low, middle and high (as the prototype did) 0ms
+   ❯ simulate: no overlap before impact (9)
+     × flat T-bone: no pair of bodies overlaps by more than 5 cm at any step before t = 0 0ms
+     × flat rear-end: no pair of bodies overlaps by more than 5 cm at any step before t = 0 0ms
+     × T-bone on a 4-way: no pair of bodies overlaps by more than 5 cm at any step before t = 0 0ms
+     × T-bone, one-way cross street: no pair of bodies overlaps by more than 5 cm at any step before t = 0 0ms
+     × rear-end on the highway: no pair of bodies overlaps by more than 5 cm at any step before t = 0 0ms
+     × parking lot backing: no pair of bodies overlaps by more than 5 cm at any step before t = 0 0ms
+     × explains a rear-end where the leader is faster than the follower: A would have passed through B 0ms
+     × refuses a scene where a vehicle would have driven through a building 0ms
+     × keeps every vehicle off every building footprint for the whole run in ordinary scenes 0ms
+   ❯ simulate: assumptions are listed with their numbers and sources (4)
+     × has unique ids and plain text for each 0ms
+     × lists friction, restitution, braking deceleration, inertia, flat ground, rigid bodies, step and window 0ms
+     × lists each vehicle's class-average mass with its preset source 0ms
+     × lists the speed range and the assumed limit only when they were used 0ms
+   ❯ poseAt on a real result (3)
+     × returns the impact pose at t = 0 and the first and last samples at the ends 0ms
+     × clamps outside the time range 0ms
+     × is between neighbouring samples in between 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 131 ⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: scenes that fit > accepts a T-bone where B hits A's left side from the west, with or without road data
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:16:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: scenes that fit > accepts B hitting A's right side from the east
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:25:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: scenes that fit > accepts a rear-end: the faster follower hits the leader's rear
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:33:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: scenes that fit > counts rear-left and rear-right as hits in the rear
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:41:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: scenes that fit > treats backing as travelling opposite to the way the vehicle faces
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:50:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: nothing moving > says so when every speed is 0 or the vehicles are parked
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:60:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: nothing moving > does not say it when one vehicle moves, or when a 'not sure' speed could be above 0
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ codes packages/core/test/check-scene.test.ts:12:77
+ ❯ packages/core/test/check-scene.test.ts:67:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: same direction, neither hit in the rear > flags two vehicles going the same way when neither is marked hit in the rear
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:85:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: same direction, neither hit in the rear > is quiet once one of them is marked hit in the rear
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ codes packages/core/test/check-scene.test.ts:12:77
+ ❯ packages/core/test/check-scene.test.ts:94:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: the marked zone has to face where the other vehicle came from > flags a head-on where A is marked hit in the rear, naming the approach and the zone
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:104:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: the marked zone has to face where the other vehicle came from > flags a T-bone where A is marked hit on its right but B came from its left
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:119:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: the marked zone has to face where the other vehicle came from > lets any of the low, middle and high speed cases explain the hit
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:133:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: vehicles that can't meet > says nothing could have reached a vehicle when no one moves relative to it
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:150:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/131]⎯
+
+ FAIL  packages/core/test/check-scene.test.ts > checkScene: vehicles that can't meet > returns plain text only, with no HTML and no placeholders
+Error: not implemented yet: checkScene
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ checkScene packages/core/src/physics/index.ts:42:105
+ ❯ packages/core/test/check-scene.test.ts:163:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > applies J = -(1+e)(v_rel . n) / (1/m1 + 1/m2 + (r1 x n)^2/I1 + (r2 x n)^2/I2)
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:36:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > changes spin by (r x J n) / I
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:48:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > conserves total linear momentum and angular momentum about the impact point (1e-6 relative)
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:56:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > gives the contact points a normal separation speed of e times their closing speed
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:68:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > never adds kinetic energy
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:80:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > reduces to the 1-D formula when the line of impact passes through both centres
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:87:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > does nothing to bodies that are already separating
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:98:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > resolveImpact: planar impulse, no tangential impulse > is deterministic
+Error: not implemented yet: resolveImpact
+ ❯ todo packages/core/src/physics/impact.ts:8:47
+      6| import type { Vec2 } from "../contracts/geometry";
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** One body in the impact: a rigid planar body with a yaw moment of i…
+ ❯ resolveImpact packages/core/src/physics/impact.ts:37:130
+ ❯ packages/core/test/impact.test.ts:105:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > stops a vehicle alone at v on dry in v^2 / (2 * 0.7 * g)
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:115:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > slides farther on slick roads, by exactly mu: wet 0.5, snow 0.25, ice 0.1
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:127:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > slides along the direction of the initial velocity, never backwards, ending at rest
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:135:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > starts from the given state at t = 0
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:154:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > decays the yaw rate to zero without reversing it, and turns the vehicle the way it was spinning
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:163:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > does not move a body that starts at rest
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:187:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/131]⎯
+
+ FAIL  packages/core/test/impact.test.ts > slideToRest: friction slide at mu * g with the yaw rate decaying to zero > is deterministic
+Error: not implemented yet: slideToRest
+ ❯ todo packages/core/src/physics/slide.ts:6:47
+      4| import type { Vec2 } from "../contracts/geometry";
+      5|
+      6| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      7|
+      8| export interface SlideState {
+ ❯ slideToRest packages/core/src/physics/slide.ts:32:95
+ ❯ packages/core/test/impact.test.ts:194:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > puts a northbound lane east of the centerline
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:50:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > with one lane per direction, the lane centre is half a lane width east of the line (the plan's (i + 1/2) * w)
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:59:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > puts a southbound lane west of the centerline, with points running south
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:65:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > numbers lanes from the right: laneIndex 0 is the rightmost, the highest index is next to the centerline
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:73:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > offsets an eastbound lane south of the line and a westbound lane north of it
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:82:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > accepts a bearing within 90 degrees of the road's direction (headings are never exact)
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:92:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > handles unequal lane counts: forward lanes right of the line, backward lanes left of it
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:101:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: right-hand traffic > offsets to the right of travel on diagonal roads too
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:113:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: one-way roads use the full width > centres a one-way road's lanes on the line: lane 0 rightmost, lane 1 in the middle, lane 2 leftmost
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:128:17
+ ❯ packages/core/test/lanes.test.ts:127:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: one-way roads use the full width > puts a single lane of a one-way street on the centerline
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:139:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: one-way roads use the full width > returns null for the direction a one-way road forbids
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:146:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: bad input > returns null for an unknown road
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:154:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/131]⎯
+
+ FAIL  packages/core/test/lanes.test.ts > lanePath: bad input > returns null for a lane the road doesn't have
+Error: not implemented yet: lanePath
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ lanePath packages/core/src/physics/index.ts:19:129
+ ❯ packages/core/test/lanes.test.ts:157:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: T-bone at a 4-way, each vehicle straight > puts A in the rightmost northbound lane and B in the rightmost eastbound lane
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:32:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[43/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: T-bone at a 4-way, each vehicle straight > faces each vehicle along its road at impact
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:49:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[44/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: T-bone at a 4-way, each vehicle straight > makes the impact point the crossing of the two lane paths
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:55:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[45/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: T-bone at a 4-way, each vehicle straight > touches the marked zones to the impact point, bodies touching and not overlapping
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:64:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[46/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: T-bone at a 4-way, each vehicle straight > gives each lane path in travel order, running from before the impact point to past it
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:69:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[47/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: T-bone at a 4-way, each vehicle straight > uses the lane the claimant picked
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:80:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[48/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: one-way cross street > puts B in the single lane of a one-way westbound Park Street and hits A's right side
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:95:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[49/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: one-way cross street > refuses a vehicle going the wrong way, naming it
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:108:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[50/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: a left turn > approaches from the west leg travelling eastbound, in the leftmost lane for its direction
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:127:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[51/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: a left turn > ends the turn travelling north, past the impact point
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:138:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[52/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: a left turn > puts the impact point on B's lane, where A's path crosses it, with the zones touching
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:151:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[53/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: rear-end on the highway > keeps both in the same lane with the follower's front touching the leader's rear
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:165:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[54/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: rear-end on the highway > takes the impact point as the pin's projection onto the shared lane
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:179:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[55/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: rear-end on the highway > honours a different shared lane
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:190:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[56/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: rear-end on the highway > gives a parked vehicle no path
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:200:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[57/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: backing in a parking lot > sends the backing vehicle in the direction opposite to the way it faces
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:215:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[58/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: backing in a parking lot > puts A in the rightmost eastbound aisle lane and meets B's path on it
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:225:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[59/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: backing in a parking lot > runs the backing vehicle's path from before the impact point to past it
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:235:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[60/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: no road data (flat template) > crosses lines through the pin along each bearing, with the zones touching
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:248:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[61/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: no road data (flat template) > works for a backing vehicle too
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:256:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[62/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: buildings > leaves every vehicle clear of building footprints in ordinary scenes
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:269:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[63/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: buildings > never places a vehicle on a building: it either avoids it or says why it can't
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:280:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[64/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: zones that can't touch > says so in plain words, naming both vehicles, when both are marked 'rear' in a head-on
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:298:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[65/131]⎯
+
+ FAIL  packages/core/test/placement.test.ts > placeVehicles: zones that can't touch > does the same without any road data
+Error: not implemented yet: placeVehicles
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ placeVehicles packages/core/src/physics/index.ts:33:113
+ ❯ packages/core/test/placement.test.ts:317:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[66/131]⎯
+
+ FAIL  packages/core/test/pose-at.test.ts > poseAt > returns the stored sample exactly at sample times (t = start + k * dt)
+Error: not implemented yet: poseAt
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ poseAt packages/core/src/physics/index.ts:39:101
+ ❯ packages/core/test/pose-at.test.ts:36:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[67/131]⎯
+
+ FAIL  packages/core/test/pose-at.test.ts > poseAt > interpolates linearly between samples
+Error: not implemented yet: poseAt
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ poseAt packages/core/src/physics/index.ts:39:101
+ ❯ packages/core/test/pose-at.test.ts:43:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[68/131]⎯
+
+ FAIL  packages/core/test/pose-at.test.ts > poseAt > clamps to the first sample before the window and to the last after rest
+Error: not implemented yet: poseAt
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ poseAt packages/core/src/physics/index.ts:39:101
+ ❯ packages/core/test/pose-at.test.ts:54:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[69/131]⎯
+
+ FAIL  packages/core/test/pose-at.test.ts > poseAt > turns the short way round when the heading wraps past north
+Error: not implemented yet: poseAt
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ poseAt packages/core/src/physics/index.ts:39:101
+ ❯ packages/core/test/pose-at.test.ts:62:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[70/131]⎯
+
+ FAIL  packages/core/test/pose-at.test.ts > poseAt > works for a one-sample track
+Error: not implemented yet: poseAt
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ poseAt packages/core/src/physics/index.ts:39:101
+ ❯ packages/core/test/pose-at.test.ts:70:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[71/131]⎯
+
+ FAIL  packages/core/test/projection.test.ts > projection: WGS84 <-> local East-North meters > puts the origin at (0, 0)
+Error: not implemented yet: toLocal
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ toLocal packages/core/src/physics/index.ts:11:72
+ ❯ packages/core/test/projection.test.ts:11:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[72/131]⎯
+
+ FAIL  packages/core/test/projection.test.ts > projection: WGS84 <-> local East-North meters > round-trips local -> lat/lon -> local within 1 cm anywhere inside 500 m
+Error: not implemented yet: toLatLon
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ toLatLon packages/core/src/physics/index.ts:13:73
+ ❯ packages/core/test/projection.test.ts:21:39
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[73/131]⎯
+
+ FAIL  packages/core/test/projection.test.ts > projection: WGS84 <-> local East-North meters > round-trips lat/lon -> local -> lat/lon within 1 cm (about 1e-7 degrees)
+Error: not implemented yet: toLocal
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ toLocal packages/core/src/physics/index.ts:11:72
+ ❯ packages/core/test/projection.test.ts:32:36
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[74/131]⎯
+
+ FAIL  packages/core/test/projection.test.ts > projection: WGS84 <-> local East-North meters > is east-positive in x and north-positive in y
+Error: not implemented yet: toLocal
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ toLocal packages/core/src/physics/index.ts:11:72
+ ❯ packages/core/test/projection.test.ts:39:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[75/131]⎯
+
+ FAIL  packages/core/test/projection.test.ts > projection: WGS84 <-> local East-North meters > is about 111.32 km per degree of latitude (within 0.5%) at mid latitudes
+Error: not implemented yet: toLocal
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ toLocal packages/core/src/physics/index.ts:11:72
+ ❯ packages/core/test/projection.test.ts:47:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[76/131]⎯
+
+ FAIL  packages/core/test/projection.test.ts > projection: WGS84 <-> local East-North meters > shrinks east-west distances with cos(latitude), within 0.5%
+Error: not implemented yet: toLocal
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ toLocal packages/core/src/physics/index.ts:11:72
+ ❯ packages/core/test/projection.test.ts:56:17
+ ❯ packages/core/test/projection.test.ts:55:40
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[77/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > stamps the model, friction and restitution
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > uses friction 0.7, 0.5, 0.25 and 0.1 for dry, wet, snow and ice
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > steps at DT_S from -APPROACH_S to rest, every vehicle on the same clock
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > matches the impact and rest poses to the track
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > reports each vehicle's class mass, size and box inertia from the presets
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > keeps every number finite
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > is deterministic: the same input gives a deep-equal output
+ FAIL  packages/core/test/simulate.test.ts > simulate: result shape and time base > uses the same placement as placeVehicles, so the mini map and the 3D scene agree
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:40:28
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[78/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: before impact (constant deceleration, 0 unless braking) > keeps constant speed on a straight line when nobody brakes
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:121:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[79/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: before impact (constant deceleration, 0 unless braking) > faces A north and B east for the whole approach (compass headings)
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:138:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[80/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: before impact (constant deceleration, 0 unless braking) > brakes with v(t) = v0 - a*t and s(t) = v0*t - a*t^2/2, and lists the deceleration it used
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:157:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[81/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: before impact (constant deceleration, 0 unless braking) > holds a parked vehicle still until it is hit
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:179:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[82/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: before impact (constant deceleration, 0 unless braking) > backs a vehicle along the direction opposite to the way it faces
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:194:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[83/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: before impact (constant deceleration, 0 unless braking) > follows a left turn's path at constant speed, turning only to the left
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:210:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[84/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: impact (planar impulse, restitution 0.2, no tangential impulse) > T-bone: A keeps its northward speed and gains eastward speed, B only loses speed, neither spins
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:228:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[85/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: impact (planar impulse, restitution 0.2, no tangential impulse) > rear-end: the follower slows, the leader speeds up, by the 1-D collision with e = 0.2
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:254:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[86/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: impact (planar impulse, restitution 0.2, no tangential impulse) > runs a rear-end on the highway lane, and both vehicles stay in it
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:271:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[87/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: after impact (friction slide, yaw decay, rest) > slides ice farther than snow, wet and dry, in the ratio of the friction coefficients
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:280:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[88/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: after impact (friction slide, yaw decay, rest) > slows monotonically after impact and comes to rest and stays there
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:293:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[89/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: after impact (friction slide, yaw decay, rest) > reports the distance moved after impact consistent with the track, and the last vehicle to stop sets the rest time
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:308:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[90/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: after impact (friction slide, yaw decay, rest) > measures the gap at rest centre to centre
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:321:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[91/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: 'not sure' speeds > runs the posted limit minus 5, the limit, and the limit plus 5
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:335:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[92/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: 'not sure' speeds > assumes a 25 mph limit when the claimant doesn't know it
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:343:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[93/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: 'not sure' speeds > never runs a negative speed
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:350:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[94/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: 'not sure' speeds > gives lo = mid = hi for a known speed
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:356:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[95/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: 'not sure' speeds > returns the min and max over the three runs for every range, and the picture plays the middle run
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:364:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[96/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: 'not sure' speeds > runs all 'not sure' vehicles together at low, middle and high (as the prototype did)
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:387:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[97/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > flat T-bone: no pair of bodies overlaps by more than 5 cm at any step before t = 0
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > flat rear-end: no pair of bodies overlaps by more than 5 cm at any step before t = 0
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > T-bone on a 4-way: no pair of bodies overlaps by more than 5 cm at any step before t = 0
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > T-bone, one-way cross street: no pair of bodies overlaps by more than 5 cm at any step before t = 0
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > rear-end on the highway: no pair of bodies overlaps by more than 5 cm at any step before t = 0
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > parking lot backing: no pair of bodies overlaps by more than 5 cm at any step before t = 0
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:413:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[98/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > explains a rear-end where the leader is faster than the follower: A would have passed through B
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ packages/core/test/simulate.test.ts:433:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[99/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > refuses a scene where a vehicle would have driven through a building
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ packages/core/test/simulate.test.ts:450:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[100/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: no overlap before impact > keeps every vehicle off every building footprint for the whole run in ordinary scenes
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:460:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[101/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > simulate: assumptions are listed with their numbers and sources > has unique ids and plain text for each
+ FAIL  packages/core/test/simulate.test.ts > simulate: assumptions are listed with their numbers and sources > lists friction, restitution, braking deceleration, inertia, flat ground, rigid bodies, step and window
+ FAIL  packages/core/test/simulate.test.ts > simulate: assumptions are listed with their numbers and sources > lists each vehicle's class-average mass with its preset source
+ FAIL  packages/core/test/simulate.test.ts > simulate: assumptions are listed with their numbers and sources > lists the speed range and the assumed limit only when they were used
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:477:28
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[102/131]⎯
+
+ FAIL  packages/core/test/simulate.test.ts > poseAt on a real result > returns the impact pose at t = 0 and the first and last samples at the ends
+ FAIL  packages/core/test/simulate.test.ts > poseAt on a real result > clamps outside the time range
+ FAIL  packages/core/test/simulate.test.ts > poseAt on a real result > is between neighbouring samples in between
+Error: not implemented yet: simulate
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ simulate packages/core/src/physics/index.ts:36:97
+ ❯ run packages/core/test/simulate.test.ts:17:90
+ ❯ packages/core/test/simulate.test.ts:523:28
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[103/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: roads within 25 m > lists the roads near the pin with their distance, and leaves out far ones
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:10:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[104/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: roads within 25 m > draws the line at 25 m
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:21:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[105/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: roads within 25 m > returns nothing when no road is near
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:28:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[106/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: legs split at the junction > gives four legs at a 4-way, with outward bearings and the junction point
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:36:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[107/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: legs split at the junction > still finds the junction when the pin is 24 m up the street
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:51:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[108/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: legs split at the junction > finds the same four legs when Main Street is stored as two ways with the same name
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:56:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[109/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: direction choices > offers a bound on each road, labelled like 'northbound on Main Street'
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:64:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[110/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: direction choices > offers only the legal bound on a one-way street
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:77:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[111/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: direction choices > offers no 'southbound' on a one-way northbound highway
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:83:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[112/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: direction choices > lists each named road once even when it is stored as several segments
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:89:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[113/131]⎯
+
+ FAIL  packages/core/test/streets.test.ts > streetsAtPin: direction choices > offers bounds for an unnamed parking aisle without a street name
+Error: not implemented yet: streetsAtPin
+ ❯ todo packages/core/src/physics/index.ts:8:47
+      6| import type { PlainMessage, SimulationOutcome, SimulationResult, Vehic…
+      7|
+      8| const todo = (what: string): never => { throw new Error(`not implement…
+       |                                               ^
+      9|
+     10| /** WGS84 → local East-North meters around frame.origin. */
+ ❯ streetsAtPin packages/core/src/physics/index.ts:16:84
+ ❯ packages/core/test/streets.test.ts:99:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[114/131]⎯
+
+
+ Test Files  8 failed | 5 passed (13)
+      Tests  131 failed | 28 passed (159)
+   Start at  18:10:33
+   Duration  319ms (transform 50%, import 43%, tests 5%, worker 2%)
+

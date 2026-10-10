@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 3,
+  "claim": {
+    "number": "CLM-EX-1003",
+    "vehicle": {
+      "year": 2020,
+      "make": "Subaru",
+      "model": "Outback"
+    }
+  },
+  "location": {
+    "lat": 42.7986815,
+    "lon": -71.5349255,
+    "label": "Retail parking lot, Nashua, New Hampshire",
+    "nearLabel": "",
+    "source": "example",
+    "place": "parking"
+  },
+  "occurred": {
+    "date": "2026-07-11",
+    "time": "13:40"
+  },
+  "road": {
+    "condition": "dry"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2020,
+      "make": "Subaru",
+      "model": "Outback",
+      "type": "car",
+      "typeSource": "claim",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 37,
+        "roadId": null,
+        "roadName": null,
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 8
+      },
+      "braking": false,
+      "zone": "left"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2017,
+      "make": "Honda",
+      "model": "Odyssey",
+      "type": "van",
+      "typeSource": "manual",
+      "action": "backing",
+      "travel": {
+        "bearingDeg": 307,
+        "roadId": null,
+        "roadName": null,
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 3
+      },
+      "braking": false,
+      "zone": "rear"
+    }
+  ]
+}

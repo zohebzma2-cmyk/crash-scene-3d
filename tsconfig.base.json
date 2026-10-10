@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@csd/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@csd/core/*": [
+        "./packages/core/src/*"
+      ],
+      "@csd/mapdata": [
+        "./packages/mapdata/src/index.ts"
+      ],
+      "@csd/exports": [
+        "./packages/exports/src/index.ts"
+      ],
+      "@csd/proxy": [
+        "./packages/proxy/src/index.ts"
+      ]
+    }
+  }
+}

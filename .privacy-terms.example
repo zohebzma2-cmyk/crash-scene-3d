@@ -1,0 +1,12 @@
+# Copy this file to .privacy-terms (same folder). .privacy-terms is git-ignored and is NEVER committed.
+# One entry per line. Blank lines and lines starting with # are ignored.
+#
+# A plain line is a case-insensitive text match:
+#   placeholder street name
+# Wrap a line in slashes to make it a regular expression (flags allowed after the last slash):
+#   /placeholder\s+lane/i
+#
+# What belongs here: your own street address and town, your name, phone number, client or
+# company names, anything that must never appear in this repo. These lines are examples only.
+example-private-term
+/example\s+regex\s+term/i

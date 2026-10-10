@@ -1,0 +1,6 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (synthetic fixture: open water, nothing mapped)",
+  "osm3s": { "timestamp_osm_base": "2026-10-09T12:00:00Z", "copyright": "synthetic test fixture" },
+  "elements": []
+}

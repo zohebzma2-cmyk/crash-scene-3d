@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 3,
+  "claim": {
+    "number": "CLM-EX-1001",
+    "vehicle": {
+      "year": 2021,
+      "make": "Honda",
+      "model": "Accord"
+    }
+  },
+  "location": {
+    "lat": 42.7627323,
+    "lon": -71.4661324,
+    "label": "Main Street & Park Street, Nashua, New Hampshire",
+    "nearLabel": "",
+    "source": "example",
+    "place": "intersection"
+  },
+  "occurred": {
+    "date": "2026-09-18",
+    "time": "17:20"
+  },
+  "road": {
+    "condition": "dry"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2021,
+      "make": "Honda",
+      "model": "Accord",
+      "type": "car",
+      "typeSource": "claim",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 342,
+        "roadId": null,
+        "roadName": "Main Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 25
+      },
+      "braking": false,
+      "zone": "right"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2018,
+      "make": "Ford",
+      "model": "Escape",
+      "type": "suv",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 252,
+        "roadId": null,
+        "roadName": "Park Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "unsure",
+        "limitMph": null
+      },
+      "braking": false,
+      "zone": "front"
+    }
+  ]
+}

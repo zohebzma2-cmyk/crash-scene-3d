@@ -1,0 +1,38 @@
+/* ---------- Save step ---------- */
+.options { display: flex; flex-direction: column; border-top: var(--size-border) solid var(--color-border); }
+.option { display: flex; gap: var(--space-4); align-items: flex-start; padding: var(--space-5) var(--space-2); border-bottom: var(--size-border) solid var(--color-border); cursor: pointer; }
+.option:hover { background: var(--color-surface-2); }
+.option input { width: var(--size-icon); height: var(--size-icon); margin: var(--space-1) var(--space-0) var(--space-0); accent-color: var(--color-brand); flex: none; }
+.option-body { display: flex; flex-direction: column; gap: var(--space-1); }
+.option-title { font-weight: var(--weight-bold); }
+.option-desc { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.coming { display: flex; flex-direction: column; gap: var(--space-2); }
+.coming .group-label { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.coming-row { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.coming-row strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+.stamp { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); font-size: var(--text-sm); color: var(--color-text-secondary); }
+.stamp strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+.stamp.is-stale { background: var(--color-warning-tint); color: var(--color-warning-tint-text); }
+.preview-frame { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-6); border-radius: var(--radius-lg); background: var(--color-surface-2); }
+.preview-tabs { align-self: stretch; background: var(--color-surface); border: var(--size-border) solid var(--color-border); }
+.preview-host { width: 100%; display: flex; justify-content: center; }
+.preview-box { position: relative; overflow: hidden; max-width: 100%; box-shadow: var(--shadow-lg); }
+.preview-box > * { position: absolute; left: var(--space-0); top: var(--space-0); transform-origin: top left; }
+.json-preview { width: 100%; max-height: var(--size-preview-max-h); overflow: auto; margin: var(--space-0); padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface); border: var(--size-border) solid var(--color-border); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-relaxed); white-space: pre-wrap; word-break: break-all; }
+
+/* ---------- Toast: top center, never over the actions ---------- */
+.toast {
+  position: fixed; left: var(--space-4); right: var(--space-4); margin-inline: auto; width: fit-content; top: calc(var(--size-header-h) + var(--space-12)); z-index: var(--z-toast);
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-md);
+  background: var(--color-text); color: var(--color-bg); box-shadow: var(--shadow-lg); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+}
+.toast > .icon { color: var(--color-success-fill); }
+.toast .icon-btn { color: var(--color-bg); }
+.toast .icon-btn:hover { background: transparent; }
+
+dialog { border: none; padding: var(--space-0); border-radius: var(--radius-xl); max-width: var(--size-dialog-max); width: calc(100% - var(--space-8)); background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-xl); }
+dialog::backdrop { background: var(--color-overlay); }
+.dialog-body { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.dialog-body h2 { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+

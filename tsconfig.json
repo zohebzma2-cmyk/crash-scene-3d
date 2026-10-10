@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["packages/*/src", "packages/*/test", "apps/web/src", "apps/web/test", "netlify/functions", "e2e", "scripts/*.ts", "*.config.ts", "apps/web/*.config.ts"]
+}

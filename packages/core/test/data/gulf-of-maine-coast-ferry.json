@@ -1,0 +1,49 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (synthetic fixture: a coastline, a ferry route and a pier near open water, no drivable road)",
+  "osm3s": { "timestamp_osm_base": "2026-10-09T12:00:00Z", "copyright": "synthetic test fixture" },
+  "elements": [
+    {
+      "type": "way", "id": 900000001,
+      "nodes": [9001, 9002, 9003],
+      "geometry": [{ "lat": 42.4985, "lon": -69.5030 }, { "lat": 42.5000, "lon": -69.5000 }, { "lat": 42.5018, "lon": -69.4962 }],
+      "tags": { "natural": "coastline" }
+    },
+    {
+      "type": "way", "id": 900000002,
+      "nodes": [9101, 9102],
+      "geometry": [{ "lat": 42.4950, "lon": -69.5100 }, { "lat": 42.5050, "lon": -69.4900 }],
+      "tags": { "route": "ferry", "name": "Synthetic Island Ferry", "motor_vehicle": "yes", "duration": "00:45" }
+    },
+    {
+      "type": "way", "id": 900000003,
+      "nodes": [9201, 9202],
+      "geometry": [{ "lat": 42.4990, "lon": -69.5002 }, { "lat": 42.4994, "lon": -69.5001 }],
+      "tags": { "man_made": "pier", "highway": "footway" }
+    },
+    {
+      "type": "way", "id": 900000004,
+      "nodes": [9301, 9302],
+      "geometry": [{ "lat": 42.5010, "lon": -69.5010 }, { "lat": 42.5012, "lon": -69.5008 }],
+      "tags": { "highway": "path", "name": "Synthetic Boardwalk" }
+    },
+    {
+      "type": "way", "id": 900000005,
+      "nodes": [9401, 9402, 9403, 9404, 9401],
+      "geometry": [
+        { "lat": 42.4998, "lon": -69.4990 }, { "lat": 42.4998, "lon": -69.4986 },
+        { "lat": 42.5001, "lon": -69.4986 }, { "lat": 42.5001, "lon": -69.4990 }, { "lat": 42.4998, "lon": -69.4990 }
+      ],
+      "tags": { "seamark:type": "platform", "name": "Synthetic Buoy Platform" }
+    },
+    {
+      "type": "relation", "id": 900000006,
+      "members": [{ "type": "way", "ref": 900000002, "role": "" }],
+      "tags": { "type": "route", "route": "ferry", "name": "Synthetic Island Ferry" }
+    },
+    {
+      "type": "node", "id": 900000007, "lat": 42.5, "lon": -69.5,
+      "tags": { "amenity": "ferry_terminal", "name": "Synthetic Landing" }
+    }
+  ]
+}

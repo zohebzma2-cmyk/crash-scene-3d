@@ -1,0 +1,23 @@
+#!/bin/sh
+# Pre-commit guard: refuses a commit whose staged lines hold a secret, a home-folder path,
+# or one of your private terms (.privacy-terms, untracked). The scanning is in scripts/privacy-scan.mjs.
+#
+# Turn it on once per clone:   git config core.hooksPath .githooks
+# Emergency bypass (then run /release-check before anything leaves your machine):  git commit --no-verify
+
+scan="$(dirname "$0")/../scripts/privacy-scan.mjs"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: Node is not installed, so the privacy scan cannot run. Install Node 22+ and commit again." >&2
+  exit 1
+fi
+if [ ! -f "$scan" ]; then
+  echo "pre-commit: $scan is missing, so the privacy scan cannot run." >&2
+  exit 1
+fi
+
+if ! node "$scan" --staged; then
+  echo >&2
+  echo "Commit blocked: fix the lines above (use placeholders instead of real values) and commit again." >&2
+  exit 1
+fi

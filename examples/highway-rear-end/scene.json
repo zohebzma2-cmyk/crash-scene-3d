@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 3,
+  "claim": {
+    "number": "CLM-EX-1002",
+    "vehicle": {
+      "year": 2019,
+      "make": "Toyota",
+      "model": "RAV4"
+    }
+  },
+  "location": {
+    "lat": 42.7612264,
+    "lon": -71.4932055,
+    "label": "Everett Turnpike northbound, Nashua, New Hampshire",
+    "nearLabel": "",
+    "source": "example",
+    "place": "road"
+  },
+  "occurred": {
+    "date": "2026-08-29",
+    "time": "07:55"
+  },
+  "road": {
+    "condition": "wet"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2019,
+      "make": "Toyota",
+      "model": "RAV4",
+      "type": "suv",
+      "typeSource": "claim",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 358,
+        "roadId": null,
+        "roadName": "Everett Turnpike",
+        "lane": 1
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 15
+      },
+      "braking": true,
+      "zone": "rear"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2016,
+      "make": "Chevrolet",
+      "model": "Silverado 1500",
+      "type": "pickup",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 358,
+        "roadId": null,
+        "roadName": "Everett Turnpike",
+        "lane": 1
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 45
+      },
+      "braking": true,
+      "zone": "front"
+    }
+  ]
+}

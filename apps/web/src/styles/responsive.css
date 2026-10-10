@@ -1,0 +1,68 @@
+/* ---------- Phones ---------- */
+@media (max-width: 767px) {
+  .app-header { padding-inline: var(--space-4); gap: var(--space-2); }
+  .claim-chip .long, .disclaimer-bar .long { display: none; }
+  /* The word "Claim" is read out but not shown, so the larger logo leaves room for the whole claim number. */
+  .claim-word { position: absolute; width: var(--size-border); height: var(--size-border); overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* 20px bold counts as large text, so the logo's exact blue "AI" keeps 3:1 contrast on the dark header too. */
+  .logo { font-size: var(--text-xl); }
+  .disclaimer-bar { justify-content: flex-start; padding: var(--space-0) var(--space-4); font-size: var(--text-xs); }
+  .stepper { margin-top: var(--space-4); padding-inline: var(--space-4); }
+  .stepper ol { display: none; }
+  .stepper-compact { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-0); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+  .stepper-compact .bar { height: var(--space-1); border-radius: var(--radius-full); background: var(--color-surface-3); overflow: hidden; }
+  .stepper-compact .bar span { display: block; height: 100%; background: var(--color-brand); }
+  .split, .split-wide { grid-template-columns: minmax(var(--space-0), 1fr); grid-template-areas: "head" "tips" "side" "main"; grid-template-rows: none; padding: var(--space-4) var(--space-4) calc(var(--size-button-h) + var(--space-16)); gap: var(--space-6); }
+  .split-location { grid-template-areas: "head" "search" "tips" "side" "main"; }
+  .split-save { grid-template-areas: "head" "tips" "main" "side"; }
+  .split-side { position: static; }
+  .title { font-size: var(--text-2xl); }
+  .map, .map-frame-lg .map { height: var(--size-map-h-sm); }
+  /* The button stays beside the field so the open suggestion list never covers it. */
+  .search-row { align-items: flex-start; }
+  .search-row .btn { flex: none; padding-inline: var(--space-4); }
+  .tiles-6 { grid-template-columns: repeat(3, minmax(var(--space-0), 1fr)); }
+  .tiles-5 { grid-template-columns: repeat(3, minmax(var(--space-0), 1fr)); }
+  .tiles-4 { grid-template-columns: repeat(2, minmax(var(--space-0), 1fr)); }
+  .vehicle-head { padding: var(--space-3) var(--space-4); }
+  .vehicle-grid { grid-template-columns: minmax(var(--space-0), 1fr); padding: var(--space-4); gap: var(--space-6); }
+  .ymm { grid-template-columns: minmax(var(--space-0), var(--size-year-field)) minmax(var(--space-0), 1fr); }
+  .ymm .field:last-child { grid-column: 1 / -1; }
+  .zones { grid-template-columns: repeat(3, minmax(var(--space-0), 1fr)); }
+  .actions { position: fixed; left: var(--space-0); right: var(--space-0); bottom: var(--space-0); z-index: var(--z-sheet); padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); background: var(--color-surface); border-top: var(--size-border) solid var(--color-border); box-shadow: var(--shadow-lg); flex-wrap: nowrap; }
+  .actions .btn-primary { flex: 1; }
+  .dialog-body .actions { position: static; box-shadow: none; border: none; padding: var(--space-0); }
+  .review-head { padding-inline: var(--space-4); margin-top: var(--space-4); }
+  .viewer-layout { display: flex; flex-direction: column; height: auto; min-height: var(--space-0); margin-top: var(--space-3); border-top: none; }
+  .viewer { margin: var(--space-0) var(--space-4); }
+  .viewer-canvas { flex: none; height: var(--size-viewer-h-mobile); min-height: var(--size-viewer-min-h-mobile); }
+  .view-controls { top: var(--space-2); right: var(--space-2); }
+  .scene-caption { display: none; }
+  .view-controls .seg { padding-inline: var(--space-2); font-size: var(--text-xs); }
+  /* Two rows: play, readout and the Aftermath button above, the track across the full width below (a 390 px row is too tight for all four). */
+  .timeline { height: auto; flex-wrap: wrap; padding: var(--space-2) var(--space-3); gap: var(--space-2); }
+  .readout { flex: 1; min-width: var(--space-0); text-align: left; font-size: var(--text-xs); }
+  .track-wrap { order: 3; flex: 1 0 100%; margin-top: var(--space-3); }
+  .rate { display: none; }
+  .aftermath-btn { padding-inline: var(--space-2); font-size: var(--text-xs); }
+  .warnings-row { flex-wrap: wrap; }
+  .warnings-first { flex: 1 1 calc(100% - var(--space-12)); }
+  .warnings-first.is-clamped { white-space: normal; }
+  .warnings-compact .warnings-actions { flex: 1 1 100%; flex-wrap: wrap; }
+  .mode-chip { display: none; }
+  .panel { border-left: none; margin-top: var(--space-3); border-top-left-radius: var(--radius-xl); border-top-right-radius: var(--radius-xl); box-shadow: var(--shadow-xl); border-top: var(--size-border) solid var(--color-border); padding-bottom: calc(var(--size-button-h) + var(--space-12)); }
+  .sheet-handle { display: block; width: var(--space-10); height: var(--space-1); border-radius: var(--radius-full); background: var(--color-border-strong); margin: var(--space-2) auto var(--space-0); }
+  .panel-foot { position: fixed; left: var(--space-0); right: var(--space-0); bottom: var(--space-0); z-index: var(--z-sheet); flex-direction: row-reverse; align-items: center; background: var(--color-surface); box-shadow: var(--shadow-lg); padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); }
+  .panel-foot .btn-primary { flex: 1; width: auto; }
+  .panel-foot .btn-quiet { width: auto; }
+  .toast { top: calc(var(--size-header-h) + var(--space-8)); }
+}
+
+
+.open-scene { font-size: var(--text-sm); }
+.open-scene input:focus-visible + *, .open-scene:has(input:focus-visible) .link-btn { outline: var(--size-focus-ring) solid var(--color-focus-ring); }
+
+/* Very narrow phones: the mark alone (the link is still named InsurifyAI) so the claim number stays whole. */
+@media (max-width: 359px) {
+  .logo-word { display: none; }
+}

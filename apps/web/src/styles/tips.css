@@ -1,0 +1,59 @@
+/* ---------- Tips for first-time users (DESIGN.md section 19). Tokens only. ---------- */
+.tips-slot { grid-area: tips; min-width: var(--space-0); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.tip {
+  width: 100%;
+  display: grid; grid-template-columns: minmax(var(--space-0), 1fr) auto; grid-template-areas: "title actions" "text text";
+  align-items: center; gap: var(--space-0) var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-3) var(--space-4);
+  border-radius: var(--radius-md); border-left: var(--space-1) solid var(--color-brand);
+  background: var(--color-brand-tint); color: var(--color-text);
+  animation: tip-in var(--duration-base) var(--ease-standard);
+}
+.tip-title { grid-area: title; display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-bold); color: var(--color-brand-tint-text); }
+.tip-text { grid-area: text; font-size: var(--text-sm); line-height: var(--leading-snug); padding-right: var(--space-2); }
+.tip-actions { grid-area: actions; display: flex; align-items: center; gap: var(--space-1); }
+.tip-actions .link-btn { font-size: var(--text-sm); }
+@keyframes tip-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tip { animation: none; } }
+/* A narrow phone: the title gets the full row, the buttons go under it. */
+@media (max-width: 359px) {
+  .tip { grid-template-columns: minmax(var(--space-0), 1fr); grid-template-areas: "title" "text" "actions"; }
+  .tip-actions { justify-self: end; }
+}
+/* Location, wide screens: the map is a little shorter while a tip sits above it, so its attribution stays on screen. */
+@media (min-width: 1024px) {
+  .split-location:has(> .tips-slot:not(.is-empty)) .map-frame-lg .map { height: var(--size-map-h-lg-tip); }
+}
+/* Review, wide screens: the tip shares the title's row (icon, text, buttons; its title is read out, not shown), so the picture and
+   the panel keep their height. Any warnings drop to the row below. */
+@media (min-width: 1024px) {
+  .review-head { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-6); }
+  .review-head > .title { flex: 0 0 auto; }
+  .review-head > .tips-slot { flex: 1 1 var(--size-dialog-max); }
+  .review-head > :not(.title):not(.tips-slot) { flex: 1 0 100%; order: 3; }
+  .review-head .tip { grid-template-columns: auto minmax(var(--space-0), 1fr) auto; grid-template-areas: "title text actions"; gap: var(--space-0) var(--space-3); padding-block: var(--space-0); }
+  .review-head .tip-text { padding-right: var(--space-0); }
+  .review-head .tip-title span { position: absolute; width: var(--size-border); height: var(--size-border); overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* "Show tips" is in the header. Phones: the icon alone (the name stays for screen readers). */
+.tips-btn { flex: none; }
+.review-head > .tips-slot.is-empty { display: none; }
+@media (max-width: 767px) {
+  .tips-btn { padding-inline: var(--space-3); min-width: var(--size-touch); }
+  .tips-btn-text { position: absolute; width: var(--size-border); height: var(--size-border); overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* No tip showing: the page is laid out exactly as it was before tips existed (no empty row, no extra gap). */
+.split > .tips-slot.is-empty { display: none; }
+.split:has(> .tips-slot.is-empty) { grid-template-areas: "head side" "main side"; grid-template-rows: auto 1fr; }
+.split-wide:has(> .tips-slot.is-empty) { grid-template-areas: "head head" "main side"; }
+.split-location:has(> .tips-slot.is-empty) { grid-template-areas: "head" "search" "side" "main"; grid-template-rows: none; }
+@media (min-width: 1024px) {
+  .split-location:has(> .tips-slot.is-empty) { grid-template-areas: "head search" "side side" "main main"; }
+}
+@media (max-width: 767px) {
+  .split:has(> .tips-slot.is-empty), .split-wide:has(> .tips-slot.is-empty) { grid-template-areas: "head" "side" "main"; grid-template-rows: none; }
+  .split-location:has(> .tips-slot.is-empty) { grid-template-areas: "head" "search" "side" "main"; }
+  .split-save:has(> .tips-slot.is-empty) { grid-template-areas: "head" "main" "side"; }
+}

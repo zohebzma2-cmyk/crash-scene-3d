@@ -1,0 +1,248 @@
+/* crash-scene-3d design tokens — the single source of truth.
+   DESIGN.md section 2 embeds this file verbatim; `npm run check:tokens` in
+   design/prototype fails if they drift. Components use var(--…) only.
+   Light/dark: light-dark() follows color-scheme. The host app sets
+   class="dark" or class="light" on <html>; otherwise the OS setting wins. */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---------- Color: surfaces ---------- */
+  --color-bg:                light-dark(#F8FAFC, #020617);
+  --color-surface:           light-dark(#FFFFFF, #0F172A);
+  --color-surface-2:         light-dark(#F1F5F9, #1E293B);
+  --color-surface-3:         light-dark(#E2E8F0, #334155);
+  --color-border:            light-dark(#E2E8F0, #1E293B);
+  --color-border-strong:     light-dark(#CBD5E1, #334155);
+  --color-overlay:           light-dark(rgb(15 23 42 / 0.48), rgb(0 0 0 / 0.64));
+
+  /* ---------- Color: text (contrast on --color-surface, light / dark) ---------- */
+  --color-text:              light-dark(#0F172A, #F8FAFC);   /* 17.9 / 17.1 */
+  --color-text-secondary:    light-dark(#475569, #94A3B8);   /*  7.6 /  7.0 */
+  --color-text-tertiary:     light-dark(#5F6E84, #94A3B8);   /*  5.2 /  7.0 */
+  --color-text-on-brand:     light-dark(#FFFFFF, #0F172A);   /*  5.2 /  7.0 on brand */
+  --color-text-link:         light-dark(#1D4ED8, #93C5FD);
+
+  /* ---------- Color: brand ---------- */
+  --color-brand:             light-dark(#2563EB, #60A5FA);
+  --color-brand-hover:       light-dark(#1D4ED8, #93C5FD);
+  --color-brand-tint:        light-dark(#EFF6FF, #172554);
+  --color-brand-tint-text:   light-dark(#1D4ED8, #BFDBFE);   /*  6.2 on tint */
+  --color-focus-ring:        light-dark(#2563EB, #93C5FD);
+
+  /* The official InsurifyAI logo blue (design/brand/). The same in light and dark and
+     never theme-shifted: it is the logo, not a UI color. Only the mark and the "AI" of
+     the wordmark use it. 5.2 on the light surface / 3.5 on the dark surface (3:1 needed). */
+  --color-logo:              #2369D7;
+  /* Logo lockup, measured from logo-full.png and relative to the wordmark's font size:
+     the mark is 1.742 x the font size tall; the gap to the first letter is 0.343 em. */
+  --logo-mark-height:        1.742em;
+  --logo-gap:                0.343em;
+
+  /* ---------- Color: status. *-fill = icons, dots, bars only. Never text. ---------- */
+  --color-success-fill:      #10B981;
+  --color-success-text:      light-dark(#047857, #34D399);   /*  5.5 */
+  --color-warning-fill:      #F59E0B;
+  --color-warning-text:      light-dark(#B45309, #FCD34D);   /*  5.0 */
+  --color-warning-tint:      light-dark(#FEF3C7, #451A03);
+  --color-warning-tint-text: light-dark(#92400E, #FDE68A);   /*  6.4 on tint */
+  --color-danger-fill:       #EF4444;
+  --color-danger-text:       light-dark(#B91C1C, #FCA5A5);   /*  6.5 */
+
+  /* ---------- Color: vehicles. Letter + name always shown too. ---------- */
+  --color-vehicle-a:         light-dark(#2563EB, #60A5FA);   /*  5.2 */
+  --color-vehicle-b:         light-dark(#C2410C, #FB923C);   /*  5.2 */
+  --color-vehicle-c:         light-dark(#0F766E, #2DD4BF);   /*  5.5 */
+  --color-vehicle-d:         light-dark(#A21CAF, #E879F9);   /*  6.3 */
+
+  /* ---------- Color: 3D scene, diagram and map ---------- */
+  --color-scene-ground:      light-dark(#E2E8F0, #1E293B);
+  --color-scene-grass:       light-dark(#DCE7DA, #1A2A22);
+  --color-scene-road:        light-dark(#94A3B8, #475569);
+  --color-scene-lane:        light-dark(#FFFFFF, #E2E8F0);
+  --color-scene-path:        light-dark(#0F172A, #F8FAFC);
+  --color-scene-impact:      light-dark(#B91C1C, #F87171);
+  --color-scene-measure:     light-dark(#0F172A, #F8FAFC);
+  --color-map-pin:           light-dark(#2563EB, #60A5FA);
+  --color-map-street:        light-dark(#7C3AED, #8B5CF6);   /* chosen streets drawn on the map, over a white halo */
+  --color-map-street-halo:   light-dark(#FFFFFF, #FFFFFF);   /* the OSM tiles stay light in both themes */
+  /* The drawn stand-in map (fixtures/test mode: every tile, drawn from road data): OSM-like and light in both themes, like the real tiles */
+  --color-map-ground:          light-dark(#F2EFE9, #F2EFE9);
+  --color-map-road:            light-dark(#FFFFFF, #FFFFFF);
+  --color-map-road-casing:     light-dark(#BBBBBB, #BBBBBB);
+  --color-map-road-major:      light-dark(#FCD6A4, #FCD6A4);
+  --color-map-road-major-casing: light-dark(#C9A26F, #C9A26F);
+  --color-map-building:        light-dark(#D9D0C9, #D9D0C9);
+  --color-map-building-edge:   light-dark(#C4B9AE, #C4B9AE);
+  --color-map-parking:         light-dark(#EEEEEE, #EEEEEE);
+  --color-map-label:           light-dark(#333333, #333333);
+  --color-scene-lot:         light-dark(#CBD5E1, #334155);   /* parking-lot surface */
+  --color-scene-debris-glass:   light-dark(#E0F2FE, #BAE6FD);   /* glass shards on the road after the hit */
+  --color-scene-debris-plastic: light-dark(#475569, #CBD5E1);   /* plastic and trim fragments */
+  --color-scene-skid:        light-dark(#0F172A, #020617);   /* tire marks, drawn translucent */
+  --color-scene-label:       light-dark(#1E293B, #E2E8F0);   /* street names painted on the road: 7.9:1 on road */
+  --color-scene-glass:       light-dark(#475569, #1E293B);   /* vehicle windows */
+  --color-scene-tire:        light-dark(#0F172A, #020617);   /* vehicle tires */
+  --color-scene-headlight:   light-dark(#FDE68A, #FEF3C7);   /* vehicle headlights */
+  --color-scene-taillight:   light-dark(#DC2626, #EF4444);   /* vehicle taillights */
+  --color-scene-sky:         light-dark(#FFFFFF, #E2E8F0);   /* 3D ambient light: stays bright in dark mode */
+  --color-scene-sun:         light-dark(#FFFFFF, #F1F5F9);   /* 3D key light */
+  --color-selected-ring:     light-dark(#2563EB, #93C5FD);   /* selected tiles, chips, rows */
+
+  /* ---------- Typography ---------- */
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-3xs:  0.625rem;  /* 10 — zone labels in the impact picker only */
+  --text-2xs:  0.6875rem; /* 11 — fingerprint and timestamp on images only */
+  --text-xs:   0.75rem;   /* 12 */
+  --text-sm:   0.875rem;  /* 14 */
+  --text-base: 1rem;      /* 16 — body and inputs (stops iOS zoom) */
+  --text-lg:   1.125rem;  /* 18 */
+  --text-xl:   1.25rem;   /* 20 */
+  --text-2xl:  1.5rem;    /* 24 */
+  --text-3xl:  1.875rem;  /* 30 */
+
+  --leading-tight:   1.25;
+  --leading-snug:    1.375;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.625;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-extrabold: 800;
+
+  --tracking-tight:   -0.025em;
+  --tracking-normal:  0em;
+  --tracking-eyebrow: 0.18em;   /* measured on insurifyai.app eyebrow labels */
+  --tracking-badge:   0.05em;   /* measured on insurifyai.app badges */
+
+  /* ---------- Spacing (4 px base) ---------- */
+  --space-0:  0rem;
+  --space-1:  0.25rem;  /*  4 */
+  --space-2:  0.5rem;   /*  8 */
+  --space-3:  0.75rem;  /* 12 */
+  --space-4:  1rem;     /* 16 — mobile gutter */
+  --space-5:  1.25rem;  /* 20 */
+  --space-6:  1.5rem;   /* 24 — card padding */
+  --space-8:  2rem;     /* 32 — desktop gutter */
+  --space-10: 2.5rem;   /* 40 */
+  --space-12: 3rem;     /* 48 */
+  --space-16: 4rem;     /* 64 */
+
+  /* ---------- Radius ---------- */
+  --radius-xs:   8px;
+  --radius-sm:   12px;
+  --radius-md:   16px;
+  --radius-lg:   22px;
+  --radius-xl:   28px;
+  --radius-full: 9999px;
+
+  /* ---------- Shadow ---------- */
+  --shadow-xs: 0 1px 2px  light-dark(rgb(15 23 42 / 0.04), rgb(0 0 0 / 0.30));
+  --shadow-sm: 0 2px 8px  light-dark(rgb(15 23 42 / 0.06), rgb(0 0 0 / 0.30));
+  --shadow-md: 0 4px 16px light-dark(rgb(15 23 42 / 0.08), rgb(0 0 0 / 0.35));
+  --shadow-lg: 0 8px 32px light-dark(rgb(15 23 42 / 0.10), rgb(0 0 0 / 0.45));
+  --shadow-xl: 0 16px 48px light-dark(rgb(15 23 42 / 0.14), rgb(0 0 0 / 0.55));
+
+  /* ---------- Glass (floating controls over the scene) ---------- */
+  --glass-bg:     light-dark(rgb(255 255 255 / 0.85), rgb(15 23 42 / 0.80));
+  --glass-border: light-dark(rgb(255 255 255 / 0.50), rgb(148 163 184 / 0.15));
+  --glass-blur:   20px;
+
+  /* ---------- Sizing ---------- */
+  --size-touch:        44px;
+  --size-button-h:     48px;
+  --size-input-h:      48px;
+  --size-header-h:     64px;
+  --size-panel-w:      360px;
+  --size-timeline-h:   72px;
+  --size-content-max:  1104px;
+  --size-content-wide: 1240px;  /* vehicles step */
+  --size-split-main:   28rem;   /* form column next to the map */
+  --size-split-side:   22rem;   /* side column on the vehicles step */
+  --size-map-h:        34rem;   /* hero map, desktop */
+  --size-map-h-sm:     16rem;   /* mini map and phone map */
+  --size-map-h-lg:     clamp(26rem, 62vh, 44rem);   /* location step map, desktop: near full width */
+  --size-map-h-lg-tip: clamp(22rem, 50vh, 40rem);   /* the same map while a tip is showing above it (tips.css), so the attribution stays on screen */
+  --size-street-line:  6px;     /* chosen street highlight on the map */
+  --size-street-halo:  14px;
+  --size-tile-min:     5.5rem;
+  --size-compass:      9.5rem;
+  --size-year-field:   5.5rem;
+  --size-map-h-mobile: 240px;
+  --size-focus-ring:   2px;
+  --size-focus-offset: 2px;
+  --size-border:       1px;
+  --size-stroke-tag:   2.5px;  /* vehicle letter ring in diagrams */
+  --size-stroke-ghost: 1.5px;  /* final-rest outline in the viewer */
+  --size-icon:         20px;
+  --size-icon-sm:      16px;
+  --size-avatar:       36px;
+  --size-pin:          32px;
+  --size-readout-w:    10rem;   /* timeline time readout */
+  --size-viewer-min-h: 36rem;   /* desktop viewer area */
+  --size-viewer-h-mobile: 50vh;
+  --size-viewer-min-h-mobile: 20rem;
+  --size-dialog-max:   34rem;
+  --size-preview-max-h: 27rem;
+  --size-switch-w:     2.75rem;
+  --size-zones-w:      13.75rem; /* impact-zone picker */
+
+  /* ---------- Export canvases ---------- */
+  --size-page-w:       8.5in;   /* US Letter */
+  --size-page-h:       11in;
+  --size-page-margin:  0.5in;
+  --size-png-diagram:  1600px;  /* top-down PNG, square */
+  --size-png-3d-w:     1920px;
+  --size-png-3d-h:     1080px;
+  --aspect-map:        4 / 3;
+  --aspect-pdf-fig:    2 / 1;    /* map and diagram on the PDF */
+  --aspect-pdf-fig-compact: 3 / 1;  /* when 3–4 vehicles need the room */
+
+  /* ---------- Opacity ---------- */
+  --opacity-disabled:  0.5;
+  --opacity-busy:      0.7;
+  --opacity-path:      0.6;
+  --opacity-glass-fill: 0.85;
+  --opacity-shadow:    0.18;
+
+  /* ---------- Motion ---------- */
+  --duration-fast:   120ms;
+  --duration-base:   200ms;
+  --duration-slow:   320ms;
+  --duration-camera: 600ms;
+  --duration-toast:  4000ms;  /* how long a toast stays; not affected by reduced motion */
+  --ease-standard:   cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit:       cubic-bezier(0.4, 0, 1, 1);
+
+  /* ---------- Layers ---------- */
+  --z-scene:    0;
+  --z-labels:   10;
+  --z-controls: 20;
+  --z-header:   30;
+  --z-sheet:    40;
+  --z-modal:    50;
+  --z-toast:    60;
+
+  /* Breakpoints (reference; media queries cannot read vars):
+     md 768px, lg 1024px, xl 1280px */
+}
+
+:root.light { color-scheme: light; }
+:root.dark  { color-scheme: dark; }
+
+@media (max-width: 767px) {
+  :root { --size-header-h: 56px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast:   0ms;
+    --duration-base:   0ms;
+    --duration-slow:   0ms;
+    --duration-camera: 0ms;
+  }
+}

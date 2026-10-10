@@ -1,0 +1,69 @@
+/* 3D viewer overlay. Tokens only (stylelint enforces it). */
+.viewer3d { position: relative; width: 100%; height: 100%; min-height: var(--size-viewer-min-h-mobile); background: var(--color-scene-ground); }
+.viewer3d canvas { display: block; }
+.viewer3d-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: var(--z-labels); }
+.viewer3d-leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.viewer3d-leader { stroke: var(--vehicle, var(--color-scene-measure)); stroke-width: var(--size-focus-ring); stroke-linecap: round; }
+.viewer3d-dot {
+  position: absolute; left: 0; top: 0; margin: calc(var(--space-1) * -0.75) 0 0 calc(var(--space-1) * -0.75);
+  width: calc(var(--space-1) * 1.5); height: calc(var(--space-1) * 1.5); border-radius: var(--radius-full);
+  background: var(--vehicle, var(--color-scene-measure));
+}
+.viewer3d-label {
+  position: absolute; left: 0; top: 0;
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  height: var(--space-6); padding: var(--space-0) var(--space-3) var(--space-0) var(--space-1);
+  border: none; border-radius: var(--radius-full); white-space: nowrap;
+  background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-md);
+  font-family: var(--font-sans); font-size: var(--text-xs); font-weight: var(--weight-semibold);
+}
+button.viewer3d-label { pointer-events: auto; cursor: pointer; }
+button.viewer3d-label:hover { background: var(--color-surface-2); }
+button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: var(--size-focus-offset); }
+.viewer3d-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--space-5); height: var(--space-5); border-radius: var(--radius-full);
+  background: var(--vehicle, var(--color-scene-measure)); color: var(--color-text-on-brand);
+  font-weight: var(--weight-extrabold);
+}
+.viewer3d-measure { border: var(--size-border) solid var(--color-border-strong); box-shadow: var(--shadow-sm); }
+.viewer3d-measure .viewer3d-badge { background: var(--color-scene-measure); color: var(--color-surface); }
+.viewer3d-measure .viewer3d-text { font-family: var(--font-mono); }
+.v-a { --vehicle: var(--color-vehicle-a); }
+.v-b { --vehicle: var(--color-vehicle-b); }
+.v-c { --vehicle: var(--color-vehicle-c); }
+.v-d { --vehicle: var(--color-vehicle-d); }
+.viewer3d-leader.is-measure, .viewer3d-dot.is-measure { --vehicle: var(--color-scene-measure); }
+
+/* Zoom buttons, reset, and the legend: bottom left, clear of the view controls (top right) and the caption (bottom right). */
+.viewer3d-hud { position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: var(--z-controls); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.viewer3d-hud-row { display: flex; align-items: center; gap: var(--space-2); }
+.viewer3d-controls { display: flex; padding: var(--space-1); border-radius: var(--radius-full); background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); box-shadow: var(--shadow-md); }
+.viewer3d-controls .icon-btn { color: var(--color-text); }
+.viewer3d-controls .icon-btn:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: calc(var(--size-focus-offset) * -1); }
+.viewer3d-legend { padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); background: var(--glass-bg); font-size: var(--text-xs); color: var(--color-text-secondary); }
+
+/* The one-time hint on the first plain wheel over the picture. */
+.viewer3d-hint {
+  position: absolute; left: 50%; bottom: var(--space-12); z-index: var(--z-controls); transform: translateX(-50%);
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); white-space: nowrap; pointer-events: none;
+  background: var(--color-text); color: var(--color-bg); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  opacity: 0; transition: opacity var(--duration-slow) var(--ease-standard);
+}
+.viewer3d-hint:empty { display: none; }
+.viewer3d-hint.is-on { opacity: 1; }
+
+/* Compass: turns so its arrow always points north. Bottom left, in one row with the zoom buttons, clear of the view chips (top) and the timeline (below the picture). */
+.viewer3d-compass {
+  --compass-deg: 0deg;
+  position: relative; box-sizing: border-box; width: var(--size-touch); height: var(--size-touch); padding: var(--space-0);
+  border: none; border-radius: var(--radius-full); cursor: pointer; color: var(--color-text);
+  background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); box-shadow: var(--shadow-md);
+}
+.viewer3d-compass:hover { background: var(--color-surface); }
+.viewer3d-compass:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: var(--size-focus-offset); }
+.viewer3d-compass[aria-disabled="true"] { cursor: default; color: var(--color-text-secondary); }
+.viewer3d-compass-dial { position: absolute; inset: var(--space-0); display: flex; align-items: center; justify-content: center; transform: rotate(var(--compass-deg)); }
+.viewer3d-compass-dial .icon { width: var(--size-icon); height: var(--size-icon); }
+/* The N rides the top of the dial and is turned back so it stays upright. */
+.viewer3d-compass-n { position: absolute; top: calc(var(--space-1) * 0.75); left: 50%; translate: -50% var(--space-0); font-size: var(--text-xs); font-weight: var(--weight-bold); line-height: 1; transform: rotate(calc(var(--compass-deg) * -1)); }

@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crash scene illustration · InsurifyAI (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="styles.css">
+<script src="node_modules/leaflet/dist/leaflet.js" defer></script>
+<script type="module" src="src/app.js"></script>
+</head>
+<body>
+<!-- Every distance, speed and time on these screens comes from the prototype
+     physics (src/physics.js) for the current scene. The real app replaces that
+     module; nothing here is copied into the app as a number. -->
+
+<div id="app">
+  <header class="app-header">
+    <a class="logo" href="#location" aria-label="InsurifyAI">
+      <svg class="icon logo-mark" aria-hidden="true"><use href="#i-shield"/></svg>
+      <span class="logo-word">Insurify<span>AI</span></span>
+    </a>
+    <span class="claim-chip"><span class="claim-no">Claim CLM-2419</span><span class="long"> · <span id="claim-vehicle">2021 Honda Accord</span></span></span>
+    <span class="header-spacer"></span>
+    <button class="icon-btn" type="button" id="theme-toggle" aria-label="Switch light or dark theme (prototype only)"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
+    <a class="icon-btn" href="#location" aria-label="Close and go back to the claim"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></a>
+  </header>
+
+  <div class="disclaimer-bar" role="note">
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
+    <span><strong>Illustration only.</strong><span class="long"> This shows what you described. It is not an expert reconstruction and does not decide fault.</span></span>
+    <button type="button" class="link-btn" data-open="disclaimer-dialog">Learn more</button>
+  </div>
+
+  <nav class="stepper" aria-label="Progress">
+    <ol>
+      <li data-step="1"><a href="#location"><span class="step-dot"><span class="n">1</span><svg class="icon icon-xs" aria-hidden="true"><use href="#i-check"/></svg></span>Location</a></li>
+      <li data-step="2"><a href="#vehicles"><span class="step-dot"><span class="n">2</span><svg class="icon icon-xs" aria-hidden="true"><use href="#i-check"/></svg></span>Vehicles</a></li>
+      <li data-step="3"><a href="#review"><span class="step-dot"><span class="n">3</span><svg class="icon icon-xs" aria-hidden="true"><use href="#i-check"/></svg></span>Review</a></li>
+      <li data-step="4"><a href="#export"><span class="step-dot"><span class="n">4</span><svg class="icon icon-xs" aria-hidden="true"><use href="#i-check"/></svg></span>Save</a></li>
+    </ol>
+    <p class="stepper-compact" aria-hidden="true"><span id="step-compact">Step 1 of 4 · Location</span><span class="bar"><span id="step-bar"></span></span></p>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span id="toast-text"></span><button class="icon-btn icon-btn-sm" type="button" id="toast-close" aria-label="Dismiss"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+
+  <main>
+    <!-- ============ STEP 1: LOCATION ============ -->
+    <section class="screen" id="screen-location" aria-labelledby="h-location">
+      <div class="split split-location">
+        <div class="split-head">
+          <h1 class="title" id="h-location">Where did it happen?</h1>
+          <p class="lede">Search for the place, then drag the pin to where the vehicles hit.</p>
+        </div>
+
+        <div class="split-search">
+          <form class="search" id="search-form" role="search" novalidate>
+            <label class="field-label" for="q">Address, intersection or landmark</label>
+            <div class="search-row">
+              <div class="input-wrap">
+                <svg class="icon icon-sm input-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                <input class="input" id="q" name="q" type="search" autocomplete="off" enterkeyhint="search" spellcheck="false">
+              </div>
+              <button class="btn btn-secondary" type="submit" id="search-btn"><span class="btn-label">Search</span></button>
+            </div>
+            <div id="search-status" class="search-status" aria-live="polite"></div>
+            <ul class="results" id="results" aria-label="Search results" hidden></ul>
+            <p class="attrib" id="search-attrib" hidden>Search by Nominatim · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a></p>
+          </form>
+        </div>
+
+        <div class="split-side">
+          <div class="map-frame">
+            <div class="map" id="map" role="application" aria-label="Map. Drag the pin, or tap the map to move it."></div>
+            <p class="map-hint" id="map-hint"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-pin"/></svg><span>Drag the pin to where the vehicles hit</span></p>
+            <div class="map-tools" role="group" aria-label="Map controls">
+              <button class="map-tool" type="button" id="zoom-in" aria-label="Zoom in"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+              <button class="map-tool" type="button" id="zoom-out" aria-label="Zoom out"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
+              <button class="map-tool" type="button" id="recenter" aria-label="Center on the pin"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></button>
+            </div>
+            <div class="map-empty" id="map-empty" hidden><svg class="icon icon-lg" aria-hidden="true"><use href="#i-pin"/></svg><p>Search for the place, or tap the map to drop the pin.</p></div>
+          </div>
+          <p class="coords" id="coords"><span class="coords-label" id="coords-label">No pin yet</span><span class="num" id="coords-value"></span></p>
+        </div>
+
+        <div class="split-main">
+
+          <fieldset class="group">
+            <legend class="group-label">What kind of place?</legend>
+            <div class="tiles tiles-3" id="place-tiles">
+              <label class="tile"><input type="radio" name="place" value="intersection"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-place-intersection"/></svg><span>Intersection</span></label>
+              <label class="tile"><input type="radio" name="place" value="road"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-place-road"/></svg><span>Road</span></label>
+              <label class="tile"><input type="radio" name="place" value="parking"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-place-parking"/></svg><span>Parking lot</span></label>
+            </div>
+          </fieldset>
+
+          <div class="group" id="streets-group">
+            <p class="group-label">Street names <span class="optional">optional</span></p>
+            <div class="row-2">
+              <div class="field"><label class="field-sub" for="street-ew">East–west street</label><input class="input" id="street-ew" type="text" autocomplete="off"></div>
+              <div class="field" id="street-ns-field"><label class="field-sub" for="street-ns">North–south street</label><input class="input" id="street-ns" type="text" autocomplete="off"></div>
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="group-label">When did it happen?</p>
+            <div class="row-2">
+              <div class="field"><label class="field-sub" for="date">Date</label><input class="input" id="date" type="date"></div>
+              <div class="field"><label class="field-sub" for="time">Time</label><input class="input" id="time" type="time"></div>
+            </div>
+            <p class="hint">From your claim. Change it if it's wrong.</p>
+          </div>
+
+          <fieldset class="group">
+            <legend class="group-label">What was the road like?</legend>
+            <div class="tiles tiles-4" id="road-tiles">
+              <label class="tile"><input type="radio" name="road" value="dry"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-road-dry"/></svg><span>Dry</span></label>
+              <label class="tile"><input type="radio" name="road" value="wet"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-road-wet"/></svg><span>Wet</span></label>
+              <label class="tile"><input type="radio" name="road" value="snow"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-road-snow"/></svg><span>Snow</span></label>
+              <label class="tile"><input type="radio" name="road" value="ice"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-road-ice"/></svg><span>Ice</span></label>
+            </div>
+            <p class="hint">This changes how far the vehicles slide in the picture.</p>
+          </fieldset>
+
+          <div class="actions">
+            <a class="btn btn-primary" href="#vehicles" id="to-vehicles">Next: vehicles <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ STEP 2: VEHICLES ============ -->
+    <section class="screen" id="screen-vehicles" aria-labelledby="h-vehicles">
+      <div class="split split-wide">
+        <div class="split-head">
+          <h1 class="title" id="h-vehicles">Which vehicles were involved?</h1>
+          <p class="lede">Best guesses are fine. You can change anything later.</p>
+        </div>
+        <div class="split-side">
+          <div class="map-frame map-frame-sm">
+            <div class="map map-sm" id="mini-map" aria-label="Map showing where each vehicle was going"></div>
+            <div class="map-empty" id="mini-map-empty" hidden><svg class="icon icon-lg" aria-hidden="true"><use href="#i-pin"/></svg><p>Set the place in step 1 to see the vehicles on the map.</p></div>
+          </div>
+          <p class="hint">Each vehicle is drawn where it came from, pointing the way it was facing.</p>
+        </div>
+        <div class="split-main">
+          <div id="vehicle-list" class="vehicle-list"></div>
+          <button class="btn btn-quiet add-vehicle" type="button" id="add-vehicle"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"/></svg><span>Add another vehicle</span></button>
+          <div class="warnings" id="vehicle-warnings" role="alert" hidden>
+            <p class="warnings-title"><svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>Some details don't fit together</p>
+            <ul id="vehicle-warning-list"></ul>
+            <div class="warnings-actions">
+              <button class="btn btn-secondary" type="button" id="warn-fix">Fix the details</button>
+              <a class="btn btn-quiet" href="#review" id="warn-continue">See it anyway</a>
+            </div>
+          </div>
+          <div class="actions">
+            <a class="btn btn-quiet" href="#location"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back</a>
+            <button class="btn btn-primary" type="button" id="to-review">See the recreation <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ STEP 3: REVIEW ============ -->
+    <section class="screen" id="screen-review" aria-labelledby="h-review">
+      <div class="review-head">
+        <h1 class="title" id="h-review">Does this match what happened?</h1>
+        <div class="warnings warnings-inline" id="review-warnings" hidden>
+          <p class="warnings-title"><svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>Some details don't fit together</p>
+          <ul id="review-warning-list"></ul>
+          <a class="link-btn" href="#vehicles">Edit the details</a>
+        </div>
+      </div>
+      <div class="viewer-layout">
+        <div class="viewer">
+          <div class="viewer-canvas" id="viewer-canvas" tabindex="0" role="application" aria-roledescription="diagram" aria-label="Illustration of the crash. Space plays, I jumps to impact.">
+            <div class="diagram-host" id="review-diagram"></div>
+            <div class="measure-pills" id="measure-pills"></div>
+            <div class="label-layer" id="label-layer"></div>
+            <div class="view-controls" role="group" aria-label="View">
+              <button class="seg" type="button" data-view="near" aria-pressed="true">Close</button>
+              <button class="seg" type="button" data-view="wide" aria-pressed="false">Wide</button>
+            </div>
+            <span class="scene-caption">Top view · 3D comes in the app</span>
+          </div>
+          <div class="timeline">
+            <button class="play" type="button" id="play" aria-label="Play"><svg class="icon" aria-hidden="true"><use href="#i-play" id="play-icon"/></svg></button>
+            <div class="track-wrap" id="track-wrap">
+              <div class="track" id="track" role="slider" tabindex="0" aria-label="Timeline">
+                <span class="track-fill" id="track-fill"></span>
+                <span class="track-impact" id="track-impact"><span class="track-impact-label">Impact</span></span>
+                <span class="thumb" id="thumb"></span>
+              </div>
+            </div>
+            <span class="readout" id="readout" aria-hidden="true"></span>
+            <select class="rate" id="rate" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option></select>
+          </div>
+        </div>
+
+        <aside class="panel" aria-label="Scene details">
+          <span class="sheet-handle" aria-hidden="true"></span>
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" aria-selected="true" aria-controls="tab-vehicles" id="t-vehicles" type="button">Vehicles</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="tab-measure" id="t-measure" type="button">Measure</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="tab-view" id="t-view" type="button">View</button>
+          </div>
+          <div class="panel-body" role="tabpanel" id="tab-vehicles" aria-labelledby="t-vehicles">
+            <ul class="summary-list" id="summary-list"></ul>
+            <p class="summary-road" id="summary-road"></p>
+            <p class="summary-text" id="scene-summary"></p>
+          </div>
+          <div class="panel-body" role="tabpanel" id="tab-measure" aria-labelledby="t-measure" hidden>
+            <label class="switch-row"><span>Show on the picture</span><input class="switch" type="checkbox" id="sw-measure"></label>
+            <dl class="measure-list" id="measure-list"></dl>
+            <p class="hint" id="measure-note"></p>
+          </div>
+          <div class="panel-body" role="tabpanel" id="tab-view" aria-labelledby="t-view" hidden>
+            <label class="switch-row"><span>Vehicle labels</span><input class="switch" type="checkbox" id="sw-labels" checked></label>
+            <label class="switch-row"><span>Paths</span><input class="switch" type="checkbox" id="sw-paths" checked></label>
+            <fieldset class="group">
+              <legend class="group-label">Units on screen</legend>
+              <div class="segmented" id="units">
+                <label><input type="radio" name="units" value="us" checked><span>ft · mph</span></label>
+                <label><input type="radio" name="units" value="metric"><span>m · km/h</span></label>
+              </div>
+            </fieldset>
+            <p class="hint">Keys: <kbd>Space</kbd> play · <kbd>←</kbd><kbd>→</kbd> step · <kbd>Home</kbd><kbd>End</kbd> · <kbd>I</kbd> impact</p>
+          </div>
+          <div class="panel-foot">
+            <a class="btn btn-primary" href="#export" id="to-export">Looks right: save it</a>
+            <a class="btn btn-quiet" href="#vehicles">Edit details</a>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ STEP 4: SAVE ============ -->
+    <section class="screen" id="screen-export" aria-labelledby="h-export">
+      <div class="split split-save">
+        <div class="split-head">
+          <h1 class="title" id="h-export">What do you want to save?</h1>
+          <p class="lede">Made on your device. Nothing is uploaded.</p>
+        </div>
+        <div class="split-side">
+          <div class="preview-frame">
+            <div class="segmented preview-tabs" role="tablist" aria-label="Preview">
+              <button type="button" role="tab" aria-selected="true" data-preview="pdf">PDF</button>
+              <button type="button" role="tab" aria-selected="false" data-preview="png">Diagram</button>
+              <button type="button" role="tab" aria-selected="false" data-preview="json">Scene file</button>
+            </div>
+            <div class="preview-host" id="preview-host"></div>
+            <a class="link-btn" id="preview-open" href="#pdf">Open full size</a>
+          </div>
+        </div>
+        <div class="split-main">
+          <fieldset class="options" id="export-options">
+            <legend class="visually-hidden">Files to save</legend>
+            <label class="option"><input type="checkbox" name="fmt" value="pdf" checked>
+              <span class="option-body"><span class="option-title">PDF summary</span>
+              <span class="option-desc">One page: place and time, map, diagram, each vehicle, distances, assumptions and the notice.</span></span></label>
+            <label class="option"><input type="checkbox" name="fmt" value="png" checked>
+              <span class="option-body"><span class="option-title">Diagram picture</span>
+              <span class="option-desc">Top-down picture with distances in feet and meters. Impact and final-rest pictures come with 3D.</span></span></label>
+            <label class="option"><input type="checkbox" name="fmt" value="json">
+              <span class="option-body"><span class="option-title">Scene file</span>
+              <span class="option-desc">Open it here again to get the exact same recreation.</span></span></label>
+          </fieldset>
+
+          <p class="open-scene"><label class="link-btn" for="open-scene">Open a saved scene file</label><input type="file" id="open-scene" class="visually-hidden" accept="application/json,.json"></p>
+
+          <div class="coming">
+            <p class="group-label">Coming next</p>
+            <p class="coming-row"><strong>Video clip.</strong> Needs an in-browser video encoder and a size limit.</p>
+            <p class="coming-row"><strong>Share link.</strong> Needs hosting, link expiry and control over who can open it.</p>
+          </div>
+
+          <div class="stamp" id="export-stamp" aria-live="polite"></div>
+          <div class="actions">
+            <a class="btn btn-quiet" href="#review"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back</a>
+            <button class="btn btn-primary" type="button" id="save-btn"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-download"/></svg>Save to my device</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ EXPORT PAGES (full size, rendered from state) ============ -->
+<section class="screen" id="screen-pdf" aria-label="PDF summary page">
+  <div class="page-wrap"><article class="pdf" id="pdf-page"></article></div>
+</section>
+<section class="screen" id="screen-png" aria-label="Diagram picture">
+  <div class="page-wrap"><article class="png" id="png-page"></article></div>
+</section>
+
+<dialog id="disclaimer-dialog" aria-labelledby="dlg-title">
+  <div class="dialog-body">
+    <h2 id="dlg-title">About this illustration</h2>
+    <p>This 3D illustration was made in your browser by InsurifyAI from details you entered: location, vehicles, directions and estimated speeds. It is a simplified picture to help explain your account. It is not an expert accident reconstruction, expert opinion or evidence of fault, and real vehicle movement may have been different.</p>
+    <form method="dialog" class="actions"><button class="btn btn-primary">Got it</button></form>
+  </div>
+</dialog>
+
+<!-- ============ TEMPLATES ============ -->
+<template id="tpl-vehicle">
+  <article class="vehicle" data-vehicle>
+    <header class="vehicle-head">
+      <span class="badge-letter" data-letter>A</span>
+      <div class="vehicle-title">
+        <h2 data-role>Your car</h2>
+        <p class="vehicle-sub" data-sub></p>
+      </div>
+      <button class="btn btn-quiet btn-sm" type="button" data-remove><svg class="icon icon-sm" aria-hidden="true"><use href="#i-trash"/></svg><span>Remove</span></button>
+    </header>
+
+    <div class="vehicle-grid">
+      <div class="group">
+        <p class="group-label">Vehicle</p>
+        <div class="ymm">
+          <div class="field field-year"><label class="field-sub" data-for="year">Year</label><input class="input num" data-field="year" type="text" inputmode="numeric" maxlength="4" autocomplete="off"></div>
+          <div class="field"><label class="field-sub" data-for="make">Make</label><input class="input" data-field="make" type="text" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label class="field-sub" data-for="model">Model</label><input class="input" data-field="model" type="text" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <p class="lookup" data-lookup aria-live="polite"></p>
+        <fieldset class="tiles tiles-6 tiles-compact" data-types>
+          <legend class="field-sub">Type</legend>
+        </fieldset>
+      </div>
+
+      <fieldset class="group">
+        <legend class="group-label">What was it doing?</legend>
+        <div class="tiles tiles-5 tiles-compact" data-actions></div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend class="group-label" data-dir-legend>Which way was it facing?</legend>
+        <div class="direction">
+          <div class="compass" data-compass role="radiogroup">
+            <span class="compass-center" aria-hidden="true"><svg class="icon icon-lg" data-dir-arrow><use href="#i-heading"/></svg></span>
+          </div>
+          <p class="dir-caption" data-dir-caption></p>
+        </div>
+      </fieldset>
+
+      <div class="group" data-speed-group>
+        <p class="group-label" data-speed-label>About how fast at the moment of the crash?</p>
+        <div class="speed-row">
+          <div class="stepper-input" role="group" data-speed-box>
+            <button class="icon-btn" type="button" data-speed="-5" aria-label="Slower"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
+            <output class="num stepper-value" data-speed-out></output><span class="unit">mph</span>
+            <button class="icon-btn" type="button" data-speed="5" aria-label="Faster"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          </div>
+          <button class="chip" type="button" data-unsure aria-pressed="false">Not sure</button>
+        </div>
+        <div class="limit" data-limit-row hidden>
+          <p class="field-sub" data-limit-label>Speed limit there</p>
+          <div class="speed-row">
+            <div class="stepper-input" role="group" data-limit-box>
+              <button class="icon-btn" type="button" data-limit="-5" aria-label="Lower limit"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
+              <output class="num stepper-value" data-limit-out></output><span class="unit">mph</span>
+              <button class="icon-btn" type="button" data-limit="5" aria-label="Higher limit"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+            </div>
+            <button class="chip" type="button" data-nolimit aria-pressed="false">I don't know the limit</button>
+          </div>
+          <p class="hint" data-range-note></p>
+        </div>
+      </div>
+
+      <fieldset class="group">
+        <legend class="group-label">Where was it hit?</legend>
+        <div class="zones" data-zones>
+          <span class="zones-body" aria-hidden="true"><svg class="icon" data-zone-icon><use href="#i-veh-car"/></svg></span>
+        </div>
+      </fieldset>
+    </div>
+  </article>
+</template>
+
+</body>
+</html>

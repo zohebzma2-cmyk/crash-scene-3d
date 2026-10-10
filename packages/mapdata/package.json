@@ -1,0 +1,15 @@
+{
+  "name": "@csd/mapdata",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@csd/core": "*"
+  },
+  "devDependencies": {
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0"
+  }
+}

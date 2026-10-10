@@ -1,0 +1,1826 @@
+{
+ "version": 0.6,
+ "generator": "Overpass API 0.7.62.11 87bfad18",
+ "osm3s": {
+  "timestamp_osm_base": "2026-10-10T00:03:35Z",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+ },
+ "elements": [
+  {
+   "type": "way",
+   "id": 5611808,
+   "bounds": {
+    "minlat": 42.7646911,
+    "minlon": -71.4675536,
+    "maxlat": 42.7654445,
+    "maxlon": -71.467153
+   },
+   "nodes": [
+    41353060,
+    8398213324,
+    8398213328,
+    8398213329,
+    7794675350,
+    8398176162,
+    8398176163,
+    8398168797,
+    41629050,
+    41550383
+   ],
+   "geometry": [
+    {
+     "lat": 42.7654445,
+     "lon": -71.4675501
+    },
+    {
+     "lat": 42.7654106,
+     "lon": -71.4675536
+    },
+    {
+     "lat": 42.7653756,
+     "lon": -71.4675519
+    },
+    {
+     "lat": 42.7653529,
+     "lon": -71.4675475
+    },
+    {
+     "lat": 42.7653322,
+     "lon": -71.4675421
+    },
+    {
+     "lat": 42.765311,
+     "lon": -71.4675347
+    },
+    {
+     "lat": 42.765277,
+     "lon": -71.4675227
+    },
+    {
+     "lat": 42.7652461,
+     "lon": -71.4675103
+    },
+    {
+     "lat": 42.7650576,
+     "lon": -71.4673966
+    },
+    {
+     "lat": 42.7646911,
+     "lon": -71.467153
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "3",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "ref": "NH 101A",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|left|through;right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 32285508,
+   "bounds": {
+    "minlat": 42.7633663,
+    "minlon": -71.466584,
+    "maxlat": 42.7637176,
+    "maxlon": -71.4664213
+   },
+   "nodes": [
+    8398366326,
+    362909400
+   ],
+   "geometry": [
+    {
+     "lat": 42.7637176,
+     "lon": -71.466584
+    },
+    {
+     "lat": 42.7633663,
+     "lon": -71.4664213
+    }
+   ],
+   "tags": {
+    "bridge": "yes",
+    "highway": "secondary",
+    "lanes": "4",
+    "layer": "1",
+    "maxbogieweight": "25 st",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 32285512,
+   "bounds": {
+    "minlat": 42.7631017,
+    "minlon": -71.4664213,
+    "maxlat": 42.7633663,
+    "maxlon": -71.4662942
+   },
+   "nodes": [
+    362909400,
+    41590180
+   ],
+   "geometry": [
+    {
+     "lat": 42.7633663,
+     "lon": -71.4664213
+    },
+    {
+     "lat": 42.7631017,
+     "lon": -71.4662942
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "2",
+    "lanes:forward": "3",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left|through|through"
+   }
+  },
+  {
+   "type": "way",
+   "id": 42674102,
+   "bounds": {
+    "minlat": 42.7637176,
+    "minlon": -71.4668191,
+    "maxlat": 42.7641635,
+    "maxlon": -71.466584
+   },
+   "nodes": [
+    41570278,
+    8346994918,
+    8346921801,
+    11925973776,
+    8346921802,
+    41694649,
+    2011923720,
+    8398638879,
+    8398366326
+   ],
+   "geometry": [
+    {
+     "lat": 42.7641635,
+     "lon": -71.4668191
+    },
+    {
+     "lat": 42.7641348,
+     "lon": -71.4668017
+    },
+    {
+     "lat": 42.7640787,
+     "lon": -71.4667703
+    },
+    {
+     "lat": 42.7640666,
+     "lon": -71.4667637
+    },
+    {
+     "lat": 42.7640367,
+     "lon": -71.4667474
+    },
+    {
+     "lat": 42.7639259,
+     "lon": -71.4666882
+    },
+    {
+     "lat": 42.763887,
+     "lon": -71.4666694
+    },
+    {
+     "lat": 42.763875,
+     "lon": -71.4666636
+    },
+    {
+     "lat": 42.7637176,
+     "lon": -71.466584
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "6",
+    "lanes:backward": "4",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|through|through|right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 42704391,
+   "bounds": {
+    "minlat": 42.7708036,
+    "minlon": -71.4890559,
+    "maxlat": 42.7749967,
+    "maxlon": -71.4811646
+   },
+   "nodes": [
+    41397926,
+    8451504447,
+    41397939,
+    41397948,
+    41397950,
+    8658970586,
+    41397954,
+    2748607453,
+    41397958,
+    41397963,
+    12013020910,
+    5168242701,
+    41397968,
+    2351793901,
+    2351793888,
+    41397980,
+    41397984,
+    41397985,
+    5168242708,
+    41397996,
+    12013005067,
+    41397998,
+    41398003,
+    41398006,
+    41398013
+   ],
+   "geometry": [
+    {
+     "lat": 42.7749967,
+     "lon": -71.4890559
+    },
+    {
+     "lat": 42.774977,
+     "lon": -71.4890187
+    },
+    {
+     "lat": 42.774582,
+     "lon": -71.4882948
+    },
+    {
+     "lat": 42.7742109,
+     "lon": -71.4876133
+    },
+    {
+     "lat": 42.7740586,
+     "lon": -71.4873341
+    },
+    {
+     "lat": 42.7738759,
+     "lon": -71.4870011
+    },
+    {
+     "lat": 42.7738199,
+     "lon": -71.4868976
+    },
+    {
+     "lat": 42.7736298,
+     "lon": -71.4865518
+    },
+    {
+     "lat": 42.773419,
+     "lon": -71.486174
+    },
+    {
+     "lat": 42.7733098,
+     "lon": -71.4859736
+    },
+    {
+     "lat": 42.7732537,
+     "lon": -71.4858753
+    },
+    {
+     "lat": 42.773205,
+     "lon": -71.4857878
+    },
+    {
+     "lat": 42.773027,
+     "lon": -71.485468
+    },
+    {
+     "lat": 42.772777,
+     "lon": -71.4850092
+    },
+    {
+     "lat": 42.7726562,
+     "lon": -71.4847874
+    },
+    {
+     "lat": 42.772541,
+     "lon": -71.484576
+    },
+    {
+     "lat": 42.772127,
+     "lon": -71.4838039
+    },
+    {
+     "lat": 42.7720707,
+     "lon": -71.4836985
+    },
+    {
+     "lat": 42.7717118,
+     "lon": -71.4830408
+    },
+    {
+     "lat": 42.7716885,
+     "lon": -71.4829979
+    },
+    {
+     "lat": 42.7715544,
+     "lon": -71.4827445
+    },
+    {
+     "lat": 42.7714339,
+     "lon": -71.4824973
+    },
+    {
+     "lat": 42.7711027,
+     "lon": -71.481801
+    },
+    {
+     "lat": 42.771019,
+     "lon": -71.4816223
+    },
+    {
+     "lat": 42.7708036,
+     "lon": -71.4811646
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "1",
+    "lanes:both_ways": "1",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt",
+    "turn:lanes:both_ways": "left"
+   }
+  },
+  {
+   "type": "way",
+   "id": 121967872,
+   "bounds": {
+    "minlat": 42.7601942,
+    "minlon": -71.4651748,
+    "maxlat": 42.7605662,
+    "maxlon": -71.4650098
+   },
+   "nodes": [
+    8773496859,
+    8406570785,
+    4313744906,
+    41351944
+   ],
+   "geometry": [
+    {
+     "lat": 42.7605662,
+     "lon": -71.4651748
+    },
+    {
+     "lat": 42.7603218,
+     "lon": -71.4650667
+    },
+    {
+     "lat": 42.7602726,
+     "lon": -71.465045
+    },
+    {
+     "lat": 42.7601942,
+     "lon": -71.4650098
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:forward": "through|through;right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 157474287,
+   "bounds": {
+    "minlat": 42.7573663,
+    "minlon": -71.4639555,
+    "maxlat": 42.757876,
+    "maxlon": -71.4637208
+   },
+   "nodes": [
+    41367283,
+    8358974353,
+    8406580678,
+    8406618074,
+    8773496862
+   ],
+   "geometry": [
+    {
+     "lat": 42.757876,
+     "lon": -71.4639555
+    },
+    {
+     "lat": 42.7578065,
+     "lon": -71.463921
+    },
+    {
+     "lat": 42.7577336,
+     "lon": -71.4638879
+    },
+    {
+     "lat": 42.757394,
+     "lon": -71.4637334
+    },
+    {
+     "lat": 42.7573663,
+     "lon": -71.4637208
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "6",
+    "lanes:backward": "4",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|through|through|right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 204711756,
+   "bounds": {
+    "minlat": 42.7552109,
+    "minlon": -71.4629519,
+    "maxlat": 42.7556585,
+    "maxlon": -71.4627508
+   },
+   "nodes": [
+    8403787321,
+    8773636843,
+    8403787324,
+    11990696590,
+    2188360846,
+    2191970811,
+    8773496864
+   ],
+   "geometry": [
+    {
+     "lat": 42.7556585,
+     "lon": -71.4629519
+    },
+    {
+     "lat": 42.7556064,
+     "lon": -71.4629279
+    },
+    {
+     "lat": 42.7555332,
+     "lon": -71.4628956
+    },
+    {
+     "lat": 42.7553262,
+     "lon": -71.4628026
+    },
+    {
+     "lat": 42.7552976,
+     "lon": -71.4627898
+    },
+    {
+     "lat": 42.7552752,
+     "lon": -71.4627807
+    },
+    {
+     "lat": 42.7552109,
+     "lon": -71.4627508
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:backward": "none|through;right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 226332245,
+   "bounds": {
+    "minlat": 42.769219,
+    "minlon": -71.4785844,
+    "maxlat": 42.7695971,
+    "maxlon": -71.477786
+   },
+   "nodes": [
+    8773496858,
+    8359198022,
+    9040102513,
+    41398029
+   ],
+   "geometry": [
+    {
+     "lat": 42.7695971,
+     "lon": -71.4785844
+    },
+    {
+     "lat": 42.7695768,
+     "lon": -71.4785413
+    },
+    {
+     "lat": 42.7695111,
+     "lon": -71.4784026
+    },
+    {
+     "lat": 42.769219,
+     "lon": -71.477786
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "2",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 232850670,
+   "bounds": {
+    "minlat": 42.7667137,
+    "minlon": -71.477786,
+    "maxlat": 42.769219,
+    "maxlon": -71.4722528
+   },
+   "nodes": [
+    41398029,
+    41398031,
+    41398037,
+    12013119569,
+    41398042,
+    12013119368,
+    12014958229,
+    41381458,
+    2624328650,
+    41398053,
+    2800314114,
+    41398057,
+    41398059,
+    2624328392,
+    41398062,
+    41398065,
+    41398068
+   ],
+   "geometry": [
+    {
+     "lat": 42.769219,
+     "lon": -71.477786
+    },
+    {
+     "lat": 42.768877,
+     "lon": -71.477063
+    },
+    {
+     "lat": 42.7686622,
+     "lon": -71.4766159
+    },
+    {
+     "lat": 42.7683476,
+     "lon": -71.4759475
+    },
+    {
+     "lat": 42.7683214,
+     "lon": -71.4758917
+    },
+    {
+     "lat": 42.7682956,
+     "lon": -71.4758378
+    },
+    {
+     "lat": 42.7677081,
+     "lon": -71.4746068
+    },
+    {
+     "lat": 42.7676772,
+     "lon": -71.4745421
+    },
+    {
+     "lat": 42.7673459,
+     "lon": -71.4738329
+    },
+    {
+     "lat": 42.7671907,
+     "lon": -71.4735007
+    },
+    {
+     "lat": 42.7671491,
+     "lon": -71.4734104
+    },
+    {
+     "lat": 42.7669661,
+     "lon": -71.4730018
+    },
+    {
+     "lat": 42.7669028,
+     "lon": -71.4728533
+    },
+    {
+     "lat": 42.7668701,
+     "lon": -71.4727678
+    },
+    {
+     "lat": 42.7668384,
+     "lon": -71.4726705
+    },
+    {
+     "lat": 42.7667541,
+     "lon": -71.4723912
+    },
+    {
+     "lat": 42.7667137,
+     "lon": -71.4722528
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "2",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 232850671,
+   "bounds": {
+    "minlat": 42.7657057,
+    "minlon": -71.4722528,
+    "maxlat": 42.7667137,
+    "maxlon": -71.4685045
+   },
+   "nodes": [
+    41398068,
+    41398076,
+    41398086,
+    12015159881,
+    41398091,
+    41398100,
+    41375647
+   ],
+   "geometry": [
+    {
+     "lat": 42.7667137,
+     "lon": -71.4722528
+    },
+    {
+     "lat": 42.766502,
+     "lon": -71.47145
+    },
+    {
+     "lat": 42.766185,
+     "lon": -71.4702737
+    },
+    {
+     "lat": 42.7661662,
+     "lon": -71.4702026
+    },
+    {
+     "lat": 42.7661368,
+     "lon": -71.4700914
+    },
+    {
+     "lat": 42.765783,
+     "lon": -71.468771
+    },
+    {
+     "lat": 42.7657057,
+     "lon": -71.4685045
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "2",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 232850694,
+   "bounds": {
+    "minlat": 42.7528442,
+    "minlon": -71.462342,
+    "maxlat": 42.7543383,
+    "maxlon": -71.4616564
+   },
+   "nodes": [
+    41694707,
+    11940027410,
+    8403751068,
+    8403751073,
+    2148528321,
+    41694709,
+    2253721602,
+    9040459933,
+    9040459940,
+    8403439903,
+    11940251036,
+    41252248
+   ],
+   "geometry": [
+    {
+     "lat": 42.7543383,
+     "lon": -71.462342
+    },
+    {
+     "lat": 42.7542777,
+     "lon": -71.4623141
+    },
+    {
+     "lat": 42.7542543,
+     "lon": -71.4623034
+    },
+    {
+     "lat": 42.7538394,
+     "lon": -71.4621078
+    },
+    {
+     "lat": 42.7537664,
+     "lon": -71.4620746
+    },
+    {
+     "lat": 42.7535907,
+     "lon": -71.4619975
+    },
+    {
+     "lat": 42.753358,
+     "lon": -71.4618848
+    },
+    {
+     "lat": 42.753207,
+     "lon": -71.4618156
+    },
+    {
+     "lat": 42.7530318,
+     "lon": -71.4617416
+    },
+    {
+     "lat": 42.7529717,
+     "lon": -71.4617158
+    },
+    {
+     "lat": 42.752924,
+     "lon": -71.4616936
+    },
+    {
+     "lat": 42.7528442,
+     "lon": -71.4616564
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "maxspeed": "25 mph",
+    "name": "Main Street"
+   }
+  },
+  {
+   "type": "way",
+   "id": 580207596,
+   "bounds": {
+    "minlat": 42.7589306,
+    "minlon": -71.4647255,
+    "maxlat": 42.7595616,
+    "maxlon": -71.4644384
+   },
+   "nodes": [
+    8773496860,
+    8399010303,
+    8399010302,
+    41617129
+   ],
+   "geometry": [
+    {
+     "lat": 42.7595616,
+     "lon": -71.4647255
+    },
+    {
+     "lat": 42.7590683,
+     "lon": -71.4645034
+    },
+    {
+     "lat": 42.7590089,
+     "lon": -71.464476
+    },
+    {
+     "lat": 42.7589306,
+     "lon": -71.4644384
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 870231914,
+   "bounds": {
+    "minlat": 42.7628346,
+    "minlon": -71.4662942,
+    "maxlat": 42.7631017,
+    "maxlon": -71.4661776
+   },
+   "nodes": [
+    41590180,
+    8398955524,
+    10647620825,
+    41360434
+   ],
+   "geometry": [
+    {
+     "lat": 42.7631017,
+     "lon": -71.4662942
+    },
+    {
+     "lat": 42.7629682,
+     "lon": -71.4662359
+    },
+    {
+     "lat": 42.7629068,
+     "lon": -71.4662091
+    },
+    {
+     "lat": 42.7628346,
+     "lon": -71.4661776
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "2",
+    "lanes:forward": "3",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:forward": "through|through|right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 870281577,
+   "bounds": {
+    "minlat": 42.7543383,
+    "minlon": -71.4626339,
+    "maxlat": 42.7549535,
+    "maxlon": -71.462342
+   },
+   "nodes": [
+    8403749433,
+    8403749432,
+    2191970663,
+    8403751069,
+    11940027411,
+    41694707
+   ],
+   "geometry": [
+    {
+     "lat": 42.7549535,
+     "lon": -71.4626339
+    },
+    {
+     "lat": 42.7549378,
+     "lon": -71.4626274
+    },
+    {
+     "lat": 42.7545546,
+     "lon": -71.4624448
+    },
+    {
+     "lat": 42.7544348,
+     "lon": -71.4623879
+    },
+    {
+     "lat": 42.7543777,
+     "lon": -71.4623607
+    },
+    {
+     "lat": 42.7543383,
+     "lon": -71.462342
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 870440708,
+   "bounds": {
+    "minlat": 42.757876,
+    "minlon": -71.4641443,
+    "maxlat": 42.758296,
+    "maxlon": -71.4639555
+   },
+   "nodes": [
+    8773496861,
+    8406580677,
+    8358974354,
+    41367283
+   ],
+   "geometry": [
+    {
+     "lat": 42.758296,
+     "lon": -71.4641443
+    },
+    {
+     "lat": 42.7580151,
+     "lon": -71.4640161
+    },
+    {
+     "lat": 42.7579642,
+     "lon": -71.4639929
+    },
+    {
+     "lat": 42.757876,
+     "lon": -71.4639555
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "6",
+    "lanes:backward": "2",
+    "lanes:forward": "4",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left|through|through|right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 870644852,
+   "bounds": {
+    "minlat": 42.7565367,
+    "minlon": -71.4635097,
+    "maxlat": 42.7569056,
+    "maxlon": -71.4633453
+   },
+   "nodes": [
+    41659521,
+    8406615082,
+    8773667436,
+    41500149
+   ],
+   "geometry": [
+    {
+     "lat": 42.7569056,
+     "lon": -71.4635097
+    },
+    {
+     "lat": 42.7566918,
+     "lon": -71.4634157
+    },
+    {
+     "lat": 42.7566124,
+     "lon": -71.4633802
+    },
+    {
+     "lat": 42.7565367,
+     "lon": -71.4633453
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left;through|through"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876102,
+   "bounds": {
+    "minlat": 42.769786,
+    "minlon": -71.4791624,
+    "maxlat": 42.7698688,
+    "maxlon": -71.4789862
+   },
+   "nodes": [
+    1739884858,
+    8359183115
+   ],
+   "geometry": [
+    {
+     "lat": 42.7698688,
+     "lon": -71.4791624
+    },
+    {
+     "lat": 42.769786,
+     "lon": -71.4789862
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "2",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|none"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876103,
+   "bounds": {
+    "minlat": 42.7654445,
+    "minlon": -71.4685045,
+    "maxlat": 42.7657057,
+    "maxlon": -71.4675501
+   },
+   "nodes": [
+    41375647,
+    8398191814,
+    8398191815,
+    7794658157,
+    8398191816,
+    8398213317,
+    41353060
+   ],
+   "geometry": [
+    {
+     "lat": 42.7657057,
+     "lon": -71.4685045
+    },
+    {
+     "lat": 42.7654844,
+     "lon": -71.4677758
+    },
+    {
+     "lat": 42.7654775,
+     "lon": -71.467752
+    },
+    {
+     "lat": 42.7654689,
+     "lon": -71.4677162
+    },
+    {
+     "lat": 42.7654651,
+     "lon": -71.4676947
+    },
+    {
+     "lat": 42.7654606,
+     "lon": -71.4676648
+    },
+    {
+     "lat": 42.7654445,
+     "lon": -71.4675501
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left;through|right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876104,
+   "bounds": {
+    "minlat": 42.7641635,
+    "minlon": -71.467153,
+    "maxlat": 42.7646911,
+    "maxlon": -71.4668191
+   },
+   "nodes": [
+    41550383,
+    8398191835,
+    11925973777,
+    41570278
+   ],
+   "geometry": [
+    {
+     "lat": 42.7646911,
+     "lon": -71.467153
+    },
+    {
+     "lat": 42.7642838,
+     "lon": -71.4668952
+    },
+    {
+     "lat": 42.7642206,
+     "lon": -71.4668552
+    },
+    {
+     "lat": 42.7641635,
+     "lon": -71.4668191
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "2",
+    "lanes:forward": "3",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "ref": "NH 101A",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left|through|through;right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876105,
+   "bounds": {
+    "minlat": 42.7621768,
+    "minlon": -71.4661776,
+    "maxlat": 42.7628346,
+    "maxlon": -71.4658868
+   },
+   "nodes": [
+    41360434,
+    41597445,
+    8401664154,
+    8398955525,
+    8398933695
+   ],
+   "geometry": [
+    {
+     "lat": 42.7628346,
+     "lon": -71.4661776
+    },
+    {
+     "lat": 42.7627323,
+     "lon": -71.4661324
+    },
+    {
+     "lat": 42.7626743,
+     "lon": -71.4661068
+    },
+    {
+     "lat": 42.7626036,
+     "lon": -71.4660755
+    },
+    {
+     "lat": 42.7621768,
+     "lon": -71.4658868
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "3",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|through|through"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876106,
+   "bounds": {
+    "minlat": 42.761524,
+    "minlon": -71.4658868,
+    "maxlat": 42.7621768,
+    "maxlon": -71.4655982
+   },
+   "nodes": [
+    8398933695,
+    8406582567,
+    8398933678,
+    41674232
+   ],
+   "geometry": [
+    {
+     "lat": 42.7621768,
+     "lon": -71.4658868
+    },
+    {
+     "lat": 42.761647,
+     "lon": -71.4656526
+    },
+    {
+     "lat": 42.7615902,
+     "lon": -71.4656277
+    },
+    {
+     "lat": 42.761524,
+     "lon": -71.4655982
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "2",
+    "lanes:forward": "3",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left|through|through"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876107,
+   "bounds": {
+    "minlat": 42.7608744,
+    "minlon": -71.4655982,
+    "maxlat": 42.761524,
+    "maxlon": -71.4653133
+   },
+   "nodes": [
+    41674232,
+    4313778370,
+    8406582568,
+    4313778356,
+    41694668
+   ],
+   "geometry": [
+    {
+     "lat": 42.761524,
+     "lon": -71.4655982
+    },
+    {
+     "lat": 42.7614598,
+     "lon": -71.4655698
+    },
+    {
+     "lat": 42.7614192,
+     "lon": -71.4655519
+    },
+    {
+     "lat": 42.7609698,
+     "lon": -71.4653532
+    },
+    {
+     "lat": 42.7608744,
+     "lon": -71.4653133
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:backward": "through|through;right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876108,
+   "bounds": {
+    "minlat": 42.7605662,
+    "minlon": -71.4653133,
+    "maxlat": 42.7608744,
+    "maxlon": -71.4651748
+   },
+   "nodes": [
+    41694668,
+    8773496859
+   ],
+   "geometry": [
+    {
+     "lat": 42.7608744,
+     "lon": -71.4653133
+    },
+    {
+     "lat": 42.7605662,
+     "lon": -71.4651748
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "3",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|none|none"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876109,
+   "bounds": {
+    "minlat": 42.7595616,
+    "minlon": -71.4650098,
+    "maxlat": 42.7601942,
+    "maxlon": -71.4647255
+   },
+   "nodes": [
+    41351944,
+    8359019274,
+    8406570786,
+    8773496860
+   ],
+   "geometry": [
+    {
+     "lat": 42.7601942,
+     "lon": -71.4650098
+    },
+    {
+     "lat": 42.7601263,
+     "lon": -71.4649797
+    },
+    {
+     "lat": 42.7601031,
+     "lon": -71.4649693
+    },
+    {
+     "lat": 42.7595616,
+     "lon": -71.4647255
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "3",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "sidewalk:both": "separate",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|through|through"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876110,
+   "bounds": {
+    "minlat": 42.7587677,
+    "minlon": -71.4644384,
+    "maxlat": 42.7589306,
+    "maxlon": -71.4643633
+   },
+   "nodes": [
+    41617129,
+    1696917678
+   ],
+   "geometry": [
+    {
+     "lat": 42.7589306,
+     "lon": -71.4644384
+    },
+    {
+     "lat": 42.7587677,
+     "lon": -71.4643633
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "3",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|none|none"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876111,
+   "bounds": {
+    "minlat": 42.7586819,
+    "minlon": -71.4643633,
+    "maxlat": 42.7587677,
+    "maxlon": -71.4643203
+   },
+   "nodes": [
+    1696917678,
+    1363200047
+   ],
+   "geometry": [
+    {
+     "lat": 42.7587677,
+     "lon": -71.4643633
+    },
+    {
+     "lat": 42.7586819,
+     "lon": -71.4643203
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876112,
+   "bounds": {
+    "minlat": 42.758296,
+    "minlon": -71.4643203,
+    "maxlat": 42.7586819,
+    "maxlon": -71.4641443
+   },
+   "nodes": [
+    1363200047,
+    1363200040,
+    8773496861
+   ],
+   "geometry": [
+    {
+     "lat": 42.7586819,
+     "lon": -71.4643203
+    },
+    {
+     "lat": 42.7585985,
+     "lon": -71.4642823
+    },
+    {
+     "lat": 42.758296,
+     "lon": -71.4641443
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "5",
+    "lanes:backward": "2",
+    "lanes:forward": "3",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876113,
+   "bounds": {
+    "minlat": 42.7569056,
+    "minlon": -71.4637208,
+    "maxlat": 42.7573663,
+    "maxlon": -71.4635097
+   },
+   "nodes": [
+    8773496862,
+    5554880961,
+    11990748805,
+    8409716261,
+    41659521
+   ],
+   "geometry": [
+    {
+     "lat": 42.7573663,
+     "lon": -71.4637208
+    },
+    {
+     "lat": 42.7572783,
+     "lon": -71.4636808
+    },
+    {
+     "lat": 42.7571657,
+     "lon": -71.4636296
+    },
+    {
+     "lat": 42.7570894,
+     "lon": -71.4635948
+    },
+    {
+     "lat": 42.7569056,
+     "lon": -71.4635097
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876114,
+   "bounds": {
+    "minlat": 42.7560129,
+    "minlon": -71.4633453,
+    "maxlat": 42.7565367,
+    "maxlon": -71.4631111
+   },
+   "nodes": [
+    41500149,
+    8773667432,
+    8406615083,
+    8448563202,
+    8773496863
+   ],
+   "geometry": [
+    {
+     "lat": 42.7565367,
+     "lon": -71.4633453
+    },
+    {
+     "lat": 42.7564188,
+     "lon": -71.4632933
+    },
+    {
+     "lat": 42.7563873,
+     "lon": -71.4632792
+    },
+    {
+     "lat": 42.7560882,
+     "lon": -71.4631449
+    },
+    {
+     "lat": 42.7560129,
+     "lon": -71.4631111
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:backward": "through|through;right"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876115,
+   "bounds": {
+    "minlat": 42.7556585,
+    "minlon": -71.4631111,
+    "maxlat": 42.7560129,
+    "maxlon": -71.4629519
+   },
+   "nodes": [
+    8773496863,
+    8229791760,
+    8403787323,
+    8358868996,
+    8403787321
+   ],
+   "geometry": [
+    {
+     "lat": 42.7560129,
+     "lon": -71.4631111
+    },
+    {
+     "lat": 42.7559376,
+     "lon": -71.4630772
+    },
+    {
+     "lat": 42.7557807,
+     "lon": -71.4630068
+    },
+    {
+     "lat": 42.7556776,
+     "lon": -71.4629607
+    },
+    {
+     "lat": 42.7556585,
+     "lon": -71.4629519
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "lanes:backward": "2",
+    "lanes:forward": "2",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt",
+    "turn:lanes:forward": "left;through|through"
+   }
+  },
+  {
+   "type": "way",
+   "id": 947876116,
+   "bounds": {
+    "minlat": 42.7549535,
+    "minlon": -71.4627508,
+    "maxlat": 42.7552109,
+    "maxlon": -71.4626339
+   },
+   "nodes": [
+    8773496864,
+    2191970758,
+    8403749433
+   ],
+   "geometry": [
+    {
+     "lat": 42.7552109,
+     "lon": -71.4627508
+    },
+    {
+     "lat": 42.7550325,
+     "lon": -71.4626707
+    },
+    {
+     "lat": 42.7549535,
+     "lon": -71.4626339
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "4",
+    "maxspeed": "25 mph",
+    "name": "Main Street",
+    "surface": "asphalt"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1061293923,
+   "bounds": {
+    "minlat": 42.7698688,
+    "minlon": -71.47921,
+    "maxlat": 42.7698914,
+    "maxlon": -71.4791624
+   },
+   "nodes": [
+    8359198021,
+    1739884858
+   ],
+   "geometry": [
+    {
+     "lat": 42.7698914,
+     "lon": -71.47921
+    },
+    {
+     "lat": 42.7698688,
+     "lon": -71.4791624
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "1",
+    "lanes:both_ways": "1",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt",
+    "turn:lanes:both_ways": "left"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1061293924,
+   "bounds": {
+    "minlat": 42.7695971,
+    "minlon": -71.4789862,
+    "maxlat": 42.769786,
+    "maxlon": -71.4785844
+   },
+   "nodes": [
+    8359183115,
+    8773496857,
+    9040102507,
+    8773496858
+   ],
+   "geometry": [
+    {
+     "lat": 42.769786,
+     "lon": -71.4789862
+    },
+    {
+     "lat": 42.7697324,
+     "lon": -71.4788721
+    },
+    {
+     "lat": 42.7696478,
+     "lon": -71.4786922
+    },
+    {
+     "lat": 42.7695971,
+     "lon": -71.4785844
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "2",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt",
+    "turn:lanes:backward": "left|none"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1329000330,
+   "bounds": {
+    "minlat": 42.7698914,
+    "minlon": -71.4811646,
+    "maxlat": 42.7708036,
+    "maxlon": -71.47921
+   },
+   "nodes": [
+    41398013,
+    41398018,
+    8773496855,
+    12012911602,
+    8359198021
+   ],
+   "geometry": [
+    {
+     "lat": 42.7708036,
+     "lon": -71.4811646
+    },
+    {
+     "lat": 42.7706123,
+     "lon": -71.4807583
+    },
+    {
+     "lat": 42.7700016,
+     "lon": -71.4794421
+    },
+    {
+     "lat": 42.7699846,
+     "lon": -71.4794063
+    },
+    {
+     "lat": 42.7698914,
+     "lon": -71.47921
+    }
+   ],
+   "tags": {
+    "highway": "secondary",
+    "lanes": "3",
+    "lanes:backward": "1",
+    "lanes:both_ways": "1",
+    "lanes:forward": "1",
+    "maxspeed": "30 mph",
+    "name": "Amherst Street",
+    "ref": "NH 101A",
+    "surface": "asphalt",
+    "turn:lanes:both_ways": "left"
+   }
+  }
+ ]
+}

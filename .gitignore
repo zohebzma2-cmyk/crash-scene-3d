@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.env
+.env.*
+test-results/
+playwright-report/
+.claude/settings.local.json
+*.tsbuildinfo
+.DS_Store
+
+# brand comparison captures of a third-party site (local only)
+design/compare/
+.canvas-build/
+
+# prototype walkthrough output (videos, downloads); report.md is kept
+design/prototype/recordings/*
+!design/prototype/recordings/report.md
+
+# agent worktrees (each is its own checkout)
+.claude/worktrees/
+
+# netlify dev / netlify serve local state
+.netlify/
+
+# local privacy scan terms (copy .privacy-terms.example); must never be committed
+.privacy-terms

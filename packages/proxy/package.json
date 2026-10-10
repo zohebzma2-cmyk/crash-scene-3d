@@ -1,0 +1,19 @@
+{
+  "name": "@csd/proxy",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@csd/core": "*",
+    "@csd/mapdata": "*",
+    "@netlify/blobs": "11.1.1",
+    "@netlify/functions": "6.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0"
+  }
+}
