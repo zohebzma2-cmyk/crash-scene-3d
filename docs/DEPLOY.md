@@ -1,9 +1,6 @@
 # Deploy runbook
 
-> **Nothing has been deployed.** No Netlify site exists for this project yet, no account was touched, and
-> nothing was pushed. This page says what to set up and what to check on the first deploy, and every step
-> is yours to run. All local checks below were made with `netlify dev --offline` / `netlify serve --offline`,
-> unlinked and logged out.
+> **Deployed 2026-10-10** to https://crash-scene-3d.netlify.app (Netlify site `crash-scene-3d`) from the repository's `main`, with `npx -y netlify-cli@27.9.0 deploy --prod --build`. `PROXY_USER_SALT` is set as a secret (Functions scope, production context) and was never printed. The rest of this page is the runbook for checking and redeploying.
 
 ## What ships
 

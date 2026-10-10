@@ -20,21 +20,12 @@ Both texts are DESIGN.md section 3, word for word. They are the constants `DISCL
 
 ## Screenshots
 
-TODO: none of these exist yet. Capture them from the built app in fixtures mode (`?example=t-bone-intersection`) and replace the file names.
-
-![Step 1 location, desktop](docs/screenshots/TODO-location-1440.png)
-![Step 1 location, phone](docs/screenshots/TODO-location-390.png)
-![Step 2 vehicles, desktop](docs/screenshots/TODO-vehicles-1440.png)
-![Step 2 vehicles, phone](docs/screenshots/TODO-vehicles-390.png)
-![Step 3 review, desktop](docs/screenshots/TODO-review-1440.png)
-![Step 3 review, phone](docs/screenshots/TODO-review-390.png)
-![Step 4 save, desktop](docs/screenshots/TODO-save-1440.png)
-![Step 4 save, phone](docs/screenshots/TODO-save-390.png)
-![PDF summary, page 1](docs/screenshots/TODO-pdf-page-1.png)
+The demo GIF at the top walks through the T-bone example from search to save. To see any step yourself, open an example on the live site: [T-bone](https://crash-scene-3d.netlify.app/?example=t-bone-intersection), [highway rear-end](https://crash-scene-3d.netlify.app/?example=highway-rear-end), [parking lot](https://crash-scene-3d.netlify.app/?example=parking-lot-backing).
 
 ## Live URL
 
-TODO: live URL (not deployed yet)
+- App: https://crash-scene-3d.netlify.app (Netlify, with the `/api/*` proxy function)
+- Repo: https://github.com/zohebzma2-cmyk/crash-scene-3d
 
 ## Quick start
 
@@ -507,9 +498,40 @@ InsurifyAI, the InsurifyAI name and the InsurifyAI logo are trademarks of Insuri
 
 ## Status
 
-Built locally. Nothing is deployed and nothing is pushed. The state of each branch is in `PROGRESS.md`.
+Deployed 2026-10-10 to https://crash-scene-3d.netlify.app from this repository's `main`. Checked live at 1440 and 390 wide:
+- The three examples draw.
+- A live search goes through the proxy and finds the crossing and its streets, with no request leaving the site's own origin.
+- Save delivers one ZIP whose PDF fingerprint equals the scene file's SHA-256.
 
-- Merged to `main`: contracts, mapdata, the proxy, exports, the physics (c35ca9c at c026fcc, then 844d764 at 4867616) and three examples.
-- Not on `main` yet: the app shell (the 4-step flow) and the 3D viewer. They are being integrated on `integ/m2`. Statements in this README about those parts describe the work on that branch.
-- Not written yet: the `e2e/` specs that `npm run e2e` expects, the screenshots, the live URL.
-- Planned, not built: a video clip and a share link (DESIGN.md section 8, "Coming next").
+Locally, `./check.sh` passes: 1,531 unit tests and 261 browser tests on Chromium and WebKit. A video clip and a share link are planned, not built (DESIGN.md section 8, "Coming next"). Open items are in "Next version".
+
+## Close-out
+
+**What I'm least confident about**
+- **The physics constants, not the code.**
+  - The impact model is checked by property tests: momentum conserved, typed speed equals speed at impact, no pass-through, finite numbers.
+  - But some inputs are typical values, not measurements. The contact friction of 0.5 and the 0.3 m crush band are marked UNVERIFIED in the code.
+  - Weights are class averages, not the claimant's actual vehicle. The road is treated as flat, and there are no secondary collisions.
+- **Lane placement on real OSM data.** Untagged roads get default lane counts and widths, so a vehicle can sit in a plausible lane that isn't the real one.
+- **The refusal fixes.** About 1 in 5 refused random scenes get only "Edit the details myself" (mostly 3–4 vehicles), and the search can take up to about 1.75 s on the main thread.
+- **Production-only behaviour.**
+  - The global rate limits depend on Netlify Blobs conditional writes, and there is no load test.
+  - The daily cleanup of stored searches hasn't been seen running in production yet.
+  - Test mode draws its own map, so the live-tile path into the PDF thumbnail is checked by hand, not by a test.
+
+**What would make it hold up in an insurance dispute**
+
+It is built as an illustration of what the claimant described, not as evidence of what happened, and it says so on every screen and file. To carry weight in a dispute it would need:
+- **Evidence for the inputs, not just recollection.** Speeds from the vehicle's event data recorder where available, the police report diagram, scene measurements (skid marks, rest positions) and damage photos, each recorded with its source.
+- **Provenance a third party can check.**
+  - Today the SHA-256 fingerprint proves the files match each other and the scene file.
+  - A server-signed hash with a trusted timestamp (for example RFC 3161) would prove the files haven't changed since a given time.
+  - Opening an edited scene file, or one from another physics version, should also show a visible notice (see "Next version").
+- **Validation.** Compare the model against published crash tests and real cases, report the error, and have an accident reconstructionist review the method and the assumptions list.
+- **Reproducibility.** This part already exists: the physics is deterministic and versioned, and the same scene file redraws the same picture, so the result can be re-run independently.
+
+**How it plugs into InsurifyAI**
+- **Claim in, files out.** The app already has the claim header (claim number, vehicle) and a "Close and go back to the claim" control. The claim is a made-up default for now, so passing the real claim in is the first integration step.
+- **Same origin.** The page forbids being framed (`frame-ancestors 'none'`), so it should be served as part of the InsurifyAI app on its own origin rather than in an iframe. The `/api/*` proxy and its single `ProviderConfig` can move into InsurifyAI's backend as they are.
+- **Server-side checks.** `packages/core` is pure TypeScript with no DOM. InsurifyAI's server can re-run the simulation from a saved scene file and re-check the fingerprint before attaching the ZIP to a case as an exhibit.
+- **Brand.** The UI already uses the InsurifyAI app theme and the official logo.

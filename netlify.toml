@@ -1,4 +1,4 @@
-# Netlify config for crash-scene-3d. Nothing here has been deployed yet: see docs/DEPLOY.md.
+# Netlify config for crash-scene-3d, deployed to https://crash-scene-3d.netlify.app (see docs/DEPLOY.md).
 # Check the headers on any running copy with: npm run verify:headers -- <base-url>
 
 [build]
