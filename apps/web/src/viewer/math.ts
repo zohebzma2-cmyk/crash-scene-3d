@@ -314,10 +314,17 @@ export interface PlacedLabel {
 
 export interface LayoutOptions {
   readonly viewport: Viewport;
-  /** Rectangles no label may cover: the vehicle bodies, the view controls, the caption. */
+  /** Rectangles no label may cover: the vehicle bodies and the impact ring. Covered only as the very last resort. */
   readonly obstacles?: readonly Rect[];
+  /** The view controls, zoom buttons, legend and caption: kept clear too, but a label may sit under one before it covers an obstacle. */
+  readonly controls?: readonly Rect[];
   /** A label stays within this distance of what it labels, px. */
   readonly maxDistance?: number;
+  /**
+   * How far a label may go (with a leader line back to its anchor) when nothing within `maxDistance` is clear of
+   * the obstacles. Default: `maxDistance`, so a layout without it never goes further.
+   */
+  readonly farDistance?: number;
   /** Space kept between labels and from obstacles, px. */
   readonly gap?: number;
   /** Distance added per ring of candidates, px. */
@@ -360,11 +367,13 @@ export function layoutLabels(labels: readonly LabelRequest[], opts: LayoutOption
   const gap = opts.gap ?? 4, step = opts.step ?? 8;
   const view: Rect = { x: 0, y: 0, w: opts.viewport.w, h: opts.viewport.h };
   const obstacles = opts.obstacles ?? [];
+  const controls = opts.controls ?? [];
   const placed: Rect[] = [];
   const out: PlacedLabel[] = [];
   const inside = (c: Rect) => c.x >= 0 && c.y >= 0 && c.x + c.w <= view.w && c.y + c.h <= view.h;
   for (const l of labels) {
     const maxD = l.maxDistance ?? opts.maxDistance ?? LABEL_MAX_DISTANCE_PX;
+    const farD = Math.max(maxD, l.maxDistance ?? opts.farDistance ?? maxD);
     const onScreen = overlap(l.rect, view, 0) || (l.anchor.x >= 0 && l.anchor.y >= 0 && l.anchor.x <= view.w && l.anchor.y <= view.h);
     if (!onScreen) {
       out.push({ id: l.id, x: 0, y: 0, w: l.w, h: l.h, leader: null, distance: 0, moved: false, visible: false });
@@ -373,14 +382,18 @@ export function layoutLabels(labels: readonly LabelRequest[], opts: LayoutOption
     const order: LabelDir[] = [...(l.prefer ?? []), ...DIR_ORDER].filter((d, i, a) => a.indexOf(d) === i);
     const tries: Array<{ r: Rect; first: boolean }> = [];
     if (order.includes("C")) tries.push({ r: candidate("C", l, 0), first: tries.length === 0 });
-    for (let dist = gap; dist <= maxD; dist += step) {
+    for (let dist = gap; dist <= farD; dist += step) {
       for (const d of order) if (d !== "C") tries.push({ r: candidate(d, l, dist), first: tries.length === 0 });
     }
-    const within = (c: Rect) => rectDistance(c, l.rect) <= maxD + 0.5;
-    const free = (c: Rect) => inside(c) && within(c) && !placed.some((p) => overlap(c, p, gap));
-    let pick = tries.find((t) => free(t.r) && !obstacles.some((o) => overlap(t.r, o, gap / 2)));
-    // Relaxed: allow covering a vehicle body (never another label).
-    if (!pick) pick = tries.find((t) => free(t.r));
+    const free = (c: Rect, reach: number) => inside(c) && rectDistance(c, l.rect) <= reach + 0.5 && !placed.some((p) => overlap(c, p, gap));
+    const clear = (c: Rect, list: readonly Rect[]) => !list.some((o) => overlap(c, o, gap / 2));
+    // Nearest first: clear of bodies, the ring and the controls; then the same with a longer leader; then under a control
+    // (never over a vehicle or the ring); and only then, covering a vehicle body (never another label).
+    let pick = tries.find((t) => free(t.r, maxD) && clear(t.r, obstacles) && clear(t.r, controls));
+    if (!pick && farD > maxD) pick = tries.find((t) => free(t.r, farD) && clear(t.r, obstacles) && clear(t.r, controls));
+    if (!pick) pick = tries.find((t) => free(t.r, maxD) && clear(t.r, obstacles));
+    if (!pick && farD > maxD) pick = tries.find((t) => free(t.r, farD) && clear(t.r, obstacles));
+    if (!pick) pick = tries.find((t) => free(t.r, maxD));
     // Last resort: the first choice, pushed inside the view.
     const first = tries[0]!.r;
     pick ??= { r: { ...first, x: Math.min(Math.max(first.x, 0), Math.max(0, view.w - l.w)), y: Math.min(Math.max(first.y, 0), Math.max(0, view.h - l.h)) }, first: false };

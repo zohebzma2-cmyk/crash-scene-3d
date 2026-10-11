@@ -381,7 +381,7 @@ Four steps, all reading and writing one shared scene state. Back never loses wor
 - **Stepper** "Step 2 of 4 · Vehicles" with a thin progress bar.
 - **Step 1:** a compact 16rem map with **Expand map**, which opens the same map full screen (dialog, Close map, Esc, focus returns). One-finger swipes on the compact map scroll the page; the expanded map pans.
 - **Steps 2 and 4:** one column, 16 px gutters. Map 240 px tall above the form. Primary button sticky at the bottom with safe-area padding.
-- **Step 3:** canvas full width, about 50% of the height; scrubber under it; BottomSheet at half height with the tabs; sticky primary button. No horizontal scroll at any width.
+- **Step 3:** canvas full width, about 50% of the height; scrubber under it; BottomSheet at half height with the tabs; sticky primary button. No horizontal scroll at any width. The compass and zoom buttons are sticky inside the picture: they sit at its bottom left and ride up above the fixed action bar (its height, the home-indicator inset and a gap) at every scroll position, never under it.
 
 ---
 
@@ -424,7 +424,7 @@ Four steps, all reading and writing one shared scene state. Back never loses wor
 - **Reduced motion:** no slowdown, no shake, no flash and no dent growth; debris is already on the ground and the dent already full from impact on.
 
 ### Vehicle labels
-- One pill per vehicle: "A · Your car · 24 mph"; "Stopped" once it has stopped (never "~0 mph"). Each pill is attached to its vehicle's projected top: directly above it when there is room, otherwise moved in one of 8 directions (as little as possible, never more than about 64 px away) with a short leader line back to the vehicle. Pills never overlap each other, a vehicle body, a measurement pill, the view controls, the zoom buttons or the caption. A vehicle that is entirely off screen gets no pill.
+- One pill per vehicle: "A · Your car · 24 mph"; "Stopped" once it has stopped (never "~0 mph"). Each pill is attached to its vehicle's projected top: directly above it when there is room, otherwise moved in one of 8 directions (as little as possible, never more than about 64 px away) with a short leader line back to the vehicle. Pills never overlap each other, a vehicle body, a measurement pill, the view controls, the zoom buttons or the caption. A vehicle that is entirely off screen gets no pill. The keep-clear set is each vehicle's projected outline and the impact ring (the layout treats both as obstacles, and the viewer publishes them as `data-boxes` on its label layer for tests). When no clear spot exists within 64 px, a pill may go up to 150 px away (the measurement pills' reach) with its leader line; only if that fails may it sit under a control, and only as the very last resort over a vehicle.
 - Toggle in View. Tapping or clicking a label selects that vehicle's card. The 3D stills for the exports carry the same letters and names.
 
 ### Measurement overlays

@@ -89,6 +89,25 @@ export function projectVehicle(camera: Camera, size: { w: number; h: number }, p
   return { anchor: { x: ax, y: ay }, rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY }, strips: valid ? stripsOf(hull(corners), minY, maxY) : [], valid };
 }
 
+/** Points around the impact ring's outer edge that are projected to find its outline. */
+const RING_POINTS = 24;
+
+/** The impact ring, a flat circle on the ground, projected through `camera`: its screen rect and its outline as thin strips (labels keep off both). */
+export function projectRing(camera: Camera, size: { w: number; h: number }, centerM: { x: number; y: number }, radiusM: number, groundM: number): { rect: Rect; strips: readonly Rect[]; valid: boolean } {
+  const [cx, cy, cz] = toThree(centerM, groundM);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, valid = true;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < RING_POINTS; i++) {
+    const a = (i / RING_POINTS) * Math.PI * 2;
+    v3.set(cx + Math.cos(a) * radiusM, cy, cz + Math.sin(a) * radiusM).project(camera);
+    if (v3.z > 1) valid = false;
+    const px = ((v3.x + 1) / 2) * size.w, py = ((1 - v3.y) / 2) * size.h;
+    minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+    pts.push([px, py]);
+  }
+  return { rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY }, strips: valid ? stripsOf(hull(pts), minY, maxY) : [], valid };
+}
+
 /** Name and speed for a vehicle's label at the moment `pose` describes. */
 export function vehicleLabel(sv: SceneVehicle | undefined, id: string, pose: Pose, timeS: number, units: Units): { name: string; speed: string; text: string } {
   const name = sv ? roleName(sv) : id === "A" ? "Your car" : `Vehicle ${id}`;

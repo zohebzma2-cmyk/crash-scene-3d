@@ -14,7 +14,7 @@ import { World } from "./World";
 import { readSceneColors, vehicleToken, type SceneColors } from "./tokens";
 import { VehicleMesh, RestOutline, useVehicleMaterials } from "./vehicle-view";
 import { disposeVehicleModels, vehicleModel } from "./vehicle-models";
-import { projectVehicle, vehicleLabel } from "./labels";
+import { projectRing, projectVehicle, vehicleLabel } from "./labels";
 import { renderStill, type CaptureContext } from "./capture";
 import { ImpactEffects, useDamage, type EffectsApi } from "./effects/ImpactEffects"; // FX
 import { Icon } from "../icons/Icon";
@@ -63,11 +63,14 @@ function Paths({ sim, colors, terrain }: { sim: SimulationResult; colors: SceneC
   return <>{lines.map((l) => <Line key={l.key} points={l.points} color={l.color} lineWidth={3} dashed={l.dashed} dashSize={1.2} gapSize={0.9} />)}</>;
 }
 
+/** The impact ring's inner and outer radius, meters. */
+const RING_M = { inner: 1.3, outer: 1.65 } as const;
+
 function ImpactRing({ sim, colors, terrain }: { sim: SimulationResult; colors: SceneColors; terrain: RoadNetwork["terrain"] | null }) {
   const p = sim.impactPointM;
   return (
     <mesh position={toThree(p, heightAt(terrain ?? null, p) + LIFT.ring)} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[1.3, 1.65, 48]} />
+      <ringGeometry args={[RING_M.inner, RING_M.outer, 48]} />
       <meshBasicMaterial color={colors["--color-scene-impact"]} />
     </mesh>
   );
@@ -192,19 +195,22 @@ interface LabelItem { readonly id: string; readonly kind: "vehicle" | "measure";
 interface VehicleAnchor { readonly item: LabelItem; readonly pose: Pose; readonly dims: { lengthM: number; widthM: number; heightM: number }; readonly ground: number }
 interface MeasureAnchor { readonly item: LabelItem; readonly world: Vector3 }
 interface LiveLabel { readonly placed: PlacedLabel; readonly item: LabelItem; readonly anchor: { x: number; y: number } }
+/** What the labels keep off, in the picture's own pixels: each vehicle's projected outline and the impact ring's, as strips. Published as data-boxes for the e2e. */
+interface ObstacleBoxes { readonly vehicles: Record<string, readonly Rect[]>; readonly ring: readonly Rect[] }
+const boxesJson = (b: ObstacleBoxes): string => JSON.stringify(b, (_k, v: unknown) => (typeof v === "number" ? Math.round(v * 10) / 10 : v));
 type Sizes = Map<string, { w: number; h: number }>;
 
 const LABEL_H_PX = 24;
-/** Space kept between labels, px, and how far a measurement pill may move from its line (it has leader lines to get back). */
+/** Space kept between labels, px, and how far a measurement pill (or a vehicle label with no clear spot nearer) may move from what it labels: leader lines get it back. */
 const LABEL_GAP_PX = 8;
 const LABEL_STEP_PX = 8;
 const PILL_REACH_PX = 150;
 const estimateWidth = (it: LabelItem) => (it.kind === "vehicle" ? 14 + it.text.length * 6.6 : 30 + it.text.length * 7.2);
 const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass";
 
-function LabelProjector({ vehicles, measures, showVehicleLabels, sizes, obstacles, onLayout }: {
-  vehicles: readonly VehicleAnchor[]; measures: readonly MeasureAnchor[]; showVehicleLabels: boolean;
-  sizes: React.RefObject<Sizes>; obstacles: React.RefObject<Rect[]>; onLayout: (l: LiveLabel[]) => void;
+function LabelProjector({ vehicles, measures, ring, showVehicleLabels, sizes, obstacles, onLayout }: {
+  vehicles: readonly VehicleAnchor[]; measures: readonly MeasureAnchor[]; ring: { center: Vec2; ground: number }; showVehicleLabels: boolean;
+  sizes: React.RefObject<Sizes>; obstacles: React.RefObject<Rect[]>; onLayout: (l: LiveLabel[], boxes: string) => void;
 }) {
   const { camera, size } = useThree();
   const prev = useRef("");
@@ -213,6 +219,7 @@ function LabelProjector({ vehicles, measures, showVehicleLabels, sizes, obstacle
     const view = { w: size.width, h: size.height };
     camera.updateMatrixWorld();
     const bodies: Rect[] = [];
+    const shapeOf: Record<string, readonly Rect[]> = {};
     const requests: LabelRequest[] = [];
     const items = new Map<string, LabelItem>();
     const dim = (it: LabelItem) => sizes.current.get(it.id) ?? { w: estimateWidth(it), h: LABEL_H_PX };
@@ -220,11 +227,15 @@ function LabelProjector({ vehicles, measures, showVehicleLabels, sizes, obstacle
       const p = projectVehicle(camera, view, v.pose, v.dims, v.ground);
       if (!p.valid) continue;
       bodies.push(...p.strips);
+      shapeOf[v.item.vid] = p.strips;
       if (!showVehicleLabels) continue;
       const d = dim(v.item);
       requests.push({ id: v.item.id, anchor: p.anchor, rect: p.rect, w: d.w, h: d.h });
       items.set(v.item.id, v.item);
     }
+    // The impact ring is kept clear too: it marks where the cars met.
+    const r = projectRing(camera, view, ring.center, RING_M.outer, ring.ground);
+    bodies.push(...r.strips);
     for (const m of measures) {
       tmp.copy(m.world).project(camera);
       if (tmp.z > 1) continue;
@@ -234,11 +245,12 @@ function LabelProjector({ vehicles, measures, showVehicleLabels, sizes, obstacle
       items.set(m.item.id, m.item);
     }
     // One pass for the vehicle labels and the measurement pills, at their real measured sizes.
-    const placed = layoutLabels(requests, { viewport: view, obstacles: [...bodies, ...obstacles.current], gap: LABEL_GAP_PX, step: LABEL_STEP_PX }).filter((p) => p.visible);
-    const key = placed.map((p) => `${p.id}:${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.w)}:${items.get(p.id)?.text ?? ""}`).join("|");
+    const placed = layoutLabels(requests, { viewport: view, obstacles: bodies, controls: obstacles.current, farDistance: PILL_REACH_PX, gap: LABEL_GAP_PX, step: LABEL_STEP_PX }).filter((p) => p.visible);
+    const boxes = boxesJson({ vehicles: shapeOf, ring: r.strips });
+    const key = placed.map((p) => `${p.id}:${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.w)}:${items.get(p.id)?.text ?? ""}`).join("|") + boxes;
     if (key === prev.current) return;
     prev.current = key;
-    onLayout(placed.map((p) => ({ placed: p, item: items.get(p.id)!, anchor: requests.find((r) => r.id === p.id)!.anchor })));
+    onLayout(placed.map((p) => ({ placed: p, item: items.get(p.id)!, anchor: requests.find((q) => q.id === p.id)!.anchor })), boxes);
   });
   return null;
 }
@@ -304,6 +316,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const [northToken, setNorthToken] = useState(0);
   const compassRef = useRef<HTMLButtonElement>(null);
   const [labels, setLabels] = useState<LiveLabel[]>([]);
+  const [boxes, setBoxes] = useState("");
   const [hint, setHint] = useState<"off" | "on" | "fading">("off");
   const hintShown = useRef(false);
   const ghostStroke = useMemo(() => tokenPx("--size-stroke-ghost", 1.5), []);
@@ -387,11 +400,13 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
     const root = rootRef.current;
     if (!root) return;
     measureObstacles();
-    if (typeof ResizeObserver !== "function") return;
+    // On phones the zoom buttons ride above the sticky action bar, so they move as the page scrolls (no resize).
+    window.addEventListener("scroll", measureObstacles, { passive: true });
+    if (typeof ResizeObserver !== "function") return () => window.removeEventListener("scroll", measureObstacles);
     const ro = new ResizeObserver(measureObstacles);
     ro.observe(root);
     for (const el of [...root.querySelectorAll(OBSTACLES), ...(root.parentElement?.querySelectorAll(OBSTACLES) ?? [])]) ro.observe(el);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); window.removeEventListener("scroll", measureObstacles); };
   }, [measureObstacles, props.showPaths, props.view]);
 
   // Real label sizes, measured from the DOM after each layout, replace the estimates.
@@ -472,7 +487,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
     return true;
   };
 
-  const onLayout = useCallback((l: LiveLabel[]) => setLabels(l), []);
+  const onLayout = useCallback((l: LiveLabel[], b: string) => { setLabels(l); setBoxes(b); }, []);
+  const ringAt = useMemo(() => ({ center: props.sim.impactPointM, ground: heightAt(terrain, props.sim.impactPointM) + LIFT.ring }), [props.sim.impactPointM, terrain]);
   const registerCapture = useCallback((fn: ViewerHandle["captureStill"]) => { captureFn.current = fn; }, []);
 
   return (
@@ -493,13 +509,13 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
         ))}
         <OrbitControls ref={controls} makeDefault enableDamping={!props.reducedMotion} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={6} maxDistance={900} minZoom={ORTHO_ZOOM.min} maxZoom={ORTHO_ZOOM.max} onStart={() => { userMoved.current = true; }} />
         <Rig view={props.view} sim={props.sim} terrain={terrain} timeS={props.timeS} reducedMotion={props.reducedMotion} resetToken={resetToken} northToken={northToken} controls={controls} userMoved={userMoved} extraPoints={extraPoints} />
-        <LabelProjector vehicles={vehicleAnchors} measures={measureAnchors} showVehicleLabels={props.showLabels} sizes={sizes} obstacles={obstacles} onLayout={onLayout} />
+        <LabelProjector vehicles={vehicleAnchors} measures={measureAnchors} ring={ringAt} showVehicleLabels={props.showLabels} sizes={sizes} obstacles={obstacles} onLayout={onLayout} />
         <CompassSync target={compassRef} />
         <Capture build={buildCapture} register={registerCapture} />
         <Ready onReady={props.onReady} />
       </Canvas>
 
-      <div className="viewer3d-labels">
+      <div className="viewer3d-labels" data-boxes={boxes || undefined}>
         <svg className="viewer3d-leaders" aria-hidden="true">
           {labels.filter((l) => l.placed.leader).map((l) => (
             <line key={l.item.id} className={`viewer3d-leader v-${l.item.letter.toLowerCase()}${l.item.kind === "measure" ? " is-measure" : ""}`}
@@ -521,15 +537,17 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
         ))}
       </div>
 
-      <div className="viewer3d-hud">
-        {props.showPaths ? <span className="viewer3d-legend">Dashed: before impact · Solid: after</span> : null}
-        {/* The compass sits in one row with the zoom buttons, so the legend above keeps its place (labels plan around both). */}
-        <div className="viewer3d-hud-row">
-          <Compass ref={compassRef} driver={driver} onReset={() => setNorthToken((x) => x + 1)} />
-          <div className="viewer3d-controls" role="group" aria-label="Zoom">
-            <button type="button" className="icon-btn" aria-label="Zoom in" onClick={() => zoomBy(BUTTON_ZOOM)}><Icon name="plus" /></button>
-            <button type="button" className="icon-btn" aria-label="Zoom out" onClick={() => zoomBy(1 / BUTTON_ZOOM)}><Icon name="minus" /></button>
-            <button type="button" className="icon-btn" aria-label="Reset view" onClick={() => setResetToken((x) => x + 1)}><Icon name="crosshair" /></button>
+      <div className="viewer3d-hud-rail">
+        <div className="viewer3d-hud">
+          {props.showPaths ? <span className="viewer3d-legend">Dashed: before impact · Solid: after</span> : null}
+          {/* The compass sits in one row with the zoom buttons, so the legend above keeps its place (labels plan around both). */}
+          <div className="viewer3d-hud-row">
+            <Compass ref={compassRef} driver={driver} onReset={() => setNorthToken((x) => x + 1)} />
+            <div className="viewer3d-controls" role="group" aria-label="Zoom">
+              <button type="button" className="icon-btn" aria-label="Zoom in" onClick={() => zoomBy(BUTTON_ZOOM)}><Icon name="plus" /></button>
+              <button type="button" className="icon-btn" aria-label="Zoom out" onClick={() => zoomBy(1 / BUTTON_ZOOM)}><Icon name="minus" /></button>
+              <button type="button" className="icon-btn" aria-label="Reset view" onClick={() => setResetToken((x) => x + 1)}><Icon name="crosshair" /></button>
+            </div>
           </div>
         </div>
       </div>

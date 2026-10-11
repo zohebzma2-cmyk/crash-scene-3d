@@ -262,3 +262,26 @@ export async function pngDiff(page: Page, a: Uint8Array, b: Uint8Array, rows: re
     return diff / (w * (h - from));
   }, [Buffer.from(a).toString("base64"), Buffer.from(b).toString("base64"), rows[0], rows[1]] as const);
 }
+
+/**
+ * What the vehicle labels must keep off, in page pixels: each vehicle's projected outline (the convex hull of its
+ * projected box, cut into thin strips) and the impact ring's. The viewer publishes them as data-boxes on its label layer
+ * (picture-relative), so this also works against a deployed build.
+ */
+export async function viewerObstacles(page: Page): Promise<{ vehicles: Box[]; ring: Box[] }> {
+  const layer = page.locator(".viewer3d-labels");
+  const origin = (await layer.boundingBox())!;
+  const raw = JSON.parse((await layer.getAttribute("data-boxes")) ?? `{"vehicles":{},"ring":[]}`) as { vehicles: Record<string, Array<{ x: number; y: number; w: number; h: number }>>; ring: Array<{ x: number; y: number; w: number; h: number }> };
+  const toBox = (r: { x: number; y: number; w: number; h: number }, label: string): Box => ({ x: origin.x + r.x, y: origin.y + r.y, width: r.w, height: r.h, label });
+  return {
+    vehicles: Object.entries(raw.vehicles).flatMap(([id, strips]) => strips.map((r) => toBox(r, `vehicle ${id}`))),
+    ring: raw.ring.map((r) => toBox(r, "impact ring")),
+  };
+}
+
+/** Boxes of `a` that intersect any box of `b` (a different list: pairs inside one list are not compared). */
+export function crossIntersections(a: readonly Box[], b: readonly Box[]): string[] {
+  const out: string[] = [];
+  for (const x of a) for (const y of b) if (intersections([x, y]).length) out.push(`${x.label}  <->  ${y.label}`);
+  return out;
+}

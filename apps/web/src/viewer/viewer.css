@@ -36,7 +36,10 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 .viewer3d-leader.is-measure, .viewer3d-dot.is-measure { --vehicle: var(--color-scene-measure); }
 
 /* Zoom buttons, reset, and the legend: bottom left, clear of the view controls (top right) and the caption (bottom right). */
-.viewer3d-hud { position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: var(--z-controls); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+/* The rail is the picture's own size; the HUD sits at its bottom left. On phones the HUD is sticky (responsive.css), so it rides up above the fixed action bar instead of going under it. */
+.viewer3d-hud-rail { position: absolute; inset: 0; z-index: var(--z-controls); display: flex; align-items: flex-end; padding: var(--space-0) var(--space-3) var(--space-3); pointer-events: none; }
+.viewer3d-hud { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); pointer-events: none; }
+.viewer3d-hud > * { pointer-events: auto; }
 .viewer3d-hud-row { display: flex; align-items: center; gap: var(--space-2); }
 .viewer3d-controls { display: flex; padding: var(--space-1); border-radius: var(--radius-full); background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); box-shadow: var(--shadow-md); }
 .viewer3d-controls .icon-btn { color: var(--color-text); }

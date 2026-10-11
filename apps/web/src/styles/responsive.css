@@ -34,7 +34,10 @@
   .dialog-body .actions { position: static; box-shadow: none; border: none; padding: var(--space-0); }
   .review-head { padding-inline: var(--space-4); margin-top: var(--space-4); }
   .viewer-layout { display: flex; flex-direction: column; height: auto; min-height: var(--space-0); margin-top: var(--space-3); border-top: none; }
-  .viewer { margin: var(--space-0) var(--space-4); }
+  /* overflow: clip (not hidden) keeps the rounded corners without making the viewer a scroll container, so the HUD's sticky position follows the page. */
+  .viewer { margin: var(--space-0) var(--space-4); overflow: clip; }
+  /* The zoom buttons and compass stay above the fixed action bar (its padding, button and border, plus the home-indicator inset and a gap) wherever the page is scrolled. */
+  .viewer3d-hud { position: sticky; bottom: calc(var(--size-button-h) + var(--space-6) + var(--size-border) + env(safe-area-inset-bottom) + var(--space-3)); }
   .viewer-canvas { flex: none; height: var(--size-viewer-h-mobile); min-height: var(--size-viewer-min-h-mobile); }
   .view-controls { top: var(--space-2); right: var(--space-2); }
   .scene-caption { display: none; }

@@ -88,4 +88,27 @@ describe("label layout", () => {
       }
     }
   });
+
+  it("goes further (with a leader) to stay clear of the controls when nothing near is clear", () => {
+    const body = veh("A", 150, 200, 40, 90, 140);
+    // The controls reach 140 px above and below the car, across the whole width: the near ring is all blocked.
+    const controls: Rect[] = [{ x: 0, y: 60, w: 390, h: 340 }];
+    const near = layoutLabels([body], { viewport: VIEWS[1]!, obstacles: [body.rect], controls })[0]!;
+    const far = layoutLabels([body], { viewport: VIEWS[1]!, obstacles: [body.rect], controls, farDistance: 150 })[0]!;
+    expect(rectsOverlap(near, controls[0]!, 0)).toBe(true);          // no longer reach: it sits under a control, never over the body
+    expect(rectsOverlap(near, body.rect, 0)).toBe(false);
+    expect(rectsOverlap(far, controls[0]!, 0)).toBe(false);          // with it, it is clear of both
+    expect(rectsOverlap(far, body.rect, 0)).toBe(false);
+    expect(far.distance).toBeGreaterThan(LABEL_MAX_DISTANCE_PX);
+    expect(far.distance).toBeLessThanOrEqual(150.5);
+    expect(far.leader).not.toBeNull();
+  });
+
+  it("sits under a control before it covers a vehicle", () => {
+    const body = veh("A", 150, 150, 60, 60, 140);
+    // Controls fill everything but the vehicle itself: the label must overlap a control, not the body.
+    const controls: Rect[] = [{ x: 0, y: 0, w: 390, h: 150 }, { x: 0, y: 210, w: 390, h: 210 }, { x: 0, y: 150, w: 150, h: 60 }, { x: 210, y: 150, w: 180, h: 60 }];
+    const [o] = layoutLabels([body], { viewport: VIEWS[1]!, obstacles: [body.rect], controls });
+    expect(rectsOverlap(o!, body.rect, 0)).toBe(false);
+  });
 });
