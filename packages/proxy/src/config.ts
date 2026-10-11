@@ -43,6 +43,7 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
       attribution: "Elevation: Terrarium tiles, AWS Open Data Terrain Tiles (Mapzen/Tilezen; USGS 3DEP, SRTM)",
     },
     vehicles: { url: "https://vpic.nhtsa.dot.gov/api/vehicles", attribution: "Vehicle data: NHTSA vPIC" },
+    // Nominatim and Overpass: 1 request a second, globally and per user.
     limits: { minIntervalMs: 1000, perUserMinIntervalMs: 1000, timeoutMs: 8000 },
     // Map and elevation tiles use token buckets, not 1 req/s (approved by Zoheb, 2026-10-09): a
     // 1440 px map view needs ~35 tiles at once and Leaflet doesn't retry a refused tile. Tiles and
@@ -53,6 +54,13 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     // seconds (the claim's town once, one per typing pause, one or two for a town typed after a comma),
     // which the old 5 at 2/s could not cover with room to spare.
     suggestBurst: { perUser: { capacity: 12, refillPerS: 3 }, global: { capacity: 20, refillPerS: 10 } },
+    // NHTSA vPIC: its own buckets, separate from the map's (owner, 2026-10-11; docs/PROXY-BUSY.md). It used to be
+    // 1 req/s per user, refused at once, and 1 req/s globally per vPIC call, while a model list is four calls: opening
+    // the vehicles step (makes + vehicle A's models) or a pause inside a typed make got a 429. Per user: one token per
+    // proxy request, 8 at once refilling 1/s (two vehicles typed by a person use about 3 to 5, and the long-run rate
+    // stays 1 a second). All users: one token per vPIC call, 16 at once (four cold model lists) refilling 2/s. Cache
+    // hits (30 days, shared through Blobs) take no token.
+    vehiclesBurst: { perUser: { capacity: 8, refillPerS: 1 }, global: { capacity: 16, refillPerS: 2 } },
     cacheTtlS: { search: DAY_S, overpass: 7 * DAY_S, tile: 7 * DAY_S, terrain: 30 * DAY_S, vehicles: 30 * DAY_S },
   };
 }

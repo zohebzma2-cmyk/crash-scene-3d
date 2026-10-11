@@ -1,10 +1,18 @@
 // The one place that talks to outside services: cache first, then rate-limit slots, then the
 // call (with timeout, User-Agent and fallbacks), then stale-on-error.
-import { BUSY_MESSAGE, TIMEOUT_MESSAGE, type BucketLimit, type ProviderConfig, type ProxyError } from "@csd/core";
+import {
+  BUSY_MESSAGES, TIMEOUT_MESSAGES, UPSTREAM_MESSAGES,
+  type BucketLimit, type ProviderConfig, type ProxyError, type ProxyTopic,
+} from "@csd/core";
 import type { EntryMeta, ProxyDeps, StoredEntry } from "./types";
 
 /** Longest we hold a request waiting for a slot or token before answering "busy". */
 export const MAX_SLOT_WAIT_MS = 1200;
+/**
+ * vPIC waits longer for a token than the map does: a model list is four calls that each need one, and a
+ * person typing would rather wait a moment than be told "busy" (docs/PROXY-BUSY.md).
+ */
+export const VEHICLES_TOKEN_WAIT_MS = 2500;
 /**
  * Overpass only: how long a request waits for the caller's own 1 req/s slot instead of being refused.
  * Picking a street asks for the roads around it (/api/geo/overpass) and its cross streets
@@ -22,15 +30,17 @@ const MIN_ATTEMPT_MS = 300;
 /** The first attempt of several gets at least this much (or half the time left), so mirrors still have time. */
 const FIRST_ATTEMPT_FLOOR_MS = 1500;
 const MAX_BODY_BYTES = 15 * 1024 * 1024;
-export const UPSTREAM_MESSAGE = "The map service isn't answering right now. Please try again shortly.";
+/** The map's wording; other topics have their own (UPSTREAM_MESSAGES in @csd/core). */
+export const UPSTREAM_MESSAGE = UPSTREAM_MESSAGES.map;
 export const NOT_FOUND_MESSAGE = "That wasn't found.";
 
 export type Service = "nominatim" | "overpass" | "tiles" | "terrain" | "vehicles" | "photon";
 /**
- * Tiles, elevation tiles and type-ahead use token buckets (ProviderConfig.tileBurst / suggestBurst);
- * everything else is 1 req/s.
+ * Tiles, elevation tiles, type-ahead and vPIC use token buckets (ProviderConfig.tileBurst / suggestBurst /
+ * vehiclesBurst); Nominatim and Overpass are 1 req/s.
  */
-const isBucketService = (s: Service) => s === "tiles" || s === "terrain" || s === "photon";
+const isBucketService = (s: Service) => s === "tiles" || s === "terrain" || s === "photon" || s === "vehicles";
+const burstOf = (config: ProviderConfig, s: Service) => (s === "photon" ? config.suggestBurst : s === "vehicles" ? config.vehiclesBurst : config.tileBurst);
 
 export class ProxyFailure extends Error {
   constructor(readonly status: number, readonly error: ProxyError) {
@@ -38,7 +48,14 @@ export class ProxyFailure extends Error {
   }
 }
 
-export const busy = (retryAfterS: number) => new ProxyFailure(429, { code: "busy", message: BUSY_MESSAGE, retryAfterS });
+/**
+ * The 429 for this request's topic. It is logged with the service and which limit refused it (never the
+ * user key, the query or an address), so the function log shows what is busy.
+ */
+export function busy(ctx: Pick<Ctx, "topic">, retryAfterS: number, service = "", limiter: "user" | "global" | "" = ""): ProxyFailure {
+  console.warn(`proxy: busy topic=${ctx.topic}${service ? ` service=${service}` : ""}${limiter ? ` limiter=${limiter}` : ""}`);
+  return new ProxyFailure(429, { code: "busy", message: BUSY_MESSAGES[ctx.topic], retryAfterS });
+}
 
 /** Thrown by a `process` hook when the upstream body is unusable (counts like a 5xx: try the next URL). */
 export class BadUpstreamBody extends Error {}
@@ -57,11 +74,15 @@ export interface Entry {
 }
 
 export interface Ctx {
+  /** What the request is about: picks the wording of busy, timeout and upstream answers. */
+  readonly topic: ProxyTopic;
   readonly config: ProviderConfig;
   readonly deps: ProxyDeps;
   readonly userKey: string;
-  /** Services whose per-user slot or bucket this request already holds. */
+  /** Services whose per-user 1 req/s slot this request already holds. */
   readonly userSlots: Set<string>;
+  /** Per-user bucket tokens this request took or is waiting for, by service (one per request and service). */
+  readonly userTokens: Map<string, Promise<void>>;
   readonly inflight: Map<string, Promise<Entry>>;
   /** URL → time (ms) until which it is tried last: it timed out or failed recently. Per proxy instance. */
   readonly health: Map<string, number>;
@@ -104,13 +125,13 @@ export interface UpstreamSpec {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** Take one token from a bucket, waiting (up to MAX_SLOT_WAIT_MS and the request deadline) for a refill. */
-async function takeBucketToken(ctx: Ctx, key: string, limit: BucketLimit): Promise<void> {
-  const waitUntil = Math.min(ctx.deps.now() + MAX_SLOT_WAIT_MS, ctx.deadline);
+/** Take one token from a bucket, waiting (up to `maxWaitMs` and the request deadline) for a refill. */
+async function takeBucketToken(ctx: Ctx, key: string, limit: BucketLimit, maxWaitMs: number, service: string, limiter: "user" | "global"): Promise<void> {
+  const waitUntil = Math.min(ctx.deps.now() + maxWaitMs, ctx.deadline);
   for (;;) {
     const retryInMs = await ctx.deps.store.takeToken(key, ctx.deps.now(), limit);
     if (retryInMs <= 0) return;
-    if (retryInMs > waitUntil - ctx.deps.now()) throw busy(Math.max(1, Math.ceil(retryInMs / 1000)));
+    if (retryInMs > waitUntil - ctx.deps.now()) throw busy(ctx, Math.max(1, Math.ceil(retryInMs / 1000)), service, limiter);
     await sleep(retryInMs);
   }
 }
@@ -121,24 +142,29 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   const { limits } = ctx.config;
   const { store, now } = ctx.deps;
   if (isBucketService(base)) {
-    const burst = base === "photon" ? ctx.config.suggestBurst : ctx.config.tileBurst;
-    if (!ctx.userSlots.has(base)) {
-      await takeBucketToken(ctx, `user:${ctx.userKey}:${base}`, burst.perUser);
-      ctx.userSlots.add(base);
+    const burst = burstOf(ctx.config, base);
+    const maxWaitMs = base === "vehicles" ? VEHICLES_TOKEN_WAIT_MS : MAX_SLOT_WAIT_MS;
+    // One user token per request and service: calls that run side by side (a model list's four vPIC calls)
+    // share the one wait, and all of them are refused if it is.
+    let mine = ctx.userTokens.get(base);
+    if (!mine) {
+      mine = takeBucketToken(ctx, `user:${ctx.userKey}:${base}`, burst.perUser, maxWaitMs, base, "user");
+      ctx.userTokens.set(base, mine);
     }
-    await takeBucketToken(ctx, `global:${base}`, burst.global);
+    await mine;
+    await takeBucketToken(ctx, `global:${base}`, burst.global, maxWaitMs, base, "global");
     return;
   }
   if (!ctx.userSlots.has(base)) {
     const userKey = `user:${ctx.userKey}:${base}`;
     const queueMs = USER_QUEUE_MS[base];
     if (queueMs === undefined) {
-      if (!(await store.takeSlot(userKey, now(), limits.perUserMinIntervalMs))) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+      if (!(await store.takeSlot(userKey, now(), limits.perUserMinIntervalMs))) throw busy(ctx, Math.ceil(limits.perUserMinIntervalMs / 1000), base, "user");
     } else {
       // Reserve the caller's next slot (one read, one write) and sleep until it, instead of polling: at most
       // queueMs / interval requests wait per caller, the rest are refused at once, first come first served.
       const start = await store.reserveSlot(userKey, now(), limits.perUserMinIntervalMs, Math.max(0, Math.min(queueMs, ctx.deadline - now())));
-      if (start === null) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+      if (start === null) throw busy(ctx, Math.ceil(limits.perUserMinIntervalMs / 1000), base, "user");
       if (start > now()) await sleep(start - now());
     }
     ctx.userSlots.add(base);
@@ -147,7 +173,7 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   for (;;) {
     if (await store.takeSlot(`global:${service}`, now(), limits.minIntervalMs)) return;
     const left = waitUntil - now();
-    if (left <= 0) throw busy(Math.ceil((limits.minIntervalMs * 2) / 1000));
+    if (left <= 0) throw busy(ctx, Math.ceil((limits.minIntervalMs * 2) / 1000), service, "global");
     await sleep(Math.min(SLOT_POLL_MS, left));
   }
 }
@@ -331,8 +357,8 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
   }
   if (cached) return entryOf(cached, spec.ttlS, { stale: true, hit: true });
   if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE });
-  if (sawTimeout && failStatus === null) throw new ProxyFailure(504, { code: "timeout", message: TIMEOUT_MESSAGE, retryAfterS: 5 });
-  throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGE, retryAfterS: 5 });
+  if (sawTimeout && failStatus === null) throw new ProxyFailure(504, { code: "timeout", message: TIMEOUT_MESSAGES[ctx.topic], retryAfterS: 5 });
+  throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGES[ctx.topic], retryAfterS: 5 });
 }
 
 /**
@@ -361,11 +387,12 @@ export function fetchUpstream(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
 /**
  * A cached result built from several upstream calls (each cached on its own). Stale on failure;
  * a partial result is never cached, and `cache: false` from build keeps a degraded answer
- * (e.g. a fallback after an error) out of the cache.
+ * (e.g. a fallback after an error) out of the cache. `stale: true` from build (it was made from expired
+ * parts because the provider failed or was busy) is served as stale and not cached as fresh either.
  */
 export function composite(
   ctx: Ctx, key: string, ttlS: number,
-  build: () => Promise<{ bytes: Uint8Array; contentType: string; cache?: boolean }>,
+  build: () => Promise<{ bytes: Uint8Array; contentType: string; cache?: boolean; stale?: boolean }>,
   keepS?: number,
 ): Promise<Entry> {
   return singleFlight(ctx, key, async () => {
@@ -373,9 +400,9 @@ export function composite(
     const cached = await readCache(ctx, key, ttlS, keepS);
     if (cached && cached.expiresAt > now()) return entryOf(cached, ttlS, { stale: false, hit: true });
     try {
-      const { cache = true, ...built } = await build();
-      if (cache) await store.set(key, built.bytes, built.contentType, ttlS);
-      return { ...built, fetchedAt: now(), stale: false, hit: false };
+      const { cache = true, stale = false, ...built } = await build();
+      if (cache && !stale) await store.set(key, built.bytes, built.contentType, ttlS);
+      return { ...built, fetchedAt: now(), stale, hit: stale };
     } catch (e) {
       if (cached) return entryOf(cached, ttlS, { stale: true, hit: true });
       throw e;

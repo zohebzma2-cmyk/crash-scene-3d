@@ -48,8 +48,32 @@ export interface ProxyError {
   readonly retryAfterS?: number;
 }
 
-export const BUSY_MESSAGE = "We're getting a lot of map requests right now. Please try again in a moment.";
-export const TIMEOUT_MESSAGE = "The map service is slow to answer right now. Please try again shortly.";
+/**
+ * What a proxy answer is about, so its message names the right thing: the map (tiles, terrain, the roads
+ * around a pin), the address search (search, type-ahead, crossings, cross streets) or the vehicle list (vPIC).
+ * A vehicle lookup must never say "map requests" (owner's report, 2026-10-11).
+ */
+export type ProxyTopic = "map" | "search" | "vehicles";
+
+/** "Too many requests": shown only after the proxy and the app have both waited and tried again. */
+export const BUSY_MESSAGES: Readonly<Record<ProxyTopic, string>> = Object.freeze({
+  map: "We're getting a lot of map requests right now. Please try again in a moment.",
+  search: "We're getting a lot of searches right now. Please try again in a moment.",
+  vehicles: "The vehicle list is busy right now. Please try again in a moment.",
+});
+export const TIMEOUT_MESSAGES: Readonly<Record<ProxyTopic, string>> = Object.freeze({
+  map: "The map service is slow to answer right now. Please try again shortly.",
+  search: "Search is slow to answer right now. Please try again shortly.",
+  vehicles: "The vehicle list is slow to answer right now. Please try again shortly.",
+});
+export const UPSTREAM_MESSAGES: Readonly<Record<ProxyTopic, string>> = Object.freeze({
+  map: "The map service isn't answering right now. Please try again shortly.",
+  search: "Search isn't answering right now. Please try again shortly.",
+  vehicles: "The vehicle list isn't answering right now. Please try again shortly.",
+});
+/** The map's wording (kept for callers that predate the per-topic messages). */
+export const BUSY_MESSAGE = BUSY_MESSAGES.map;
+export const TIMEOUT_MESSAGE = TIMEOUT_MESSAGES.map;
 
 /** Search result as returned by /api/geo/search and /api/geo/crossing. */
 export interface PlaceResult {
@@ -148,7 +172,7 @@ export interface ProviderConfig {
   readonly terrain: { readonly url: string; readonly encoding: "terrarium"; readonly attribution: string };
   readonly vehicles: { readonly url: string; readonly attribution: string };
   /**
-   * Strict limits for Nominatim, Overpass (search and crossing included) and NHTSA vPIC: one request
+   * Strict limits for Nominatim and Overpass (search and crossing included): one request
    * per `minIntervalMs` globally and per `perUserMinIntervalMs` per user. `timeoutMs` is the overall
    * deadline for one proxy request (slot waits and every upstream attempt count against it).
    */
@@ -163,5 +187,11 @@ export interface ProviderConfig {
   readonly tileBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
   /** Type-ahead (Photon): a token bucket too, since autocomplete can't live at 1 req/s. Cache hits take no token. */
   readonly suggestBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
+  /**
+   * NHTSA vPIC (makes and model lists): its own token buckets, separate from the map's (owner, 2026-10-11).
+   * `perUser` takes one token per proxy request; `global` one per vPIC call (a model list is four calls,
+   * one per vehicle kind). Cache hits take none. Over the limit a request waits up to ~2.5 s for a token.
+   */
+  readonly vehiclesBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
   readonly cacheTtlS: { readonly search: number; readonly overpass: number; readonly tile: number; readonly terrain: number; readonly vehicles: number };
 }
