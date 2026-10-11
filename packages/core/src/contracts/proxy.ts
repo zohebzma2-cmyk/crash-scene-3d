@@ -36,7 +36,55 @@ export const PROXY_ROUTES = Object.freeze({
   makes: "/api/vehicles/makes",
   /** NHTSA vPIC models. Params: make, year. */
   models: "/api/vehicles/models",
+  /**
+   * A stock photo of a year/make/model (CarImages, fetched and cached server-side). Params: make, model,
+   * year (optional), view (VEHICLE_IMAGE_VIEWS, default front34), width (200|400|800|1200, default 400),
+   * type (car|moto, default car). 200 with the image (header MEDIA_HEADERS.image = "exact"), or 204 with
+   * MEDIA_HEADERS.fallback saying why: the app then shows its own icon. Never an error screen.
+   */
+  vehicleImage: "/api/vehicles/image",
+  /**
+   * The 3D model (GLB) of a year/make/model (CarImages). Params: make, model, year (optional). 200 with
+   * model/gltf-binary (MEDIA_HEADERS.watermarked says whether the free-tier watermark is in the mesh), or
+   * 200 JSON MediaFallback when there is none: the app keeps its own low-poly model.
+   */
+  vehicleModel: "/api/vehicles/model",
+  /** A car maker's logo, PNG. Params: name. 200 (MEDIA_HEADERS.logoSource says whose) or 204: the app shows its car icon and the name. */
+  makeLogo: "/api/logos/make",
 });
+
+/** Camera angles CarImages photographs (cars only). */
+export const VEHICLE_IMAGE_VIEWS = ["front34", "front34-r", "front", "side", "side-r", "rear34", "rear34-r", "rear"] as const;
+export type VehicleImageView = (typeof VEHICLE_IMAGE_VIEWS)[number];
+export const VEHICLE_IMAGE_WIDTHS = [200, 400, 800, 1200] as const;
+
+/** Response headers of the media routes (lower case, as fetch reports them). */
+export const MEDIA_HEADERS = Object.freeze({
+  /** "exact" on a photo; "none" or "make-only" (the make is known, this model isn't) on a 204. */
+  image: "x-vehicle-image",
+  /** The angle actually served (it can differ from the one asked for). */
+  view: "x-vehicle-view",
+  /** On every fallback: why (MediaFallbackReason). */
+  fallback: "x-media-fallback",
+  /** On a GLB: "true" when the provider's watermark is baked into the mesh (free tier). */
+  watermarked: "x-vehicle-model-watermarked",
+  /** On a logo: whose it is ("carimages" or "logodev"); logo.dev's free plan needs a visible credit. */
+  logoSource: "x-logo-source",
+});
+
+/**
+ * Why a media route answered the fallback. "not-configured": no keys on the server; "quota": the daily
+ * soft cap or the provider's quota was reached; "busy": our own rate limit; "upstream": the provider
+ * failed; "no-make" / "no-model" / "no-image": the provider has nothing for it; "moto-not-in-plan":
+ * motorcycles aren't in the plan, so nothing was asked.
+ */
+export type MediaFallbackReason = "not-configured" | "quota" | "busy" | "upstream" | "no-make" | "no-model" | "no-image" | "moto-not-in-plan";
+
+/** Body of a /api/vehicles/model fallback. */
+export interface MediaFallback {
+  readonly fallback: true;
+  readonly reason: MediaFallbackReason;
+}
 
 export type ProxyErrorCode = "busy" | "timeout" | "upstream" | "bad-request" | "not-found";
 
@@ -164,4 +212,64 @@ export interface ProviderConfig {
   /** Type-ahead (Photon): a token bucket too, since autocomplete can't live at 1 req/s. Cache hits take no token. */
   readonly suggestBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
   readonly cacheTtlS: { readonly search: number; readonly overpass: number; readonly tile: number; readonly terrain: number; readonly vehicles: number };
+  /** Vehicle photos, 3D models and maker logos (round B). See docs/decisions/0010-vehicle-images.md. */
+  readonly media: MediaConfig;
+}
+
+/** A provider whose calls spend a monthly quota: its own token buckets and a rolling daily soft cap. */
+export interface MediaLimits {
+  /** Per caller and for all callers together. Only real upstream calls take a token; cache hits never do. */
+  readonly burst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
+  /**
+   * Soft cap on keyed API calls per rolling 24 hours, for all callers together (a token bucket of this
+   * size refilled at this many per day, kept in Blobs). Past it the routes answer the fallback at once.
+   */
+  readonly dailyCap: number;
+  /** After the provider answers 429, how long (s) we stop asking it and answer the fallback. */
+  readonly cooldownS: number;
+}
+
+/**
+ * Media providers. Keys are NOT here: they are Netlify secrets the function reads at call time
+ * (ProxyDeps.secret) and they only ever go upstream in request headers.
+ */
+export interface MediaConfig {
+  readonly carimages: MediaLimits & {
+    /** REST API base, e.g. https://carimagesapi.com/api/v1 (keyed: Authorization Bearer + X-Api-Secret headers). */
+    readonly apiUrl: string;
+    /** Public brand logo endpoint (no key): /brand-logo?make=. */
+    readonly brandLogoUrl: string;
+    /** Hosts image and model files may be downloaded from (the catalog's URLs are checked against this). */
+    readonly assetHosts: readonly string[];
+    /** Photo format. The free plan serves WebP only. */
+    readonly format: "webp" | "png" | "jpg";
+    /** Largest GLB we relay (bytes). */
+    readonly maxModelBytes: number;
+    readonly attribution: string;
+  };
+  readonly logodev: MediaLimits & {
+    /** API base (secret key, Bearer header), e.g. https://api.logo.dev. */
+    readonly apiUrl: string;
+    /** Hosts the API's temporary download URLs may point at. */
+    readonly assetHosts: readonly string[];
+    /** Credit line logo.dev's free plan requires on a commercial site wherever its logos show. */
+    readonly attribution: string;
+    readonly attributionUrl: string;
+    /** Maker name (normalized: lower case, letters and digits only) to its web domain, for logo.dev lookups. */
+    readonly makeDomains: Readonly<Record<string, string>>;
+  };
+  readonly cacheTtlS: {
+    /** Photos. */
+    readonly image: number;
+    /** Logos. */
+    readonly logo: number;
+    /** 3D models. */
+    readonly model: number;
+    /** Makes, models and generations lists. */
+    readonly catalog: number;
+    /** Which libraries (cars, motorcycles) the plan includes. */
+    readonly libraries: number;
+    /** A maker no logo source knows. */
+    readonly logoMiss: number;
+  };
 }

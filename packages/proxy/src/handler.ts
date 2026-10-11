@@ -8,6 +8,7 @@ import {
   overpassCrossStreetsQuery, type StreetSelector,
 } from "@csd/mapdata";
 import { NO_TILE_PNG } from "./fixture-tiles";
+import { createMediaRoutes } from "./media";
 import { photonToPlaces } from "./photon";
 import {
   crossStreetsParams, crossingParams, modelsParams, noParams, overpassParams, parseQuery, searchParams, suggestParams, tileCoords,
@@ -451,6 +452,9 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     return errorResponse(400, { code: "bad-request", message: `That request wasn't valid.${which}` });
   }
 
+  // Vehicle photos, 3D models and maker logos (media.ts).
+  const media = createMediaRoutes(config, deps, badRequest);
+
   // ---- entry point ----------------------------------------------------------------------------
 
   return async (req: Request): Promise<Response> => {
@@ -468,6 +472,9 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
       if (path === R.config) return capabilities();
       if (path === R.makes) return await makes(ctx, url);
       if (path === R.models) return await models(ctx, url);
+      if (path === R.vehicleImage) return await media.vehicleImage(ctx, url);
+      if (path === R.vehicleModel) return await media.vehicleModel(ctx, url);
+      if (path === R.makeLogo) return await media.makeLogo(ctx, url);
       if (path.startsWith(`${R.tile}/`)) return await tile(ctx, "tile", path.slice(R.tile.length + 1), url, req);
       if (path.startsWith(`${R.terrain}/`)) return await tile(ctx, "terrain", path.slice(R.terrain.length + 1), url, req);
       return errorResponse(404, { code: "not-found", message: "That wasn't found." });

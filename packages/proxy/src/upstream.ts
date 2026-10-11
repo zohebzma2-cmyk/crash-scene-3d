@@ -25,12 +25,19 @@ const MAX_BODY_BYTES = 15 * 1024 * 1024;
 export const UPSTREAM_MESSAGE = "The map service isn't answering right now. Please try again shortly.";
 export const NOT_FOUND_MESSAGE = "That wasn't found.";
 
-export type Service = "nominatim" | "overpass" | "tiles" | "terrain" | "vehicles" | "photon";
+export type Service = "nominatim" | "overpass" | "tiles" | "terrain" | "vehicles" | "photon" | "carimages" | "logodev";
 /**
- * Tiles, elevation tiles and type-ahead use token buckets (ProviderConfig.tileBurst / suggestBurst);
- * everything else is 1 req/s.
+ * Tiles, elevation tiles, type-ahead and the media providers use token buckets (ProviderConfig.tileBurst /
+ * suggestBurst / media.*.burst); everything else is 1 req/s.
  */
-const isBucketService = (s: Service) => s === "tiles" || s === "terrain" || s === "photon";
+const isBucketService = (s: Service) => s === "tiles" || s === "terrain" || s === "photon" || s === "carimages" || s === "logodev";
+
+function burstFor(config: ProviderConfig, s: Service): { perUser: BucketLimit; global: BucketLimit } {
+  if (s === "photon") return config.suggestBurst;
+  if (s === "carimages") return config.media.carimages.burst;
+  if (s === "logodev") return config.media.logodev.burst;
+  return config.tileBurst;
+}
 
 export class ProxyFailure extends Error {
   constructor(readonly status: number, readonly error: ProxyError) {
@@ -39,6 +46,28 @@ export class ProxyFailure extends Error {
 }
 
 export const busy = (retryAfterS: number) => new ProxyFailure(429, { code: "busy", message: BUSY_MESSAGE, retryAfterS });
+
+/**
+ * A keyed provider call was not made (our daily soft cap, or a cooldown after the provider's own 429), or the
+ * provider answered 429. The media routes turn it into their fallback; it is never shown as an error.
+ */
+export class QuotaFailure extends ProxyFailure {
+  constructor(retryAfterS: number) {
+    super(429, { code: "busy", message: BUSY_MESSAGE, retryAfterS });
+  }
+}
+
+/**
+ * A call that spends a provider's monthly quota. Before it is made (never for a cache hit) it takes a token
+ * from `key` (a rolling daily bucket) and checks the cooldown entry; when the provider answers 429 the
+ * cooldown is set for `cooldownS`. Either way the request fails with QuotaFailure without waiting.
+ */
+export interface QuotaSpec {
+  readonly key: string;
+  readonly limit: BucketLimit;
+  readonly cooldownKey: string;
+  readonly cooldownS: number;
+}
 
 /** Thrown by a `process` hook when the upstream body is unusable (counts like a 5xx: try the next URL). */
 export class BadUpstreamBody extends Error {}
@@ -71,9 +100,15 @@ export interface Ctx {
 
 export interface UpstreamCall {
   readonly url: string;
-  readonly init?: { method?: string; headers?: Record<string, string>; body?: string };
+  /**
+   * `redirect: "error"` for calls that carry a key in a header: a redirect to another host must never take
+   * the key along. The default follows redirects.
+   */
+  readonly init?: { method?: string; headers?: Record<string, string>; body?: string; redirect?: "follow" | "error" };
   /** Slot service for this URL (fallback hosts get their own). */
   readonly service: Service | `${Service}-${number}`;
+  /** This call spends a provider quota (keyed media API calls). */
+  readonly quota?: QuotaSpec;
 }
 
 export interface UpstreamSpec {
@@ -121,7 +156,7 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   const { limits } = ctx.config;
   const { store, now } = ctx.deps;
   if (isBucketService(base)) {
-    const burst = base === "photon" ? ctx.config.suggestBurst : ctx.config.tileBurst;
+    const burst = burstFor(ctx.config, base);
     if (!ctx.userSlots.has(base)) {
       await takeBucketToken(ctx, `user:${ctx.userKey}:${base}`, burst.perUser);
       ctx.userSlots.add(base);
@@ -152,10 +187,19 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   }
 }
 
+/** Take one quota token for a keyed call, or throw QuotaFailure (no waiting: the caller falls back at once). */
+async function takeQuota(ctx: Ctx, q: QuotaSpec): Promise<void> {
+  const { store, now } = ctx.deps;
+  const cooling = await store.get(q.cooldownKey);
+  if (cooling && cooling.expiresAt > now()) throw new QuotaFailure(Math.max(1, Math.ceil((cooling.expiresAt - now()) / 1000)));
+  const retryInMs = await store.takeToken(q.key, now(), q.limit);
+  if (retryInMs > 0) throw new QuotaFailure(Math.max(1, Math.ceil(retryInMs / 1000)));
+}
+
 type Attempt =
   | { kind: "ok"; bytes: Uint8Array; contentType: string; headers: Headers }
   | { kind: "not-modified"; headers: Headers }
-  | { kind: "retry"; timeout: boolean }
+  | { kind: "retry"; timeout: boolean; status?: number }
   | { kind: "fail"; status: number };
 
 async function attempt(ctx: Ctx, call: UpstreamCall, budgetMs: number): Promise<Attempt> {
@@ -170,10 +214,10 @@ async function attempt(ctx: Ctx, call: UpstreamCall, budgetMs: number): Promise<
       body: call.init?.body,
       headers: { ...call.init?.headers, "User-Agent": ctx.config.userAgent },
       signal: ctrl.signal,
-      redirect: "follow",
+      redirect: call.init?.redirect ?? "follow",
     });
     if (res.status === 304) return { kind: "not-modified", headers: res.headers };
-    if (res.status === 429 || res.status >= 500) return { kind: "retry", timeout: false };
+    if (res.status === 429 || res.status >= 500) return { kind: "retry", timeout: false, status: res.status };
     if (!res.ok) return { kind: "fail", status: res.status };
     // Only a complete 200 is a usable body: a 204 is empty and a 206 is a fragment.
     if (res.status !== 200) return { kind: "retry", timeout: false };
@@ -260,12 +304,14 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
   if (cached && cached.expiresAt > now()) return entryOf(cached, spec.ttlS, { stale: false, hit: true });
 
   let sawTimeout = false;
+  let sawQuota = false;
   let failStatus: number | null = null;
   try {
     const ordered = byHealth(spec.calls, ctx);
     for (const [idx, call] of ordered.entries()) {
       if (ctx.deadline - now() < MIN_ATTEMPT_MS) { sawTimeout = true; break; }
       await takeSlots(ctx, call.service);
+      if (call.quota) await takeQuota(ctx, call.quota);
       const left = ctx.deadline - now();
       if (left < MIN_ATTEMPT_MS) { sawTimeout = true; break; }
       // With mirrors still to try, don't spend the whole deadline on this one.
@@ -291,6 +337,11 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
         return { ...entryOf({ ...cached, expiresAt: now() + refreshed * 1000, meta: metaOf(result.headers, now(), cached.meta) }, spec.ttlS, { stale: false, hit: false }) };
       }
       if (result.kind === "retry") {
+        if (result.status === 429 && call.quota) {
+          // The provider's own limit: stop asking it for a while (every instance sees this entry).
+          sawQuota = true;
+          await store.set(call.quota.cooldownKey, new Uint8Array([1]), "text/plain", call.quota.cooldownS);
+        }
         if (ordered.length > 1) ctx.health.set(call.url, now() + PENALTY_MS);
         sawTimeout ||= result.timeout;
         // A slow provider with an old copy in hand: serve the copy now rather than spend the deadline on mirrors.
@@ -330,6 +381,7 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
     throw e;
   }
   if (cached) return entryOf(cached, spec.ttlS, { stale: true, hit: true });
+  if (sawQuota) throw new QuotaFailure(60);
   if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE });
   if (sawTimeout && failStatus === null) throw new ProxyFailure(504, { code: "timeout", message: TIMEOUT_MESSAGE, retryAfterS: 5 });
   throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGE, retryAfterS: 5 });
