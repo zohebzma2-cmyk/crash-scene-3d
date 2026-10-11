@@ -15,7 +15,7 @@ The tool uses OpenStreetMap services (Nominatim, Overpass, tiles) plus Terrarium
 - The browser talks only to its own origin. Every outside call goes through `/api/*` (Netlify Function). CSP is `connect-src 'self'`.
 - One `ProviderConfig` value in `packages/proxy` holds URLs, mirrors, User-Agent and contact, timeouts, rate limits and cache times. Switching provider or contact is a one-line change.
 - The User-Agent contact is the repo URL, https://github.com/zohebzma2-cmyk/crash-scene-3d, held only in `ProviderConfig`. The proxy sends it on every upstream request; the fixture-capture script sends the same string.
-- Nominatim, Overpass and vPIC: 1 request per second, globally and per user.
+- Nominatim, Overpass and vPIC: 1 request per second, globally and per user. (vPIC changed to token buckets on 2026-10-11, proposed in [0010](0010-vpic-token-buckets-and-test-traffic.md).)
 - Exception for tiles and terrain (Zoheb, 2026-10-09): token buckets, per user burst 64 refilling at 16/s, plus a global bucket (burst 256, refill 64/s). Only real upstream calls take a token. Tiles are cached at least 7 days (terrain 30) and revalidated with ETag / If-Modified-Since.
 - Attribution is visible on the map and printed under the PDF thumbnail.
 

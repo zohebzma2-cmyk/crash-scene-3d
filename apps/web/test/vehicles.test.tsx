@@ -118,7 +118,7 @@ describe("step 2: vehicles", () => {
     setValue(make, "Ford");
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(models).toHaveBeenLastCalledWith("Ford", 2018);
+    expect(models).toHaveBeenLastCalledWith("Ford", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     setValue(model, "Escape");
     expect(b.textContent).toContain("SUV from NHTSA vPIC");
     expect(model.value).toBe("Escape");
@@ -128,7 +128,7 @@ describe("step 2: vehicles", () => {
     expect(b.querySelectorAll("datalist option")).toHaveLength(0);   // and the old make's models are gone
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(models).toHaveBeenLastCalledWith("Toyota", 2018);
+    expect(models).toHaveBeenLastCalledWith("Toyota", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect([...b.querySelectorAll("datalist option")].map((o) => o.getAttribute("value"))).toEqual(["Camry"]);
   });
 

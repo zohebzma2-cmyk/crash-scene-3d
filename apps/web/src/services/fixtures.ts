@@ -11,6 +11,7 @@ import type { GeoService, RoadsService, VehiclesService } from "./types";
 import type { RoadsDeps } from "./roads";
 import { townLookups } from "./towns";
 import { ServiceError } from "./types";
+import { resolveMake } from "./vehicles";
 
 export interface FixtureEnv {
   readonly DEV?: boolean;
@@ -197,10 +198,12 @@ const MAKES: Record<string, Array<{ name: string; type: "car" | "suv" | "pickup"
 };
 
 export function createFixtureVehicles(): VehiclesService {
+  const names = Object.keys(MAKES).sort();
   return {
-    makes: async () => Object.keys(MAKES).sort(),
+    makes: async () => names,
+    canonicalMake: (text) => resolveMake(text, names),
     models: async (make) => {
-      const key = Object.keys(MAKES).find((k) => k.toLowerCase() === make.trim().toLowerCase());
+      const key = resolveMake(make, names);
       return key ? (MAKES[key] ?? []).map((m) => ({ name: m.name, vpicType: m.vpicType, type: m.type })) : [];
     },
   };

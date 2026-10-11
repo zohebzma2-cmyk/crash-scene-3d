@@ -94,9 +94,22 @@ export interface RoadsService {
   load(center: LatLon, radiusM?: number): Promise<RoadNetwork>;
 }
 
+export interface ModelsOptions {
+  /** The claimant typed on: stop waiting (an AbortError), though a request already sent still fills the cache. */
+  readonly signal?: AbortSignal;
+}
+
 export interface VehiclesService {
+  /** vPIC makes, fetched once a session. */
   makes(): Promise<string[]>;
-  models(make: string, year: number): Promise<VehicleModelResult[]>;
+  /**
+   * Model lists for a make and model year: one request per make and year for the session, under the makes
+   * list's spelling of the make ("chevy" asks for Chevrolet). A make the list doesn't know waits a little
+   * longer first, so a half-typed make is not asked for. Failures are ServiceErrors worded for the vehicle list.
+   */
+  models(make: string, year: number, opts?: ModelsOptions): Promise<VehicleModelResult[]>;
+  /** The makes list's spelling of a typed make, or null (not a known make, or the list isn't loaded). */
+  canonicalMake(text: string): string | null;
 }
 
 export interface PhysicsService {

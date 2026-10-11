@@ -2,6 +2,7 @@
 // These make real, rate-limited requests through the deployment's proxy: a handful per test, one test at a time.
 // The default claim address is "Main Street and Park Street, Nashua, NH" (synthetic; public road names only).
 import { expect, test, type Locator, type Page, type Response } from "@playwright/test";
+import { stubNonEssentialApi } from "../live-guard";
 
 /** Every /api answer the page got, so a test can say none of them was a 429. */
 function watchApi(page: Page): Array<{ url: string; status: number }> {
@@ -32,6 +33,8 @@ async function typeSlowly(page: Page, text: string, clear = true): Promise<void>
 }
 
 let api: Array<{ url: string; status: number }> = [];
+// Map tiles and vehicle lookups are answered inside the test: these specs check the search (e2e/live-guard.ts).
+test.beforeEach(async ({ page }) => { await stubNonEssentialApi(page); });
 test.afterEach(() => {
   // A normal search must never be told "busy".
   expect(api.filter((a) => a.status === 429), "429 answers").toEqual([]);
