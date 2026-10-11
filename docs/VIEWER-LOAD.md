@@ -92,3 +92,105 @@ At 1× CPU (1440): 1,086 ms is three (almost all of it the shader link wait), 20
   - Nothing catches a failed 3D chunk or WebGL context: there is no error boundary, so React unmounts the whole app.
   - A lost WebGL context leaves the canvas frozen.
   - A failed example scene says "We don't have an example called …", which is wrong for a network failure.
+
+## After (polish/viewer-load)
+
+### What changed
+
+**Loading state.** `review/ViewerStatus.tsx` draws "Building the scene…" with a progress bar and the four real stages: map data, terrain (counted by tile), 3D models (the viewer chunk) and drawing (until the first frame).
+- **Where the stages come from:** `viewer/load-stages.ts` derives them from the app's own state:
+  - the roads' status and per-tile progress (`state/Roads.tsx`);
+  - the viewer chunk's status (`viewer/load-viewer.ts`);
+  - the 3D view's first frame.
+
+  So they can't drift from the real work. Each change sets a `csd:load:<stage>:<status>` performance mark.
+- **Accessibility:** the headline and the current step are in a `role="status"` `aria-live="polite"` element. The spinner stands still with reduced motion, and the bar's transition uses a duration token, so it is 0 with reduced motion.
+- **From the first paint:** an example link shows the picture's box with the status from the first render (`ReviewSkeleton`), and so does Review while its roads load.
+- **No more gray box:** the 3D view draws its first frame hidden (`.viewer3d.is-building`) on top of the top-down diagram, and takes over only once it is drawn.
+
+**Failure.**
+- **3D code fails to load:** "We couldn't load the 3D view. Check your connection and try again."
+- **WebGL fails to start** (r3f's error, caught by an error boundary): "The 3D view couldn't start in this browser, so this is the top-down diagram."
+- **WebGL context lost:** "The 3D view stopped, so this is the top-down diagram."
+
+Each of these shows over the diagram, which is the existing no-WebGL fallback, with Retry.
+- **The 3D chunk's Retry:** it imports the same file under a fresh query. Chromium caches a failed module fetch, and WebKit fails a module whose preload failed.
+- **The map data failing** is a notice with Retry while the picture is drawn without roads, which is how it already behaved, but now said out loud.
+- **The example's scene file failing** says "We couldn't open the example…" with Retry. Before, it said "We don't have an example called …".
+- **A step's chunk failing** shows Retry, which reloads the page.
+
+**Faster.**
+- **Boot preload** (`boot.ts`): with `?example=`, the scene file, then its roads and terrain, and the 3D chunk all start before React renders, in parallel. The Roads provider joins the running load (`shareRoadLoads`), and a just-finished load is handed out again rather than fetched twice.
+- **No debounce on the first load:** the provider's first roads load goes at once. The 700 ms debounce is now only for pin moves.
+- **Parallel terrain:** the tiles are fetched in parallel. They are decoded on a CPU-backed canvas (`willReadFrequently`): reading back from a GPU canvas had waited on the GPU while it started the 3D view, 540 ms of the throttled profile, now about 90 ms.
+- **Road art early:** it is built while the 3D chunk downloads (`lib/roadArt.ts`).
+- **Code splitting:**
+  - Steps 1, 2 and 4 are lazy chunks (`steps.ts`); the next step's code loads once the current one is up.
+  - The exports and pdf-lib are a lazy chunk (`services/index.ts`).
+  - `viewer.css` moved into the main CSS, so the 3D chunk has no stylesheet to wait for.
+  - `lib/thumbnail.ts` imports its one constant from `png-meta`, so the map's chunk doesn't pull in pdf-lib.
+
+**Tried and dropped.**
+- **Compiling the shaders before the first frame** (`renderer.compileAsync` with the frame loop held): no measurable change (5,558 vs 5,729 ms throttled, 904 vs 821 ms unthrottled, same long tasks), so it was left out.
+- **Splitting out the effects:** they are 15 KB of the 1,018 KB 3D chunk, and they are part of the first frame (the dents show from t = 0, and the debris is already down with reduced motion). A separate chunk would add a round trip for nothing.
+
+### Time to the first rendered frame (median of 3, ms)
+
+The machine was shared with other agents, with a load average of 30 to 60. So the before and after were also run back to back, on the same build server setup, minutes apart:
+
+| Engine | Width | Before, unthrottled | After, unthrottled | Before, Fast 3G + 4× CPU | After, Fast 3G + 4× CPU |
+|---|---|---|---|---|---|
+| Chromium | 1440 | 4,223 | **971** | 12,992 | **5,608** |
+| Chromium | 390 | 3,714 | **854** | 12,616 | **5,597** |
+| WebKit | 1440 | 2,242 | **843** | n/a | n/a |
+| WebKit | 390 | 2,258 | **1,069** | n/a | n/a |
+
+An earlier, quieter pair gave the same picture:
+- **Before:** 2,978 / 3,064 / 12,348 / 12,221 / 2,185 / 2,190 ms.
+- **After the structural fixes:** 821 / 785 / 5,557 / 5,729 / 776 / 775 ms.
+
+| What you see | Before | After |
+|---|---|---|
+| First paint, throttled | 5,600 ms (white page until then) | 2,372 ms, with the status box in the picture's place |
+| The bare gray box | 1.1 s (Chromium), 0.33 s (WebKit), 2.1 s throttled | never: the diagram and the status until the 3D view has drawn |
+| Overpass request starts, throttled | 6,850 ms | 2,883 ms (with the 3D chunk already downloading since 2,283 ms) |
+
+### Timeline after (Chromium 390, Fast 3G + 4× CPU)
+
+| ms | What is on screen |
+|---|---|
+| 590–2,222 | Main chunk 103 KB gz, plus core 54 KB, CSS 18 KB and two small shared chunks, all in parallel |
+| 2,310 | "Building the scene…": the box with the stages; the 3D chunk (269 KB gz), the scene file and the fonts start |
+| 2,883–3,265 | Overpass, then the 4 terrain tiles at once (map data and terrain tick off) |
+| 3,469 | The top-down diagram under the status box ("Loading the 3D models") |
+| 4,947 | The 3D chunk is in ("Drawing the scene") |
+| 5,597 | The first 3D frame: the status box goes, and the 3D view replaces the diagram |
+| after | Save's and the vehicles step's code load in the background |
+
+### Chunk sizes (raw / gzip)
+
+| Chunk | Before | After |
+|---|---|---|
+| `index` (main) | 1,944 / 768 KB | **324 / 106 KB** |
+| core (zod, physics), shared | in main | 172 / 56 KB |
+| two small shared chunks | in main | 37 / 14 KB |
+| `index.css` | 82 / 17.5 KB | 90 / 18.5 KB (now includes viewer.css and the status styles) |
+| `Viewer` | 1,017 / 277 KB + 4.8 KB CSS | 1,018 / 277 KB, no CSS |
+| exports + pdf-lib (lazy, Save) | in main | 1,200 / 530 KB |
+| LocationStep + leaflet (lazy) | in main | 31 / 11 + 157 / 47 KB |
+| VehiclesStep / SaveStep (lazy) | in main | 21 / 7.5 and 13 / 4.8 KB |
+| pdfjs preview (lazy) | 487 / 148 KB | 487 / 148 KB |
+
+**What an example link downloads before the 3D view**, gzipped JS and CSS: 1,064 KB before, 472 KB after. The location step's first load (most visitors): 785 KB before, 253 KB after.
+
+### Where the rest goes
+
+What's left on a throttled phone link:
+- **About 1.6 s:** the main chunks over Fast 3G.
+- **About 2.7 s:** the 3D chunk (three.js is 570 KB raw of it).
+- **About 0.6 s:** building the first frame:
+  - shader compile and link (SwiftShader, in the GPU process);
+  - the road art (`ribbonExcess`, about 420 ms at 4× CPU, half of it now while the chunk downloads);
+  - `simulate()` (about 120 ms at 4× CPU).
+
+Starting the 3D chunk in parallel with the main chunk would need a separate tiny entry module. That would cost every visitor a round trip, so it was left as an option. Speeding up `ribbonExcess` is a `packages/core` change; it was left alone here.
