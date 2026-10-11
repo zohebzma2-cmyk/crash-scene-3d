@@ -13,7 +13,7 @@ This file records the numbers before and after the fix, with how they were taken
 - **The clock:** time from navigation to the first rendered vehicle frame, which is `.viewer-canvas[data-ready="true"]`. A MutationObserver stamps every intermediate state. Every figure is the median of 3 runs.
 - **CPU breakdown:** a CDP CPU profile from navigation to ready, on a source-mapped copy of the same build, with each sample's self time mapped back to its source file.
 - **Live reference:** https://crash-scene-3d.netlify.app, 3 page loads in total (2 Chromium at 1440, 1 WebKit at 390), read-only. No further live loads were made: all repeat runs are local.
-- **Scripts:** kept outside the repo, in the session scratchpad (`measure.mjs`, `profile.mjs`, `runall.sh`).
+- **Scripts:** kept outside the repo.
 
 ## Before (main at 2deab93)
 
