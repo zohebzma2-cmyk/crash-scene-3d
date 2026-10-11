@@ -79,6 +79,21 @@ describe("the claim's town stands in for the area", () => {
     expect(mainText()).toEqual(["Main StreetNashua, NH", `Main StreetLyons, CO${FAR_SUFFIX}`]);
   });
 
+  it("never sends the claim's town once a pin exists (the pin is the bias)", async () => {
+    const { suggest, town, search } = await open();
+    // Tap Search on the prefilled claim address without typing, pick the result: a pin, and nothing typed yet.
+    key(input(), "Enter");
+    await flush();
+    click(document.querySelector<HTMLButtonElement>(".results button"));
+    await flush();
+    expect(search).toHaveBeenCalledTimes(1);
+    await type("Main St");
+    expect(town).not.toHaveBeenCalled();
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(suggest.mock.calls[0]?.[1]?.bias).not.toBeNull();
+    expect(suggest.mock.calls[0]?.[1]?.bias).not.toEqual(nashua);
+  });
+
   it("'Main St and Park' with no pin finds the crossing near the claim's town, looking the town up once", async () => {
     const { suggest, cross, town } = await open();
     await type("Main Street and Park");
@@ -200,6 +215,17 @@ describe("busy: tried once more, never an empty list", () => {
     await act(async () => { release([MAIN_NASHUA]); await Promise.resolve(); });
     await flush();
     expect(mainText()).toEqual(["Main StreetNashua, NH"]);
+  });
+
+  it("'Busy, trying again…' never outlives its load: the same text asked again doesn't say it", async () => {
+    const { suggest } = await open();
+    suggest.mockImplementationOnce((_q: string, o: { onBusy?: () => void }) => { o.onBusy?.(); return Promise.reject(new ServiceError(BUSY_MESSAGE, "busy", 1)); });
+    await type("Main St");
+    expect(text(get("[role=listbox]").parentElement!)).toContain(BUSY_MESSAGE);
+    suggest.mockImplementation(() => new Promise<PlaceResult[]>(() => undefined));
+    await type("Main S");
+    await type("Main St");
+    expect(text(get("[role=listbox]").parentElement!)).not.toContain(BUSY_RETRY_TEXT);
   });
 
   it("the crossing list says 'Busy, trying again…', and if that fails too, a plain message", async () => {

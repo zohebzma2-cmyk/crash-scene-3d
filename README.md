@@ -353,6 +353,8 @@ Files are made in the browser and saved with the browser's download. Nothing is 
 |---|---|---|
 | Nominatim | the typed address text (`q`) plus fixed parameters | only when the claimant taps Search, never as they type, never reverse geocoding |
 | Nominatim and Overpass (crossing) | `/api/geo/crossing`: the typed `near` text goes to Nominatim, and the two typed street names go into an Overpass query. If that fails, a plain search for "X and Y, near" goes to Nominatim. | only when the claimant searches for "X and Y" |
+| Photon (type-ahead) | `/api/geo/suggest`: the typed text and a bias point rounded to about 1 km. **The claim's town and state** (for example "Nashua, NH", never the street address) are sent once, on the first keystroke and only while there is no pin, to find where to bias the suggestions. A town typed after a comma is sent with the first street ("Elm St, Manchester NH"). | as the claimant types (3 characters or more, after a 300 ms pause) |
+| Overpass (cross streets) | `/api/geo/cross-streets`: the street name, its OSM way ids, and a point near it (rounded to about 100 m with way ids, 1 km without) | after a street is picked, or "A and B" is typed |
 | Overpass | a bounding box around the pin, from the pin rounded to 5 decimals (about 1 m) and the radius | when the pin is set |
 | OSM tiles | tile coordinates for the area in view | as the map is viewed |
 | Terrarium (AWS) | tile coordinates around the pin | when the road data for the pin is loaded |

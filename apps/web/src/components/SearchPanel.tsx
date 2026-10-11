@@ -165,7 +165,9 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
   // Where to look. Before there is a pin: the claim's town (looked up once the claimant starts typing, and waited
   // for, so even the first suggestions are near the claim), else the middle of the map. With a pin: the pin and
   // the map around it. A location passed in for the claim beats both.
-  const claim = useClaimTown(typed);
+  // Only while there is no pin: once there is one, the pin is the bias, and the claim's town is not sent just to
+  // label far results (a town already looked up is still used for that).
+  const claim = useClaimTown(typed && !pin);
   const waitClaim = !claimBias && !pin && claim.status === "loading";
   const bias = claimBias ?? (pin ? viewBias ?? pin : claim.point ?? viewBias);
   const claimAt = claimBias ?? claim.point;
@@ -215,6 +217,7 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
     if (!fireSuggest) return;
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => {
+      setRetrying(null); // a new load: an earlier "Busy, trying again…" no longer applies
       geo.suggest(q, { bias, bbox, signal: ctrl.signal, onBusy: () => setRetrying(suggestKey) }).then(
         (value) => setSuggested({ key: suggestKey, status: "ok", value }),
         (e: unknown) => { if (!(e instanceof DOMException && e.name === "AbortError")) setSuggested({ key: suggestKey, status: "error", message: e instanceof ServiceError ? e.message : SEARCH_FAILED_TEXT }); },
@@ -236,6 +239,7 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
     const at = crossFor.at;
     const ways = crossFor.ways;
     const timer = window.setTimeout(() => {
+      setRetrying(null);
       geo.crossStreets(name, at, { signal: ctrl.signal, ways, onBusy: () => setRetrying(crossKey) }).then(
         (r) => setCrossed({ key: crossKey, status: "ok", value: r.crossings }),
         (e: unknown) => { if (!(e instanceof DOMException && e.name === "AbortError")) setCrossed({ key: crossKey, status: "error", message: e instanceof ServiceError ? e.message : SEARCH_FAILED_TEXT }); },

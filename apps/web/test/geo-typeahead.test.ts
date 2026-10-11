@@ -122,6 +122,10 @@ describe("towns (claim town and a town typed after a comma)", () => {
     expect(pickTown([iowa, shop, nh] as never, "Nashua, NH")).toEqual({ point: { lat: 42.7656, lon: -71.4677 }, state: "NH", label: "Nashua, NH" });
     expect(pickTown([iowa] as never, "Nashua, NH")).toBeNull();
     expect(pickTown([iowa] as never, "Nashua")?.state).toBe("IA");
+    // A half-typed town matches nothing rather than whatever is listed first.
+    const apartments = p("Halstead Manchester Apartments", "Manchester, NH", { category: "place", state: "NH", town: "Manchester" });
+    expect(pickTown([apartments] as never, "Man")).toBeNull();
+    expect(pickTown([apartments] as never, "Manchester NH")?.label).toBe("Manchester, NH");
     expect(townName("Manchester NH")).toBe("manchester");
     expect(townName("Concord New Hampshire 03301")).toBe("concord");
     expect(townName("Nashua, NH 03060")).toBe("nashua");

@@ -1,6 +1,6 @@
 // The town and state on the claim ("Main Street and Park Street, Nashua, NH" -> "Nashua, NH"), and where it is.
-// It is looked up once the claimant starts typing (never before), so the first suggestions are already
-// biased to the claim's town. Also: a street in a town typed after a comma ("Elm St and Hanover St, Manchester NH").
+// It is looked up once the claimant starts typing (never before), and only while there is no pin, so the first
+// suggestions are already biased to the claim's town. Only the town and state go to the type-ahead, never the street. Also: a street in a town typed after a comma ("Elm St and Hanover St, Manchester NH").
 import { useEffect, useState } from "react";
 import type { LatLon } from "@csd/core";
 import { mapConfig } from "../config/map";

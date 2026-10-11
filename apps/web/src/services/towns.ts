@@ -30,8 +30,12 @@ export function pickTown(results: readonly PlaceResult[], text: string): TownPla
   let best: { p: PlaceResult; score: number } | null = null;
   for (const p of results) {
     if (!finite(p) || (state && stateOf(p) !== state)) continue;
-    // The town itself ("Nashua") beats a place in it ("Nashua Micro-Tech Center, Nashua"), which beats a street.
-    const score = (p.category === "place" ? 2 : 0) + (p.main.toLowerCase() === name ? 2 : 0) + (townOf(p) === name ? 1 : 0);
+    // The name must match: the town itself ("Nashua") or something in it ("Nashua Micro-Tech Center, Nashua").
+    // A half-typed "Man" matches neither in "Manchester", so nothing is guessed while the town is being typed.
+    const nameScore = (p.main.toLowerCase() === name ? 2 : 0) + (townOf(p) === name ? 1 : 0);
+    if (nameScore === 0) continue;
+    // The town itself beats a place in it, which beats a street.
+    const score = nameScore + (p.category === "place" ? 2 : 0);
     if (!best || score > best.score) best = { p, score };
   }
   if (!best) return null;
