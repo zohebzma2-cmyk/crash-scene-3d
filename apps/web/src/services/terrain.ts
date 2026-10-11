@@ -10,7 +10,8 @@ async function pngPixels(bytes: Uint8Array): Promise<Uint8ClampedArray | null> {
   if (typeof createImageBitmap !== "function") return null;
   const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
   const canvas = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(bitmap.width, bitmap.height) : Object.assign(document.createElement("canvas"), { width: bitmap.width, height: bitmap.height });
-  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  // A CPU-backed canvas: reading pixels back from a GPU one waits on the GPU, which is busy starting the 3D view.
+  const ctx = canvas.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
   if (!ctx) return null;
   ctx.drawImage(bitmap, 0, 0);
   const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
