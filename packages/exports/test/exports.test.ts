@@ -10,7 +10,7 @@ import { buildExports, footerBandHeight, sceneFile } from "../src";
 import { about } from "../src/about";
 import { PIN_LABEL_GAP, planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
 import { buildModel, approachPhrase, fileClaim, printable, speedInputs } from "../src/model";
-import { buildPdf, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
+import { buildPdf, FLOOR_LEVEL, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
 import { renderBand, renderDiagramPng, renderStillPng } from "../src/png";
 import { MAX_PNG_SIDE, decodePng } from "../src/png-decode";
 import { color, rgb01 } from "../src/style";
@@ -342,7 +342,9 @@ describe("PDF pages", () => {
     expect(read.text).toContain("Page 1 of 2");
     expect(read.text).toContain("Page 2 of 2");
     // the warnings move, so page 1 says so (with whichever assumptions didn't fit on it)
-    expect(read.pageTexts[0]).toMatch(/(?:Assumptions? \d+(?: to \d+)? and d|D)etails that may not fit together continued on page 2/);
+    expect(read.pageTexts[0]).toMatch(/(?:Assumptions? \d+(?: to \d+)? and (?:the other )?d|The other d|D)etails that may not fit together continued on page 2/);
+    // every warning is there once, whole, wherever it landed
+    for (const w of sim.warnings) expect(countOf(read.text, norm(w.text)), w.text).toBe(1);
     expect(r.notes.join(" ")).toMatch(/details that may not fit together continue on page 2/);
     // every assumption and every warning is there, in full
     for (const a of sim.assumptions) expect(read.text).toContain(norm(a.text));
@@ -1465,19 +1467,27 @@ describe("page 1 fills before the assumptions move on (owner, 2026-10-10)", () =
     await expectSafePages(r);
   }, 60_000);
 
-  it("leaves no big blank on page 1 when the list overflows", async () => {
+  it("shrinks the text to the 8 pt floor before anything moves, then leaves no big blank on page 1", async () => {
+    // Whenever a split happens, page 1 is at the floor level. There is no "smallest level at which the other sections
+    // fit, if larger than the floor" exception to allow for: a larger level never fits what the floor can't, so if the
+    // other sections don't fit at the floor, no level fits them and the floor's last-resort layout is used.
     const { scene, sim } = fixture;
     for (const thumb of [true, false]) {
       const { r } = await makePdf(scene, sim, { thumb });
       expect(r.pages).toBe(2);
+      expect(r.level, `split at the floor level (map picture: ${thumb})`).toBe(FLOOR_LEVEL);
       expect(fillOf(r.report[0]!), `page 1 fill (map picture: ${thumb})`).toBeGreaterThan(0.9);
-      expect(r.report[0]!.minTextPt).toBeGreaterThanOrEqual(MIN_TEXT_PT - 1e-6);
+      expect(r.report[0]!.minTextPt).toBeCloseTo(MIN_TEXT_PT, 6);
     }
     for (const { scene: s2, sim: m2 } of [manyShortWarnings(30), stress(30)]) {
       const { r } = await makePdf(s2, m2);
       expect(r.pages).toBeGreaterThanOrEqual(2);
+      expect(r.level).toBe(FLOOR_LEVEL);
       expect(fillOf(r.report[0]!)).toBeGreaterThan(0.9);
     }
+    // and a scene that fits on one page never goes to the floor just because it could
+    const { r: one } = await makePdf(twoVehicle().scene, twoVehicle().sim);
+    expect(one.pages).toBe(1);
   }, 120_000);
 
   it("keeps the diagram at least MIN_DIAGRAM_FRACTION of the room on an overflowing page 1", async () => {

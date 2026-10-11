@@ -54,6 +54,8 @@ const LEVELS: readonly Level[] = [
   { textPx: MIN_TEXT_PT / PX_TO_PT, pad: 0.5, gap: 0.6, leading: px("leading-tight") },
   { textPx: MIN_TEXT_PT / PX_TO_PT, pad: 0.25, gap: 0.4, leading: px("leading-tight") },
 ];
+/** The most compact fit level: 8 pt text with the tightest spacing. Anything moves to page 2 only at this level. */
+export const FLOOR_LEVEL = LEVELS.length - 1;
 
 export interface PdfInput {
   readonly model: ReportModel;
@@ -713,34 +715,66 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     h: headingH() + (kind === "warn" ? gapSm * 0.5 : 0), gapBefore, kind,
     draw: (sh, y) => { heading(sh, "body", kind === "warn" ? M + gapSm : M, y + (kind === "warn" ? gapSm * 0.5 : 0), text); },
   });
-  /** The lists that follow page 1 when its first `shown` assumptions are on it. */
-  const restFrom = (shown: number): Block[] => {
+  const warnBlocks = (w: string) => bulletBlocks(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0);
+  /** The lists that follow page 1 when its first `shown` assumptions and first `wShown` warnings are on it. */
+  const restFrom = (shown: number, wShown = 0): Block[] => {
     const rest: Block[] = [];
     const left = model.assumptions.slice(shown);
     if (left.length) {
       rest.push({ ...headBlock(shown > 0 ? "Assumptions used (continued)" : "Assumptions used", gapBig, "main"), breakBefore: true });
       left.forEach((a, i) => rest.push(...bulletBlocks(a, "main", color("color-text"), color("color-text"), 0, shown + i + 1)));
     }
-    if (model.warnings.length) {
-      const wh = headBlock("Details that may not fit together", gapBig, "warn");
+    const wLeft = model.warnings.slice(wShown);
+    if (wLeft.length) {
+      const wh = headBlock(wShown > 0 ? "Details that may not fit together (continued)" : "Details that may not fit together", gapBig, "warn");
       rest.push(left.length ? wh : { ...wh, breakBefore: true });
-      for (const w of model.warnings) rest.push(...bulletBlocks(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0));
+      for (const w of wLeft) rest.push(...warnBlocks(w));
     }
     return rest;
   };
   // Page 1 takes as many whole assumptions as fit in the room left under the other sections (in the same two
-  // columns as a one-page summary); only the rest, and the warnings, move on, and a line says what moved.
+  // columns as a one-page summary). When they all fit, as many whole warnings as fit follow them, in their panel.
+  // Only the rest moves on, and a line says what moved.
   const fill = (room: number) => {
     const contH = gapSm * 0.5 + lh(body) + pad;
     const total = aItems.length;
     const greedy = fillColumns(aItems, room - headingH() - contH);
     const all = greedy.shown === total;
     const shown = greedy.shown;
-    const moved = [...(all ? [] : [assumptionsLeft(shown, total)]), ...(model.warnings.length ? ["details that may not fit together"] : [])];
-    const movedText = listOf(moved);
     const cols = all ? twoColumns(aItems) : greedy;
-    const block = assumptionsBlock(cols, moved.length ? `${cap(movedText)} continued on page 2` : null);
-    return { block, shown, rest: restFrom(shown), movedText };
+    const wHeadH = headingH() + gapSm * 0.5;
+    const wItems: Block[][] = [];
+    if (all && model.warnings.length) {
+      let left = room - (headingH() + Math.max(cols.leftH, cols.rightH)) - gapBig - wHeadH - contH;
+      for (const w of model.warnings) {
+        const parts = warnBlocks(w);
+        const h = parts.reduce((a, b) => a + b.h, 0);
+        if (h > left) break;
+        left -= h;
+        wItems.push(parts);
+      }
+    }
+    const wShown = wItems.length;
+    const wMoved = model.warnings.length > wShown;
+    const moved = [...(all ? [] : [assumptionsLeft(shown, total)]), ...(wMoved ? [wShown ? "the other details that may not fit together" : "details that may not fit together"] : [])];
+    const movedText = listOf(moved);
+    const cont = moved.length ? `${cap(movedText)} continued on page 2` : null;
+    if (!wShown) return { block: assumptionsBlock(cols, cont), shown, rest: restFrom(shown), movedText };
+    const aBlock = assumptionsBlock(cols, null);
+    const wH = wHeadH + wItems.flat().reduce((a, b) => a + b.h, 0);
+    const block: Block = {
+      h: aBlock.h + gapBig + wH + (cont ? contH : 0), gapBefore: gapBig, kind: "main",
+      draw: (sh, y0) => {
+        aBlock.draw(sh, y0);
+        let y = y0 + aBlock.h + gapBig;
+        sh.box("body", M, y, CW, wH, color("color-warning-tint"));
+        heading(sh, "body", M + gapSm, y + gapSm * 0.5, "Details that may not fit together");
+        y += wHeadH;
+        for (const b of wItems.flat()) { b.draw(sh, y); y += b.h; }
+        if (cont) sh.block("body", M, y + gapSm * 0.5, [cont], "sans", body, color("color-text-secondary"));
+      },
+    };
+    return { block, shown, rest: restFrom(shown, wShown), movedText };
   };
   return { first, rest: restFrom(0), footerH, placeholder, movedList: movedList([], model.warnings.length > 0), fill };
 }
@@ -845,12 +879,13 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     if (p.pages.length === 1) { chosen = p; levelIdx = li; }
   }
   if (!chosen) {
-    for (let li = 0; li < LEVELS.length && !chosen; li++) {
-      const p = planFor(li, "split");
-      // Page 1 holds all the first-page sections and the assumptions section (as many as fit) when the overflow starts on page 2.
-      if (p.fits && p.pages[0]!.length === p.built.first.length + 1) { chosen = p; levelIdx = li; }
-    }
-    if (!chosen) { levelIdx = LEVELS.length - 1; chosen = planFor(levelIdx, "split", true); }
+    // Text shrinks first: nothing moves to page 2 until it doesn't fit at the floor (DESIGN.md section 8). So a split
+    // page 1 is always laid out at the floor level, where it holds the most whole assumptions. (A larger level can't
+    // fit sections the floor can't, so there is no case for splitting at a larger size.)
+    levelIdx = FLOOR_LEVEL;
+    const p = planFor(levelIdx, "split");
+    // Page 1 holds all the first-page sections and the assumptions section (as many as fit) when the overflow starts on page 2.
+    chosen = p.fits && p.pages[0]!.length === p.built.first.length + 1 ? p : planFor(levelIdx, "split", true);
   }
 
   doc.removePage(0); // the scratch page
