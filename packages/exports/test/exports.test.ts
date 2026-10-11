@@ -8,13 +8,13 @@ import {
 import type { ExportBundle, ExportRequest, Scene, SimulationResult } from "@csd/core";
 import { buildExports, footerBandHeight, sceneFile } from "../src";
 import { about } from "../src/about";
-import { planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
+import { PIN_LABEL_GAP, planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
 import { buildModel, approachPhrase, fileClaim, printable, speedInputs } from "../src/model";
-import { buildPdf, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
+import { buildPdf, FLOOR_LEVEL, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
 import { renderBand, renderDiagramPng, renderStillPng } from "../src/png";
 import { MAX_PNG_SIDE, decodePng } from "../src/png-decode";
 import { color, rgb01 } from "../src/style";
-import { MONO, SANS, brandFonts, brandMeasure, createSolidPng, latin1, makePng, readPdf, renderPdfPage, saveOutput, syntheticPng, testCanvas, withPngText } from "./helpers";
+import { MONO, SANS, brandFonts, brandMeasure, centredMapPng, createSolidPng, latin1, makePng, readPdf, renderPdfPage, saveOutput, syntheticPng, tableLines, testCanvas, withPngText } from "./helpers";
 import { loadRoads } from "./osm-roads";
 import { fourVehicle, manyShortWarnings, stress, twoVehicle } from "./sim-fixtures";
 // @ts-expect-error plain .mjs without types
@@ -332,7 +332,7 @@ describe("PDF pages", () => {
     expect(dia.maxY - dia.minY).toBeGreaterThanOrEqual(room / 3 - 6);
   });
 
-  it("moves the full assumptions and warnings to page 2 when 30 warnings can't fit, repeating header and footer", async () => {
+  it("moves what doesn't fit of the assumptions, and the warnings, to page 2 when 30 warnings can't fit, repeating header and footer", async () => {
     const { scene, sim } = manyShortWarnings(30);
     const { r, read } = await makePdf(scene, sim);
     saveOutput("page-30-warnings.pdf", r.bytes);
@@ -341,9 +341,11 @@ describe("PDF pages", () => {
     expect(read.pages).toBe(2);
     expect(read.text).toContain("Page 1 of 2");
     expect(read.text).toContain("Page 2 of 2");
-    // the warnings move too, so page 1 says so
-    expect(read.pageTexts[0]).toContain("Assumptions and details that may not fit together continued on page 2");
-    expect(r.notes.join(" ")).toContain("assumptions and details that may not fit together continue on page 2");
+    // the warnings move, so page 1 says so (with whichever assumptions didn't fit on it)
+    expect(read.pageTexts[0]).toMatch(/(?:Assumptions? \d+(?: to \d+)? and (?:the other )?d|The other d|D)etails that may not fit together continued on page 2/);
+    // every warning is there once, whole, wherever it landed
+    for (const w of sim.warnings) expect(countOf(read.text, norm(w.text)), w.text).toBe(1);
+    expect(r.notes.join(" ")).toMatch(/details that may not fit together continue on page 2/);
     // every assumption and every warning is there, in full
     for (const a of sim.assumptions) expect(read.text).toContain(norm(a.text));
     for (const w of sim.warnings) expect(read.text).toContain(norm(w.text));
@@ -977,9 +979,9 @@ describe("overflow placeholder always lands on page 1", () => {
     const noWarnings: SimulationResult = { ...sim, warnings: [] };
     const { r, read } = await makePdf(scene, noWarnings);
     expect(r.pages).toBeGreaterThanOrEqual(2);
-    expect(read.pageTexts[0]).toContain("Assumptions continued on page 2");
+    expect(read.pageTexts[0]).toMatch(/Assumptions?(?: \d+(?: to \d+)?)? continued on page 2/);
     expect(read.pageTexts[0]).not.toContain("details that may not fit together");
-    expect(r.notes.join(" ")).toContain("assumptions continue on page 2");
+    expect(r.notes.join(" ")).toMatch(/assumptions?(?: \d+(?: to \d+)?)? continue on page/);
     expect(r.notes.join(" ")).not.toContain("details that may not fit together");
   }, 60_000);
 });
@@ -997,11 +999,15 @@ describe("numbered assumptions (DESIGN.md section 8)", () => {
     const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
     for (const { scene, sim } of Object.values(real)) numbered((await makePdf(scene, sim)).read.text, sim.assumptions);
   }, 60_000);
-  it("overflow pages keep the numbering in one sequence; warnings stay bullets", async () => {
+  it("overflow pages keep the numbering in one sequence from page 1 on; warnings stay bullets", async () => {
     const { scene, sim } = stress(30);
     const { r, read } = await makePdf(scene, sim);
     expect(r.pages).toBeGreaterThanOrEqual(3);
-    numbered(read.pageTexts.slice(1).join(" "), sim.assumptions);
+    numbered(read.text, sim.assumptions);
+    // page 2 picks up where page 1 stopped
+    const onFirst = sim.assumptions.filter((a, i) => read.pageTexts[0]!.includes(`${i + 1}. ${norm(a.text).slice(0, 14)}`)).length;
+    expect(onFirst).toBeGreaterThan(0);
+    expect(read.pageTexts[1]).toContain(`${onFirst + 1}. ${norm(sim.assumptions[onFirst]!.text).slice(0, 14)}`);
     expect(read.text).not.toMatch(/\b1\. Check 1:/);
   }, 90_000);
 });
@@ -1410,7 +1416,7 @@ describe("a hit side the picture couldn't use as entered (red team, 2026-10-10)"
   it("says so in the PDF table and carries the note for every picture", async () => {
     const { stamp } = await sceneFile(scene, adjusted, CREATED);
     const m = buildModel(scene, adjusted, stamp);
-    expect(m.vehicles.find((v) => v.id === "A")!.hitOn).toMatch(/as entered; the picture uses another side \(see notes\)$/);
+    expect(m.vehicles.find((v) => v.id === "A")!.hitOn).toMatch(/as entered; the picture uses another side \(see Details that may not fit together\)$/);
     expect(m.vehicles.find((v) => v.id === "B")!.hitOn).not.toMatch(/as entered/);
     expect(m.adjustedNotes).toEqual([note.text]);
   });
@@ -1421,4 +1427,256 @@ describe("a hit side the picture couldn't use as entered (red team, 2026-10-10)"
     expect(m.adjustedNotes).toEqual([]);
     expect(m.vehicles.every((v) => !/as entered/.test(v.hitOn))).toBe(true);
   });
+});
+
+describe("page 1 fills before the assumptions move on (owner, 2026-10-10)", () => {
+  // Real physics output (test/data/overflow-3v.json): the t-bone example with a parked third car, both moving speeds
+  // "not sure" and two hit sides the picture couldn't use as entered. Its assumptions don't all fit on page 1.
+  const fixture = JSON.parse(readFileSync(new URL("./data/overflow-3v.json", import.meta.url), "utf8")) as { scene: Scene; sim: SimulationResult };
+  /** Share of the room between the header and the footer that page 1's body uses (it was about 0.82 when the whole list moved). */
+  const fillOf = (p: PdfResult["report"][number]) => (p.bodyBottom - p.extents.header.maxY) / (p.footerTop - p.extents.header.maxY);
+
+  it("is the scene it says it is", () => {
+    const { scene, sim } = fixture;
+    expect(scene.vehicles).toHaveLength(3);
+    expect(scene.vehicles.filter((v) => v.speed.kind === "unsure").length).toBeGreaterThanOrEqual(2);
+    expect(sim.warnings.some((w) => w.code === "zone-used")).toBe(true);
+  });
+
+  it("puts as many whole assumptions on page 1 as fit, then says which continue on page 2", async () => {
+    const { scene, sim } = fixture;
+    const { r, read } = await makePdf(scene, sim);
+    saveOutput("overflow-3v.pdf", r.bytes);
+    expect(r.pages).toBe(2);
+    const first = read.pageTexts[0]!;
+    const second = read.pageTexts[1]!;
+    const on = (text: string, i: number) => text.includes(`${i + 1}. ${norm(sim.assumptions[i]!.text).slice(0, 14)}`);
+    const shown = sim.assumptions.filter((_, i) => on(first, i)).length;
+    expect(shown, "page 1 shows some assumptions").toBeGreaterThan(0);
+    expect(shown).toBeLessThan(sim.assumptions.length);
+    // the first `shown` are on page 1, the rest on page 2, each once and whole
+    sim.assumptions.forEach((a, i) => {
+      expect(on(i < shown ? first : second, i), `assumption ${i + 1} on page ${i < shown ? 1 : 2}`).toBe(true);
+      expect(on(i < shown ? second : first, i), `assumption ${i + 1} only once`).toBe(false);
+      expect(countOf(read.text, norm(a.text)), `assumption ${i + 1} whole`).toBe(1);
+    });
+    for (const w of sim.warnings) expect(second).toContain(norm(w.text));
+    expect(first).toContain(`Assumptions ${shown + 1} to ${sim.assumptions.length} and details that may not fit together continued on page 2`);
+    expect(second.replace(/ /g, "")).toContain("ASSUMPTIONSUSED(CONTINUED)");
+    expect(r.notes.join(" ")).toContain(`assumptions ${shown + 1} to ${sim.assumptions.length} and details that may not fit together continue on page 2`);
+    await expectSafePages(r);
+  }, 60_000);
+
+  it("shrinks the text to the 8 pt floor before anything moves, then leaves no big blank on page 1", async () => {
+    // Whenever a split happens, page 1 is at the floor level. There is no "smallest level at which the other sections
+    // fit, if larger than the floor" exception to allow for: a larger level never fits what the floor can't, so if the
+    // other sections don't fit at the floor, no level fits them and the floor's last-resort layout is used.
+    const { scene, sim } = fixture;
+    for (const thumb of [true, false]) {
+      const { r } = await makePdf(scene, sim, { thumb });
+      expect(r.pages).toBe(2);
+      expect(r.level, `split at the floor level (map picture: ${thumb})`).toBe(FLOOR_LEVEL);
+      expect(fillOf(r.report[0]!), `page 1 fill (map picture: ${thumb})`).toBeGreaterThan(0.9);
+      expect(r.report[0]!.minTextPt).toBeCloseTo(MIN_TEXT_PT, 6);
+    }
+    for (const { scene: s2, sim: m2 } of [manyShortWarnings(30), stress(30)]) {
+      const { r } = await makePdf(s2, m2);
+      expect(r.pages).toBeGreaterThanOrEqual(2);
+      expect(r.level).toBe(FLOOR_LEVEL);
+      expect(fillOf(r.report[0]!)).toBeGreaterThan(0.9);
+    }
+    // and a scene that fits on one page never goes to the floor just because it could
+    const { r: one } = await makePdf(twoVehicle().scene, twoVehicle().sim);
+    expect(one.pages).toBe(1);
+  }, 120_000);
+
+  it("keeps the diagram at least MIN_DIAGRAM_FRACTION of the room on an overflowing page 1", async () => {
+    const { scene, sim } = fixture;
+    const { r } = await makePdf(scene, sim);
+    const p = r.report[0]!;
+    const dia = p.extents.diagram;
+    expect(dia.maxY - dia.minY).toBeGreaterThanOrEqual((p.footerTop - p.extents.header.maxY) * MIN_DIAGRAM_FRACTION - 6);
+  });
+
+  it("cuts an assumption between pages only when it alone is taller than a page", async () => {
+    const { scene, sim } = twoVehicle();
+    const huge = Array.from({ length: 160 }, (_, i) => `part ${i + 1} of one very long assumption that keeps going.`).join(" ");
+    const big: SimulationResult = { ...sim, assumptions: [...sim.assumptions, { id: "huge", text: huge }] };
+    const { r, read } = await makePdf(scene, big);
+    expect(r.pages).toBeGreaterThanOrEqual(3);
+    // every piece of it is there once, in order, and it starts with its number
+    const at = Array.from({ length: 160 }, (_, i) => read.text.indexOf(`part ${i + 1} of one`));
+    at.forEach((x, i) => { expect(x, `part ${i + 1}`).toBeGreaterThan(0); if (i) expect(x).toBeGreaterThan(at[i - 1]!); });
+    expect(read.text).toContain(`${big.assumptions.length}. part 1 of one`);
+    for (const a of sim.assumptions) expect(countOf(read.text, norm(a.text))).toBe(1);
+    await expectSafePages(r);
+  }, 90_000);
+
+  it("never leaves a heading alone at the end of a page, even when the first item under it is taller than a page", async () => {
+    const { scene, sim } = twoVehicle();
+    const huge = Array.from({ length: 160 }, (_, i) => `part ${i + 1} of one very long assumption that keeps going.`).join(" ");
+    const hugeWarning = Array.from({ length: 160 }, (_, i) => `check ${i + 1} of one very long warning that keeps going.`).join(" ");
+    const big: SimulationResult = { ...sim, assumptions: [{ id: "huge", text: huge }, ...sim.assumptions], warnings: [{ code: "huge", text: hugeWarning, vehicleIds: ["A"] }] };
+    const { r, read } = await makePdf(scene, big);
+    expect(r.pages).toBeGreaterThanOrEqual(4);
+    // the page with each list heading (page 1 only says what moved) also has the first item under it
+    const pageWith = (needle: RegExp) => read.pageTexts.findIndex((t, i) => i > 0 && needle.test(t.replace(/ /g, "")));
+    const aHead = pageWith(/ASSUMPTIONSUSED(?!\(CONTINUED\))/);
+    expect(aHead).toBeGreaterThan(0);
+    expect(read.pageTexts[aHead]).toContain("1. part 1 of one");
+    const wHead = pageWith(/DETAILSTHATMAYNOTFITTOGETHER/);
+    expect(wHead).toBeGreaterThan(aHead);
+    expect(read.pageTexts[wHead]).toContain("check 1 of one");
+    await expectSafePages(r);
+  }, 90_000);
+});
+
+describe("the PDF \"Hit on\" column (owner, 2026-10-10)", () => {
+  const fixture = JSON.parse(readFileSync(new URL("./data/overflow-3v.json", import.meta.url), "utf8")) as { scene: Scene; sim: SimulationResult };
+  type B = { x: number; y: number; w: number; h: number };
+  const overlap = (a: B, b: B, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+  const centerIn = (a: B, o: B) => a.x + a.w / 2 > o.x && a.x + a.w / 2 < o.x + o.w && a.y + a.h / 2 > o.y && a.y + a.h / 2 < o.y + o.h;
+
+  it("keeps a short value in the cell and puts the adjusted-side wording under the table", async () => {
+    const { scene, sim } = fixture;
+    const { r, read } = await makePdf(scene, sim);
+    const { stamp } = await sceneFile(scene, sim, CREATED);
+    const m = buildModel(scene, sim, stamp);
+    const adjusted = m.vehicles.filter((v) => v.hitOnAdjusted);
+    expect(adjusted.length).toBeGreaterThanOrEqual(2);
+    const p = r.report[0]!;
+    const t = p.table!;
+    expect(t).toBeDefined();
+    // one line per vehicle in the "Hit on" column, the short value, inside the column
+    const inHit = p.texts.filter((x) => centerIn(x.box, t.box) && x.box.x >= t.cols[5]! - 0.5);
+    expect(inHit.map((x) => x.text)).toEqual(["Hit on", ...m.vehicles.map((v) => v.hitOnShort)]);
+    for (const x of inHit) expect(x.box.x + x.box.w, `${x.text} inside the column`).toBeLessThanOrEqual(t.cols[6]! + 0.5);
+    for (const v of adjusted) expect(v.hitOnShort).toMatch(/^[A-Z][a-z ]+ \*$/);
+    // the full wording stays, as a note under the table, one per adjusted vehicle
+    for (const v of adjusted) {
+      expect(v.hitOn).toMatch(/ as entered; the picture uses another side \(see Details that may not fit together\)$/);
+      expect(norm(read.pageTexts[0]!)).toContain(`* ${v.id}: ${v.hitOn}.`);
+    }
+    expect(t.foot).not.toBeNull();
+    expect(t.foot!.y).toBeGreaterThanOrEqual(t.box.y + t.box.h);
+    await expectSafePages(r);
+  });
+
+  it("no two pieces of text in the table or its note overlap", async () => {
+    for (const { scene, sim } of [fixture, fourVehicle(), twoVehicle()]) {
+      for (const thumb of [true, false]) {
+        const { r } = await makePdf(scene, sim, { thumb });
+        const p = r.report[0]!;
+        const t = p.table!;
+        const area = { x: t.box.x, y: t.box.y, w: t.box.w, h: (t.foot ? t.foot.y + t.foot.h : t.box.y + t.box.h) - t.box.y };
+        const inside = p.texts.filter((x) => centerIn(x.box, area));
+        expect(inside.length).toBeGreaterThan(5);
+        inside.forEach((a, i) => inside.slice(i + 1).forEach((b) => expect(overlap(a.box, b.box, -0.05), `"${a.text}" over "${b.text}"`).toBe(false)));
+        // nothing pokes out of the table on the right
+        for (const x of inside) expect(x.box.x + x.box.w).toBeLessThanOrEqual(t.box.x + t.box.w + 0.5);
+      }
+    }
+  }, 60_000);
+
+  it("adds no note when every hit side was used as entered", async () => {
+    const { scene, sim } = twoVehicle();
+    const { r, read } = await makePdf(scene, sim);
+    expect(r.report[0]!.table!.foot).toBeNull();
+    expect(read.text).not.toContain("as entered; the picture uses another side");
+  });
+
+  it("widens \"Hit on\" only from the speed column; Vehicle, Type and Direction keep their widths", async () => {
+    const { scene, sim } = fixture;
+    const plainSim: SimulationResult = { ...sim, warnings: sim.warnings.filter((w) => w.code !== "zone-used") };
+    const { r: adj } = await makePdf(scene, sim);
+    const { r: plain } = await makePdf(scene, plainSim);
+    const a = adj.report[0]!.table!.cols;
+    const p = plain.report[0]!.table!.cols;
+    for (const i of [0, 1, 2, 3, 4, 6]) expect(a[i], `column edge ${i}`).toBeCloseTo(p[i]!, 6);
+    expect(a[5]).toBeLessThanOrEqual(p[5]! + 1e-6);
+  }, 60_000);
+
+  it("prints the three examples' table text exactly as before the polish (snapshot from 2deab93)", async () => {
+    // test/data/table-text-2deab93.json: tableLines() of each example's PDF made by commit 2deab93's exports code.
+    const before = JSON.parse(readFileSync(new URL("./data/table-text-2deab93.json", import.meta.url), "utf8")) as Record<string, string[]>;
+    const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
+    expect(Object.keys(before).sort()).toEqual(Object.keys(real).sort());
+    for (const [name, { scene, sim }] of Object.entries(real)) {
+      const { read } = await makePdf(scene, sim);
+      expect(tableLines(read), name).toEqual(before[name]);
+    }
+  }, 60_000);
+
+  it("round B colours: with no colour the examples' table is the snapshot; a picked colour only names itself and adds a swatch, every column keeps its edge", async () => {
+    const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
+    const before = JSON.parse(readFileSync(new URL("./data/table-text-2deab93.json", import.meta.url), "utf8")) as Record<string, string[]>;
+    for (const [name, { scene, sim }] of Object.entries(real)) {
+      expect(scene.vehicles.every((v) => v.color == null), `${name} has no colour`).toBe(true);
+      const plain = await makePdf(scene, sim);
+      expect(tableLines(plain.read), name).toEqual(before[name]);
+      const painted: Scene = { ...scene, vehicles: scene.vehicles.map((v) => ({ ...v, color: { name: "Red", hex: "#b3151b" } })) };
+      const red = await makePdf(painted, sim);
+      // Column edges unchanged: the swatch sits under the letter (column 0) and the name wraps in its own column,
+      // so no column, least of all "Hit on", gives up room. Only the rows may grow.
+      const a = red.r.report[0]!.table!.cols, p = plain.r.report[0]!.table!.cols;
+      a.forEach((x, i) => expect(x, `${name} column edge ${i}`).toBeCloseTo(p[i]!, 6));
+      expect(countOf(norm(red.read.text), "· Red"), name).toBe(scene.vehicles.length);
+      // The rest of the table reads the same once the colour words are taken out (the name may wrap "· Red" onto its next line).
+      // Words in reading order without the cell separators, which follow the line layout.
+      const strip = (ls: string[]) => norm(ls.join(" ").replace(/ ?· Red/g, "").replace(/(?<!\|) ·(?= \|)/g, "").replace(/ Red\b/g, "").replace(/\|/g, " "));
+      expect(strip(tableLines(red.read)), name).toBe(strip(before[name]!));
+    }
+  }, 90_000);
+});
+
+describe("street names at the pin on the PDF map (owner, 2026-10-10)", () => {
+  const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
+  const overflow = JSON.parse(readFileSync(new URL("./data/overflow-3v.json", import.meta.url), "utf8")) as { scene: Scene; sim: SimulationResult };
+  const cases: Array<[string, string, { scene: Scene; sim: SimulationResult }]> = [
+    ...Object.entries(real).map(([name, v]) => [name, name, v] as [string, string, { scene: Scene; sim: SimulationResult }]),
+    ["overflow-3v", "t-bone-intersection", overflow],
+  ];
+  type B = { x: number; y: number; w: number; h: number };
+  const touch = (a: B, b: B, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+  const inRect = (b: B, o: B) => b.x >= o.x - 1e-6 && b.y >= o.y - 1e-6 && b.x + b.w <= o.x + o.w + 1e-6 && b.y + b.h <= o.y + o.h + 1e-6;
+  const gap = MIN_TEXT_PT * PIN_LABEL_GAP - 1e-6;
+
+  async function pdfFor(example: string, scene: Scene, sim: SimulationResult, mpp: string | null) {
+    const { PNG_METERS_PER_PIXEL_KEY } = await import("../src/png-meta");
+    const { stamp } = await sceneFile(scene, sim, CREATED);
+    return buildPdf({
+      model: buildModel(scene, sim, stamp), scene, sim, roads: loadRoads(example, scene.location), fonts: brandFonts(), createdAt: CREATED,
+      sceneFileName: "crash-scene.json", ...(mpp ? { mapThumbnail: withPngText(centredMapPng(1200, 800), PNG_METERS_PER_PIXEL_KEY, mpp) } : {}),
+    });
+  }
+
+  it("never lets two names, a name and the pin, or a name and the credit touch, at any map scale", async () => {
+    let checked = 0;
+    for (const [name, example, { scene, sim }] of cases) {
+      for (const mpp of ["0.11", "0.22", "0.3", "0.44", "0.88", null]) {
+        const r = await pdfFor(example, scene, sim, mpp);
+        const p = r.report[0]!;
+        const labels = p.mapLabels ?? [];
+        const box = mpp ? p.images[0]! : p.mapOutline!.box;
+        const what = `${name} at ${mpp ?? "outline"}`;
+        for (const [i, l] of labels.entries()) {
+          checked++;
+          expect(inRect(l.box, box), `${what}: ${l.text} inside the map`).toBe(true);
+          expect(touch(l.box, p.mapPin!, gap), `${what}: ${l.text} at the pin`).toBe(false);
+          expect(touch(l.box, p.mapCredit!, gap), `${what}: ${l.text} at the credit`).toBe(false);
+          for (const m of labels.slice(i + 1)) expect(touch(l.box, m.box, gap), `${what}: ${l.text} against ${m.text}`).toBe(false);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  }, 120_000);
+
+  it("still names both streets of the t-bone crossing, each along or beside its own road", async () => {
+    const { scene, sim } = real["t-bone-intersection"]!;
+    for (const mpp of ["0.22", "0.3", null]) {
+      const r = await pdfFor("t-bone-intersection", scene, sim, mpp);
+      const texts = (r.report[0]!.mapLabels ?? []).map((l) => l.text);
+      expect(texts, `at ${mpp ?? "outline"}`).toEqual(expect.arrayContaining(["MAIN STREET", "PARK STREET"]));
+    }
+  }, 60_000);
 });

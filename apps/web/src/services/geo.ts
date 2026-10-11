@@ -3,7 +3,7 @@
 // Only the typed text leaves the browser (and only to our own /api).
 import { PROXY_ROUTES, type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult } from "@csd/core";
 import { mapConfig } from "../config/map";
-import { API_TIMEOUT_MS, getJson, type FetchLike } from "./http";
+import { API_TIMEOUT_MS, getJson, getJsonRetrying, type FetchLike } from "./http";
 import { townLookups } from "./towns";
 import { ServiceError, type GeoService, type SearchOptions } from "./types";
 
@@ -81,7 +81,9 @@ export function createGeoService(fetchFn: FetchLike, deps: GeoDeps): GeoService 
     const wait = Math.max(0, nextSlot - now());
     if (wait > 0) { opts.onWait?.(); await sleep(wait); }
     nextSlot = now() + MIN_INTERVAL_MS;
-    const body = await getJson<unknown>(fetchFn, url, SEARCH_TIMEOUT_MS);
+    // Busy (someone else's search took the second): wait the Retry-After and try again, up to 2.5 s in all.
+    const body = await getJsonRetrying<unknown>(fetchFn, url, { timeoutMs: SEARCH_TIMEOUT_MS, sleep, ...(opts.onWait ? { onBusy: opts.onWait } : {}) });
+    nextSlot = Math.max(nextSlot, now() + MIN_INTERVAL_MS);
     const results = deps.mergeResults(asArray(body).filter(validResult)).slice(0, SEARCH_LIMIT);
     cache.set(q, results);
     return results;

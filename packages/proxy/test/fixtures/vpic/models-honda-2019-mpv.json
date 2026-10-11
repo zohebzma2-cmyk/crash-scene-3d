@@ -1,0 +1,47 @@
+{
+"Count": 5,
+"Message": "Results returned successfully",
+"SearchCriteria": "Make:honda | ModelYear:2019 | VehicleType:mpv",
+"Results": [
+{
+"Make_ID": 474,
+"Make_Name": "HONDA",
+"Model_ID": 1864,
+"Model_Name": "Pilot",
+"VehicleTypeId": 7,
+"VehicleTypeName": "Multipurpose Passenger Vehicle (MPV)"
+},
+{
+"Make_ID": 474,
+"Make_Name": "HONDA",
+"Model_ID": 1865,
+"Model_Name": "CR-V",
+"VehicleTypeId": 7,
+"VehicleTypeName": "Multipurpose Passenger Vehicle (MPV)"
+},
+{
+"Make_ID": 474,
+"Make_Name": "HONDA",
+"Model_ID": 1869,
+"Model_Name": "Odyssey",
+"VehicleTypeId": 7,
+"VehicleTypeName": "Multipurpose Passenger Vehicle (MPV)"
+},
+{
+"Make_ID": 474,
+"Make_Name": "HONDA",
+"Model_ID": 5959,
+"Model_Name": "Passport",
+"VehicleTypeId": 7,
+"VehicleTypeName": "Multipurpose Passenger Vehicle (MPV)"
+},
+{
+"Make_ID": 474,
+"Make_Name": "HONDA",
+"Model_ID": 9212,
+"Model_Name": "HR-V",
+"VehicleTypeId": 7,
+"VehicleTypeName": "Multipurpose Passenger Vehicle (MPV)"
+}
+]
+}

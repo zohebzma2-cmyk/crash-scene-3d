@@ -484,6 +484,13 @@ export interface PinLabelOptions {
 }
 
 const MEET_M = 30;
+/** Clear space between a street name at the pin (halo included) and the pin, the credit or another name, in text sizes. */
+export const PIN_LABEL_GAP = 0.5;
+
+/** Do two rectangles overlap or come closer than `gap`? */
+export function rectsTouch(a: Rect, b: Rect, gap = 0): boolean {
+  return a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+}
 
 /** Shortest distance (m) from p to a polyline. */
 function distToLine(line: readonly Vec2[], p: Vec2): number {
@@ -501,16 +508,17 @@ function distToLine(line: readonly Vec2[], p: Vec2): number {
 }
 
 /**
- * Names of the streets that meet at the pin, drawn along their roads close to the pin: bold capitals
- * with a halo so they read on a road outline and on map tiles alike. Core picks the spots (the same ones the
- * diagram uses: straight stretches clear of junctions) and lays the names out so none overlap; a street whose road
- * runs along the short side of a wide box has no room for its name along it, so its name is set level beside the
- * road. A name with no clear spot is left off rather than drawn over the pin, the credit or another name.
+ * Names of the streets that meet at the pin, drawn along their roads near the pin: bold capitals with a halo so
+ * they read on a road outline and on map tiles alike. Core gives the spots (the same ones the diagram uses:
+ * straight stretches clear of junctions). Each street takes its spot nearest the pin whose label, halo included,
+ * keeps a clear gap from the pin, the credit and every name already placed, so the names spread out along their
+ * own roads instead of crowding at the pin (owner, 2026-10-10). Where the straight stretch is too short for the
+ * name along it (a road along the short side of a wide box), the name is set level beside the road. A name with
+ * no clear spot is left off rather than drawn over the pin, the credit or another name.
  */
 export function planPinStreetLabels(roads: RoadNetwork, o: PinLabelOptions, measure: Measure): { prims: Prim[]; labels: PinLabel[] } {
   const pinAt = o.pinAt ?? [o.box.x + o.box.w / 2, o.box.y + o.box.h / 2];
   const t: Transform = { s: o.scale, cx: o.center.x, cy: o.center.y, ox: pinAt[0], oy: pinAt[1] };
-  const wx = (x: number, y: number): Vec2 => ({ x: (x - t.ox) / t.s + t.cx, y: -(y - t.oy) / t.s + t.cy });
   const art = buildRoadArt(roads);
   const meet = o.meetM ?? MEET_M;
   // The streets that pass the pin (and the ones the claimant's vehicles were on, a little further out).
@@ -536,27 +544,17 @@ export function planPinStreetLabels(roads: RoadNetwork, o: PinLabelOptions, meas
   const size = o.size;
   const tracking = size * 0.18;
   const halo = Math.max(size * 0.14, 0.6);
+  const gap = size * PIN_LABEL_GAP;
+  const inset = 2;
   const textW = (name: string) => measure("sansBold", size, name.toUpperCase()) + tracking * (name.length - 1);
   const reach = Math.hypot(o.box.w, o.box.h) / o.scale;
-  const spots = streetNameSpots(art, o.center, reach).filter((sp) => keys.includes(sp.name.trim().toLowerCase()));
-  // Keep-clear rectangles as points the layout steers around (denser than the text is tall).
-  const keepPts: Vec2[] = [];
-  for (const r of o.keepClear) {
-    const step = Math.max(0.5, (size * 0.5) / o.scale);
-    for (let x = r.x; x <= r.x + r.w + step; x += step * 1.5) for (let y = r.y; y <= r.y + r.h + step; y += step * 1.5) keepPts.push(wx(Math.min(x, r.x + r.w), Math.min(y, r.y + r.h)));
-  }
-  const inset = 2;
-  const c0 = wx(o.box.x + inset, o.box.y + inset);
-  const c1 = wx(o.box.x + o.box.w - inset, o.box.y + o.box.h - inset);
-  const inside = [{ x: c0.x, y: c0.y }, { x: c1.x, y: c0.y }, { x: c1.x, y: c1.y }, { x: c0.x, y: c1.y }];
-  const pinClearM = (Math.max(...o.keepClear.map((r) => Math.hypot(r.w, r.h) / 2), size) / o.scale) * 0.8;
-  const placed = placeStreetNames(spots, (name) => [{ lengthM: textW(name) / t.s, heightM: (size * 0.95) / t.s }], o.center, {
-    preferM: (pinClearM + size * 3 / o.scale), keepClearM: pinClearM, avoid: keepPts, inside,
-  });
-
+  const spots = streetNameSpots(art, o.center, reach);
   const taken: Rect[] = [...o.keepClear];
-  const hits = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-  const draw = (text: string, width: number, centre: Pt, ang: number): boolean => {
+  const clear = (r: Rect) =>
+    r.x >= o.box.x + inset && r.y >= o.box.y + inset && r.x + r.w <= o.box.x + o.box.w - inset && r.y + r.h <= o.box.y + o.box.h - inset &&
+    !taken.some((k) => rectsTouch(r, k, gap));
+  /** The label centred on `centre` at `ang` degrees: where its baseline starts, and its box with the halo. */
+  const shape = (width: number, centre: Pt, ang: number): { baseline: Pt; rect: Rect } => {
     const th = (ang * Math.PI) / 180;
     const ux = Math.cos(th);
     const uy = Math.sin(th);
@@ -565,7 +563,9 @@ export function planPinStreetLabels(roads: RoadNetwork, o: PinLabelOptions, meas
       .map((c) => [baseline[0] + c[0] * ux - c[1] * uy, baseline[1] + c[0] * uy + c[1] * ux] as Pt);
     const xs = corners.map((q) => q[0]);
     const ys = corners.map((q) => q[1]);
-    const rect: Rect = { x: Math.min(...xs) - halo, y: Math.min(...ys) - halo, w: Math.max(...xs) - Math.min(...xs) + halo * 2, h: Math.max(...ys) - Math.min(...ys) + halo * 2 };
+    return { baseline, rect: { x: Math.min(...xs) - halo, y: Math.min(...ys) - halo, w: Math.max(...xs) - Math.min(...xs) + halo * 2, h: Math.max(...ys) - Math.min(...ys) + halo * 2 } };
+  };
+  const draw = (text: string, baseline: Pt, rect: Rect, ang: number) => {
     const common = { k: "text" as const, text, font: "sansBold" as const, size, anchor: "middle" as const, rotateDeg: ang, tracking };
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const) {
       prims.push({ ...common, at: [baseline[0] + dx * halo, baseline[1] + dy * halo], color: color("color-surface") });
@@ -573,34 +573,23 @@ export function planPinStreetLabels(roads: RoadNetwork, o: PinLabelOptions, meas
     prims.push({ ...common, at: baseline, color: color("color-scene-label") });
     taken.push(rect);
     labels.push({ text, rotateDeg: ang, box: rect });
-    return true;
   };
-  const rectFor = (width: number, centre: Pt): Rect => ({ x: centre[0] - width / 2 - halo, y: centre[1] - size * 0.75 - halo, w: width + halo * 2, h: size * 0.95 + halo * 2 });
-  const done = new Set<string>();
-  for (const pl of placed) {
-    const text = pl.name.trim().toUpperCase();
-    draw(text, textW(pl.name), toPx(t, pl.at), -rad2deg(pl.angleRad));
-    done.add(pl.name.trim().toLowerCase());
-  }
-  // A road along the short side of a wide box: its name sits level, beside the road, next to the pin.
   for (const key of keys) {
-    if (done.has(key)) continue;
     const text = (display.get(key) ?? key).toUpperCase();
     const width = textW(text);
     const own = spots.filter((sp) => sp.name.trim().toLowerCase() === key)
       .sort((a, b) => Math.hypot(a.at.x - o.center.x, a.at.y - o.center.y) - Math.hypot(b.at.x - o.center.x, b.at.y - o.center.y));
-    let ok = false;
-    for (const sp of own) {
+    // Along its road first, on a straight stretch long enough for the name; then level beside the road.
+    const along = own.filter((sp) => width / o.scale + 1 <= sp.halfSpanM * 2).map((sp) => ({ centre: toPx(t, sp.at), ang: -rad2deg(sp.angleRad) }));
+    const level = own.flatMap((sp) => {
       const c = toPx(t, sp.at);
-      for (const side of [1, -1]) {
-        const centre: Pt = [c[0] + side * ((sp.widthM * t.s) / 2 + width / 2 + size * 0.6), c[1]];
-        const rect = rectFor(width, centre);
-        const within = rect.x >= o.box.x + inset && rect.y >= o.box.y + inset && rect.x + rect.w <= o.box.x + o.box.w - inset && rect.y + rect.h <= o.box.y + o.box.h - inset;
-        if (!within || taken.some((r) => hits(rect, r))) continue;
-        ok = draw(text, width, centre, 0);
-        break;
-      }
-      if (ok) break;
+      return [1, -1].map((side) => ({ centre: [c[0] + side * ((sp.widthM * t.s) / 2 + width / 2 + size * 0.6), c[1]] as Pt, ang: 0 }));
+    });
+    for (const cand of [...along, ...level]) {
+      const { baseline, rect } = shape(width, cand.centre, cand.ang);
+      if (!clear(rect)) continue;
+      draw(text, baseline, rect, cand.ang);
+      break;
     }
   }
   prims.push({ k: "unclip" });

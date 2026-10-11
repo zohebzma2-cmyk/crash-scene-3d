@@ -265,6 +265,19 @@ export function kvOnBlobs(parts: BlobsParts): KvStore {
         if (!q.running) void drain(name);
       });
     },
+    async returnToken(key, nowMs, limit) {
+      // Best effort: one conditional read-modify-write, retried on a conflict; never above capacity.
+      const store = await storeFor(key, nowMs);
+      const name = blobKey(`bucket:${key}`);
+      for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
+        const cur = await store.getWithMetadata(name, { type: "text" });
+        if (!cur) return; // never taken from: already full
+        const s = refillBucket(parse(cur.data), nowMs, limit);
+        const res = await writeIfUnchanged(store, name, `${Math.min(limit.capacity, s.tokens + 1)},${s.at}`, cur, allowUnconditional);
+        if (res.modified) return;
+        if (res.noEtag) { reportNoEtag(); return; }
+      }
+    },
   };
 }
 
@@ -294,5 +307,6 @@ export function blobsStore(): KvStore {
     takeSlot: (key, nowMs, intervalMs) => real().takeSlot(key, nowMs, intervalMs),
     reserveSlot: (key, nowMs, intervalMs, maxWaitMs) => real().reserveSlot(key, nowMs, intervalMs, maxWaitMs),
     takeToken: (key, nowMs, limit) => real().takeToken(key, nowMs, limit),
+    returnToken: (key, nowMs, limit) => real().returnToken?.(key, nowMs, limit) ?? Promise.resolve(),
   };
 }

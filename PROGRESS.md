@@ -9,6 +9,11 @@
 - **Never read secrets**: no `.env` files, nothing under `~/.ssh`, and never read or print the Netlify environment values.
 - **Before any push:** run the privacy scan (`node scripts/privacy-scan.mjs --tree HEAD` with your untracked `.privacy-terms`) and `./check.sh`.
 - **Agents:** one worktree and one port each; never kill processes by name.
+- **Our own runs against the live site** (added 2026-10-11, docs/PROXY-BUSY.md):
+  - **They must not spend users' budget.** Any e2e spec run with a deployed `BASE_URL` answers `/api/vehicles/*` and `/api/geo/tile/*` inside the test (`e2e/live-guard.ts`, automatic through `e2e/helpers.ts`). Scratch live checks call `stubNonEssentialApi(page)` from that file.
+  - **What stays live:** only the flows a live check verifies (search, crossing, Overpass, terrain), plus `e2e/live/vehicles.live.spec.ts`, which runs once after a deploy that touches the proxy or the vehicles step.
+  - **Never** loop live checks, use `--repeat-each`, or run live suites side by side.
+  - `E2E_LIVE_API=all` turns the guard off; that is for a deliberate full check by the owner only.
 
 ## What's live
 - **Site:** https://crash-scene-3d.netlify.app (Netlify site `crash-scene-3d`). It is deployed from `main`, and GitHub `main` is the deployed commit.
@@ -24,17 +29,18 @@
   - 353 browser tests on Chromium and WebKit at 1440 and 390;
   - 34 skipped (WebKit runs the `@xb` subset; plus the known fixme and opt-in cases).
 - **Live checks after each deploy:**
-  - `BASE_URL=https://crash-scene-3d.netlify.app npm run e2e:live`, which covers search near the claim;
+  - `BASE_URL=https://crash-scene-3d.netlify.app npm run e2e:live`, which covers search near the claim and, since 2026-10-11, typing two vehicles (`e2e/live/vehicles.live.spec.ts`; run once, see the hard rules);
   - `e2e/csp-steps.spec.ts` and `e2e/viewer-clear.spec.ts` against the live URL;
   - the examples, ZIP and fingerprint check on Chromium and WebKit, desktop and phone.
 
 ## What's next (in order)
 1. **The owner's polish list (2026-10-10, after close-out):**
-   1. PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2.
-   2. The PDF "Hit on" column gets more room, or its note moves under the table.
-   3. The PDF map thumbnail: street labels at the pin spaced apart.
-   4. The diagram: the scale bar moved off the north arrow.
-   5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together". **Done on branch `polish/vehicles` (2026-10-11), not merged or deployed.**
+   1. PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2. **Merged (reviewed), not yet deployed.**
+   2. The PDF "Hit on" column gets more room, or its note moves under the table. **Merged (reviewed), not yet deployed.**
+   3. The PDF map thumbnail: street labels at the pin spaced apart. **Merged (reviewed), not yet deployed.**
+   4. The diagram: the scale bar moved off the north arrow. **Merged (reviewed), not yet deployed.**
+   5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together". **Merged (reviewed), not yet deployed.**
+   6. The vehicles step no longer says "a lot of map requests" when you type a make and model: vPIC has its own buckets, every route retries before a busy message, wording is per topic, our live tests stub vehicles and tiles (docs/PROXY-BUSY.md, decision 0010). **Merged (reviewed), not yet deployed.** After the deploy, run `e2e/live/vehicles.live.spec.ts` once. Decision for the owner: extend CLAUDE.md hard rule 6's exception to vPIC (2/s global with bursts).
 2. **The camera framing fixes** from docs/VISIBILITY-SWEEP.md, in this order:
    1. fit into the unobstructed view, which matters most on phones;
    2. the 900 m orbit clamp;
@@ -42,8 +48,16 @@
    4. ground height.
 
    After those come the DESIGN §7 decisions (C1 start framing, C3 driver views). Then remove the sweep's opt-in gate so check.sh runs it.
-3. **Round B:** the vehicle picker (vPIC type-ahead with aliases), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
+3. **Round B:** the vehicle picker (vPIC type-ahead with aliases): **done on branch `roundB/picker` (2026-10-11), not merged or deployed** (status below), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
 4. **The fixer review follow-ups and the rest of README "Next version".**
+
+## roundB/picker (2026-10-11, not merged)
+- Year, make and model are WAI-ARIA comboboxes (`VehicleCombobox`), with aliases, typo tolerance and popular-first ranking from `packages/core/src/vehicle-names.ts`. Free text always works. `MakeLogo` renders in each make row once round B's images branch adds it.
+- The proxy routes are unchanged in shape. The makes route also stores a make → vPIC kinds index, and the models route asks vPIC only about those kinds (Chevrolet 3 calls, Harley-Davidson 1, otherwise 4). The limiter is untouched (owned by polish/proxy-busy).
+- vPIC has no trims and no makes-by-year list.
+- "2019 chevy silverado" costs 1 makes request per session plus 1 models request (Chevrolet 2019) from the browser. Live vPIC calls 2019 Chevrolet pickups "Silverado" / "Silverado HD" / "Silverado LD"; the fixtures use "Silverado 1500".
+- Tests: core `vehicle-names.test.ts`, proxy `vehicles.test.ts` (captured vPIC bodies in `test/fixtures/vpic`), web `vehicle-picker.test.tsx`, and e2e `vehicle-picker.spec.ts` (@xb, with axe on the lists open).
+- Merged `live/integ` (polish/proxy-busy) on 2026-10-11 and reconciled: their service (session cache, retry before busy, per-topic wording, canonicalMake, abort on typing) with core's aliases; their parallel vPIC calls with the kinds index; unknown makes asked once typing stops; phones show the list in the page flow so it never covers Model.
 
 ## Open risks
 - **Camera framing:**
