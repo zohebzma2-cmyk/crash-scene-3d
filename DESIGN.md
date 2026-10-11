@@ -434,6 +434,24 @@ Four steps, all reading and writing one shared scene state. Back never loses wor
 - On phones the scene keeps the lines and outlines. The values move into the Measure tab, which opens automatically, because pills would cover the small view.
 - Where each vehicle ends up is a dashed outline (`--size-stroke-ghost`) in its color, shown whenever Paths or Measurements are on. Path lines are dashed before the impact and solid after; a small legend chip says so: "Dashed: before impact · Solid: after".
 
+### Loading, failure and the map data notice (added 2026-10-11, docs/VIEWER-LOAD.md)
+- **Loading.** From the first paint the picture's box shows a card, top left under the view chips (clear of the crash in the middle).
+  - **The card:** "Building the scene…", what is happening now ("Loading the terrain, 2 of 4."), a progress bar, and the four real stages:
+    - Map data;
+    - Terrain (counted by tile; "flat ground" when there is none);
+    - 3D view (the viewer's code);
+    - Drawing the scene (until the first frame).
+  - **Underneath:** the top-down diagram, as soon as the scene can be drawn. The 3D view draws its first frame hidden and replaces the diagram only once it is drawn, so an empty box never shows.
+  - **A revisit with the code cached:** when only the first frame is left, the card waits 300 ms before showing, so it doesn't flash.
+- **Screen readers.** One live region (`role="status"`, polite) for the whole step says each stage once, without tile counts, and "The scene is ready." at the end. The card itself is not a live region.
+- **Reduced motion.** The spinner stands still, and the bar doesn't animate (duration tokens are 0).
+- **Failure.** The diagram stays as the picture (it counts as ready, and a save goes on at once without the 3D pictures). In the same top-left place, a warning-tint card (`role="alert"`) says what failed, with **Retry**:
+  - "We couldn't load the 3D view. Check your connection and try again." Retry loads the code again, and reloads the page on a second failure.
+  - "The 3D view couldn't start in this browser, so this is the top-down diagram."
+  - "The 3D view stopped, so this is the top-down diagram." (the graphics were reset)
+- **Map data notice.** When the roads can't be loaded, the picture is drawn without roads, and a warning-tint notice (`role="alert"`) says "We couldn't load the map data, so the picture has no roads." with Retry. The vehicle labels keep clear of it.
+- **An example that can't be opened** says "We couldn't open the example. Check your connection and try again." with Retry.
+
 ---
 
 ## 8. Exports and integrity

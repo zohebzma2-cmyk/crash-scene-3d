@@ -19,6 +19,8 @@ export const STEPS = [
 export type StepKey = (typeof STEPS)[number]["key"];
 export const stepIndex = (k: StepKey): number => STEPS.findIndex((s) => s.key === k);
 const isStep = (s: string): s is StepKey => STEPS.some((x) => x.key === s);
+/** How long a step change waits for a lazily loaded step's title to appear, to focus it. */
+const TITLE_WAIT_MS = 10_000;
 
 export interface GateProblem {
   readonly text: string;
@@ -145,9 +147,23 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     hideToast();
     window.scrollTo?.(0, 0);
     if (firstRender.current) { firstRender.current = false; return; }
-    const h1 = document.querySelector<HTMLElement>("main h1");
-    h1?.setAttribute("tabindex", "-1");
-    h1?.focus({ preventScroll: true });
+    // The shown title only: while a step's code loads, the last step's title may still be in the page, hidden.
+    // (React hides suspended content with an inline display: none.)
+    const hidden = (el: HTMLElement | null): boolean => { for (let e = el; e; e = e.parentElement) if (e.hidden || e.style.display === "none") return true; return false; };
+    const shownTitle = () => [...document.querySelectorAll<HTMLElement>("main h1")].find((h) => !hidden(h)) ?? null;
+    const focusTitle = (h1: HTMLElement) => { h1.setAttribute("tabindex", "-1"); h1.focus({ preventScroll: true }); };
+    const now = shownTitle();
+    if (now) { focusTitle(now); return; }
+    // A step whose code is still loading has no title yet: focus it as soon as it appears (bounded).
+    const main = document.querySelector("main");
+    if (!main || typeof MutationObserver !== "function") return;
+    const mo = new MutationObserver(() => {
+      const h1 = shownTitle();
+      if (h1) { mo.disconnect(); window.clearTimeout(stop); focusTitle(h1); }
+    });
+    const stop = window.setTimeout(() => mo.disconnect(), TITLE_WAIT_MS);
+    mo.observe(main, { childList: true, subtree: true });
+    return () => { mo.disconnect(); window.clearTimeout(stop); };
   }, [step, hideToast]);
 
   const go = useCallback((target: StepKey) => {

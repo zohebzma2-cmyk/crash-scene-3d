@@ -1,4 +1,4 @@
-// The Review picture's loading stages: map data, terrain, the 3D models (the viewer's code) and drawing the
+// The Review picture's loading stages: map data, terrain, the 3D view (the viewer's code) and drawing the
 // first frame. Pure: the stages are derived from what the app already knows (the roads' status and terrain
 // progress, the viewer chunk's status, the 3D view's first frame), so they can never drift from the real work.
 // No three, no React: this module is in the main chunk.
@@ -33,7 +33,7 @@ export interface LoadInputs {
 export const STAGE_LABELS: Readonly<Record<StageId, string>> = {
   map: "Map data",
   terrain: "Terrain",
-  models: "3D models",
+  models: "3D view",
   scene: "Drawing the scene",
 };
 
@@ -47,7 +47,7 @@ export const FAILURE_TEXT = {
 const ACTIVE_TEXT: Readonly<Record<StageId, string>> = {
   map: "Loading the map data",
   terrain: "Loading the terrain",
-  models: "Loading the 3D models",
+  models: "Loading the 3D view",
   scene: "Drawing the scene",
 };
 
@@ -101,13 +101,23 @@ export const loadFailure = (stages: readonly Stage[]): Stage | null => stages.fi
 /** A failure the picture is drawn through (only the map data), shown as a notice with Retry. */
 export const loadNotice = (stages: readonly Stage[]): Stage | null => stages.find((s) => s.status === "failed" && s.id === "map") ?? null;
 
-/** The live region's words: the headline and what is happening now ("Loading the terrain, 2 of 4."). */
-export function loadMessage(stages: readonly Stage[]): string {
+/**
+ * The headline and what is happening now ("Loading the terrain, 2 of 4."). The live region asks for it without
+ * the tile count (`counts: false`), so a screen reader hears each stage once, not every tile.
+ */
+export function loadMessage(stages: readonly Stage[], { counts = true }: { counts?: boolean } = {}): string {
   const now = stages.find((s) => s.status === "active") ?? stages.find((s) => s.status === "waiting");
   if (!now) return HEADLINE;
-  const n = now.count && now.status === "active" ? `, ${now.count.done} of ${now.count.total}` : "";
+  const n = counts && now.count && now.status === "active" ? `, ${now.count.done} of ${now.count.total}` : "";
   return `${HEADLINE} ${ACTIVE_TEXT[now.id]}${n}.`;
 }
+
+/** What the live region says once the picture is up. */
+export const READY_TEXT = "The scene is ready.";
+
+/** Only the first frame is still to come (everything else is in): a revisit with the code cached draws it in a moment. */
+export const onlySceneLeft = (stages: readonly Stage[]): boolean =>
+  stages.every((s) => s.id === "scene" || finished(s) || (s.id === "map" && s.status === "failed"));
 
 /** Stages whose status changed between two derivations (for performance marks). */
 export function stageChanges(prev: readonly Stage[], next: readonly Stage[]): Array<{ id: StageId; from: StageStatus | null; to: StageStatus }> {

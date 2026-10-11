@@ -20,13 +20,20 @@ describe("Review loading states", () => {
     const { services } = makeServices({ roads: { load } });
     app = await renderApp(services, { hash: "#review", storage: docFromScene(tbone, tbone.location.label) });
     await flush(20);
-    const status = get("[data-testid=viewer-loading] [role=status]");
-    expect(text(status)).toBe("Building the scene… Loading the map data.");
-    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(text(get("[data-testid=viewer-loading] .viewer-status-title"))).toBe("Building the scene… Loading the map data.");
+    // What a screen reader hears comes from the one live region the app keeps, not from the box.
+    const live = get("[data-testid=load-announcer]");
+    expect(live.getAttribute("role")).toBe("status");
+    expect(live.getAttribute("aria-live")).toBe("polite");
+    expect(text(live)).toBe("Building the scene… Loading the map data.");
+    expect(maybe("[data-testid=viewer-loading] [role=status]")).toBeNull();
     finish();
     await flush(20);
     expect(maybe("[data-testid=viewer-loading]")).toBeNull();
     expect(maybe(".viewer-slot")).not.toBeNull();
+    // The same region (never remounted) says when it is done.
+    expect(get("[data-testid=load-announcer]")).toBe(live);
+    expect(text(live)).toBe("The scene is ready.");
   });
 
   it("says when the map data failed, draws the picture anyway, and Retry loads the roads again", async () => {

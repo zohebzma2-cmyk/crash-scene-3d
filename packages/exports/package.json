@@ -6,7 +6,8 @@
     "gen": "node scripts/generate.mjs"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./png-meta": "./src/png-meta.ts"
   },
   "dependencies": {
     "@csd/core": "*",

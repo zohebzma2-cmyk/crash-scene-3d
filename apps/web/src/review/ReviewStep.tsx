@@ -27,7 +27,10 @@ import { RefusalFixes } from "./RefusalFixes";
 import { ViewerStatus } from "./ViewerStatus";
 import { hasWebGL, loadViewer } from "../viewer/load-viewer";
 import { prepareRoadArt } from "../lib/roadArt";
-import { preloadStep } from "../steps";
+import { preloadStepsWhenIdle } from "../steps";
+
+/** How long after the picture is up the next screens' code starts loading (in idle time). */
+const NEXT_STEPS_DELAY_MS = 2000;
 
 const VIEWS: ReadonlyArray<{ id: CameraView; label: string }> = [
   { id: "top", label: "Top" },
@@ -149,8 +152,10 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
   const viewerRef = useRef<ViewerHandle | null>(null);
   /** Set once the 3D view has drawn its first frame (or the 2D fallback is shown): e2e and assistive tech can wait on it. */
   const [viewerReady, setViewerReady] = useState(false);
-  // Once the picture is up, the next screens' code (save, or back to edit) loads in the background.
-  const markReady = useCallback(() => { setViewerReady(true); preloadStep("export"); preloadStep("vehicles"); }, []);
+  const markReady = useCallback(() => setViewerReady(true), []);
+  // Once the picture is up (or the diagram stands in for it), the next screens' code (save, or back to edit)
+  // loads in the background when the page is idle; leaving Review first cancels it.
+  useEffect(() => (viewerReady ? preloadStepsWhenIdle(["export", "vehicles"], NEXT_STEPS_DELAY_MS) : undefined), [viewerReady]);
   const [saving, setSaving] = useState(false);
 
   // The export stills are taken here, while the 3D view exists: the moment of impact (Wide camera) and final rest (the Aftermath view).

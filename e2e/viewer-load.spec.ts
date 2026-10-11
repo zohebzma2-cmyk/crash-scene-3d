@@ -5,7 +5,7 @@
 //   - the map data failing is a notice with Retry while the picture is drawn without roads
 // Chromium and WebKit (@xb), at 1440 and 390.
 import type { Page, Route } from "@playwright/test";
-import { expect, test, waitForViewer } from "./helpers";
+import { expect, saveFiles, test, waitForViewer } from "./helpers";
 
 const EXAMPLE = "/?example=t-bone-intersection#review";
 const VIEWER_CHUNK = /\/assets\/Viewer-[^/?]+\.js$/;
@@ -24,9 +24,13 @@ test("@xb shows 'Building the scene…' with its stages before the scene is read
   const release = await holdViewerChunk(page);
   // WebKit holds the load event for a pending dynamic import, so don't wait for it.
   await page.goto(EXAMPLE, { waitUntil: "commit" });
-  const status = loading(page).getByRole("status");
-  await expect(status).toContainText("Building the scene…");
-  await expect(status).toContainText("Loading the 3D models.");
+  await expect(loading(page)).toContainText("Building the scene…");
+  await expect(loading(page)).toContainText("Loading the 3D view.");
+  // A screen reader hears it through the one live region the page keeps (not a status inside the box).
+  const live = page.getByTestId("load-announcer");
+  await expect(live).toHaveAttribute("role", "status");
+  await expect(live).toHaveText("Building the scene… Loading the 3D view.");
+  await expect(loading(page).getByRole("status")).toHaveCount(0);
   await expect(page.locator(".viewer-canvas").first()).not.toHaveAttribute("data-ready", "true");
   // The stages are real: the map data and the terrain are in by now, the 3D code is what is still loading.
   await expect(loading(page).locator('[data-stage="map"]')).toHaveAttribute("data-status", "done");
@@ -45,6 +49,7 @@ test("@xb shows 'Building the scene…' with its stages before the scene is read
   })).toBe("ok");
   await waitForViewer(page);
   await expect(loading(page)).toHaveCount(0);
+  await expect(live).toHaveText("The scene is ready.");
   await expect(page.locator(".viewer-slot")).toHaveCount(0);
   await expect(page.locator(".viewer3d")).not.toHaveClass(/is-building/);
   expect(pageErrors()).toEqual([]);
@@ -59,6 +64,8 @@ test("@xb the 3D code failing to load says so with Retry over the diagram, and R
   await expect(failure(page)).toContainText("We couldn't load the 3D view. Check your connection and try again.");
   await expect(page.locator(".viewer-slot")).toBeVisible();
   await expect(loading(page)).toHaveCount(0);
+  // The diagram is the picture now, so the picture counts as ready.
+  await expect(page.locator(".viewer-canvas")).toHaveAttribute("data-ready", "true");
   failing = false;
   await failure(page).getByRole("button", { name: "Retry" }).click();
   await waitForViewer(page);
@@ -103,4 +110,43 @@ test("@xb the map data failing is a notice with Retry, and the picture is still 
   await expect(notice).toBeVisible();
   // The picture is up, so the loading box is gone; only the notice stays.
   await expect(loading(page)).toHaveCount(0);
+});
+
+test("@xb after the 3D code fails, saving goes on at once (without the 3D pictures) and focus lands on Save's title", async ({ page }) => {
+  await page.route(VIEWER_CHUNK, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.goto(EXAMPLE);
+  await expect(failure(page)).toBeVisible();
+  const t0 = Date.now();
+  await page.getByRole("button", { name: "Looks right: save it" }).click();
+  // Before, each of the two stills waited out the 10 s ready timeout.
+  await expect(page.locator("#app")).toHaveAttribute("data-step", "export", { timeout: 5_000 });
+  expect(Date.now() - t0).toBeLessThan(5_000);
+  await expect(page.locator("main h1")).toHaveText("What do you want to save?");
+  await expect(page.locator("main h1")).toBeFocused();
+  const saved = await saveFiles(page);
+  expect([...saved.files.keys()].filter((n) => /-(impact|final-rest)\.png$/.test(n))).toEqual([]);
+});
+
+test("@xb a save right after Retry waits for the new 3D view and keeps its pictures", async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __failGL: boolean };
+    w.__failGL = true;
+    let made = 0;
+    const real = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      if (/webgl/.test(type) && w.__failGL && made++ > 0) return null;
+      return (real as (...a: unknown[]) => unknown).call(this, type, ...rest);
+    } as typeof real;
+  });
+  await page.goto(EXAMPLE);
+  await expect(failure(page)).toBeVisible();
+  await page.evaluate(() => { (window as unknown as { __failGL: boolean }).__failGL = false; });
+  await failure(page).getByRole("button", { name: "Retry" }).click();
+  // At once, before the new 3D view has drawn: the save must wait for it, not use the old failure.
+  await page.getByRole("button", { name: "Looks right: save it" }).click();
+  await expect(page.locator("#app")).toHaveAttribute("data-step", "export", { timeout: 30_000 });
+  const saved = await saveFiles(page);
+  const names = [...saved.files.keys()];
+  expect(names.some((n) => n.endsWith("-impact.png")), names.join(", ")).toBe(true);
+  expect(names.some((n) => n.endsWith("-final-rest.png")), names.join(", ")).toBe(true);
 });

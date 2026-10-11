@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  FAILURE_TEXT, HEADLINE, loadComplete, loadFailure, loadMessage, loadNotice, loadProgress, loadStages, stageChanges, type LoadInputs,
+  FAILURE_TEXT, HEADLINE, STAGE_LABELS, loadComplete, loadFailure, loadMessage, loadNotice, loadProgress, loadStages, onlySceneLeft, stageChanges, type LoadInputs,
 } from "../../src/viewer/load-stages";
 
 const base: LoadInputs = { map: "loading", terrain: null, models: "idle", scene: "waiting" };
@@ -23,6 +23,25 @@ describe("load stages", () => {
     expect(loadMessage(stages)).toBe(`${HEADLINE} Loading the map data.`);
   });
 
+  it("the live text leaves out the tile count (one announcement per stage); the box keeps it", () => {
+    const stages = loadStages({ ...base, map: "loading", terrain: { done: 2, total: 4 } });
+    const i: LoadInputs = { map: "ready", terrain: null, models: "idle", scene: "waiting" };
+    expect(loadMessage(loadStages(i), { counts: false })).toBe(`${HEADLINE} Loading the 3D view.`);
+    // While the map data is still active the count is not shown at all; a terrain-only moment shows it in the box.
+    expect(loadMessage(stages, { counts: false })).toBe(`${HEADLINE} Loading the map data.`);
+  });
+
+  it("calls the 3D code stage the 3D view", () => {
+    expect(STAGE_LABELS.models).toBe("3D view");
+  });
+
+  it("knows when only the first frame is left (a cached revisit), so the box can wait before showing", () => {
+    expect(onlySceneLeft(loadStages({ map: "ready", terrain: null, models: "ready", scene: "building" }))).toBe(true);
+    expect(onlySceneLeft(loadStages({ map: "failed", terrain: null, models: "ready", scene: "building" }))).toBe(true);
+    expect(onlySceneLeft(loadStages({ map: "ready", terrain: null, models: "loading", scene: "waiting" }))).toBe(false);
+    expect(onlySceneLeft(loadStages({ map: "loading", terrain: null, models: "ready", scene: "waiting" }))).toBe(false);
+  });
+
   it("never counts more tiles than there are", () => {
     const t = loadStages({ ...base, terrain: { done: 9, total: 4 } }).find((s) => s.id === "terrain");
     expect(t?.count).toEqual({ done: 4, total: 4 });
@@ -36,7 +55,7 @@ describe("load stages", () => {
 
   it("moves through the models and the first frame to complete", () => {
     const loading = loadStages({ map: "ready", terrain: null, models: "loading", scene: "waiting" });
-    expect(loadMessage(loading)).toBe(`${HEADLINE} Loading the 3D models.`);
+    expect(loadMessage(loading)).toBe(`${HEADLINE} Loading the 3D view.`);
     const building = loadStages({ map: "ready", terrain: null, models: "ready", scene: "building" });
     expect(loadMessage(building)).toBe(`${HEADLINE} Drawing the scene.`);
     expect(loadProgress(building)).toBe(0.75);

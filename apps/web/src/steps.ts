@@ -38,6 +38,21 @@ export function preloadStep(step: string): void {
   if ((step === "location" || step === "vehicles" || step === "export") && !loaded[step]) void load(step).catch(() => undefined);
 }
 
+/**
+ * Starts loading steps' code after `delayMs` and then only when the page is idle: Save's code brings pdf-lib
+ * (a large module to evaluate), which must not land while the person is already using another screen. Returns
+ * a cancel (call it when leaving the screen that asked).
+ */
+export function preloadStepsWhenIdle(steps: readonly string[], delayMs: number): () => void {
+  let idle: number | null = null;
+  const run = () => { for (const s of steps) preloadStep(s); };
+  const timer = window.setTimeout(() => {
+    if (typeof requestIdleCallback === "function") idle = requestIdleCallback(run, { timeout: delayMs });
+    else run();
+  }, delayMs);
+  return () => { window.clearTimeout(timer); if (idle !== null) cancelIdleCallback(idle); };
+}
+
 /** Every step's code, loaded (unit tests mount the app synchronously). */
 export async function loadAllSteps(): Promise<void> {
   await Promise.all((Object.keys(loaders) as LazyStep[]).map((k) => load(k)));

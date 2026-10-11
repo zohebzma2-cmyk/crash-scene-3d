@@ -3,6 +3,7 @@ import { Component, Suspense, useCallback, useEffect, useState, type ReactNode }
 import { hasWebGL, loadViewer } from "./viewer/load-viewer";
 import { AboutDialog, DisclaimerBar, Header, Stepper, Toast } from "./components/Shell";
 import { ReviewSkeleton, ReviewStep } from "./review/ReviewStep";
+import { LoadAnnouncer, announceLoad } from "./review/LoadAnnouncer";
 import { LocationStep, SaveStep, VehiclesStep, preloadStep } from "./steps";
 import { ServicesProvider, useServices } from "./services/context";
 import type { Services } from "./services/types";
@@ -82,6 +83,8 @@ function Body() {
   useEffect(() => {
     document.title = `${STEPS.find((s) => s.key === step)?.name ?? ""} · Crash scene illustration · InsurifyAI`;
   }, [step]);
+  // Leaving Review empties its loading announcements, so a later visit starts from silence.
+  useEffect(() => { if (step !== "review") announceLoad(""); }, [step]);
   // The next step's code loads in the background once this one has had time to settle (Review does its own, after its picture).
   useEffect(() => {
     const next = step === "location" ? () => preloadStep("vehicles") : step === "vehicles" ? () => { if (hasWebGL()) void loadViewer().catch(() => undefined); } : null;
@@ -96,6 +99,7 @@ function Body() {
       <Stepper />
       <Toast />
       <main>
+        <LoadAnnouncer active={step === "review" || example === "loading"} />
         {example === "loading" ? (
           // An example opens on Review: its picture's box, with the loading status, from the first paint.
           <section aria-labelledby="h-review">

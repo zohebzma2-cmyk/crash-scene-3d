@@ -15,8 +15,8 @@ async function openLocation(page: Page): Promise<string[]> {
   });
   page.on("request", (r) => { if (!/^(data|blob):/.test(r.url()) && !/^https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(r.url())) foreign.push(r.url()); });
   await page.goto("/?example=t-bone-intersection#review");
-  await page.getByRole("heading", { level: 1 }).first().waitFor();
-  await page.waitForTimeout(500);
+  // Loaded means the picture is up (the heading shows with the loading box, before the roads are in).
+  await page.locator('.viewer-canvas[data-ready="true"]').waitFor({ timeout: 30_000 });
   await page.evaluate(() => { location.hash = "#location"; });
   await page.locator("img.leaflet-tile-loaded").first().waitFor({ state: "attached" });
   return foreign;

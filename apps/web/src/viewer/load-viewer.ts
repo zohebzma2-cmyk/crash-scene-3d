@@ -17,6 +17,16 @@ let attempts = 0;
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 
+/** Only our own built 3D chunk is ever imported again: same origin, /assets/Viewer-<hash>.js. */
+export function isViewerChunkUrl(url: string, origin: string): boolean {
+  try {
+    const u = new URL(url, origin);
+    return u.origin === origin && /^\/assets\/Viewer-[\w-]+\.js$/.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
 /** The URL of the module that failed, from the browser's error message (Chromium names it). */
 export function failedModuleUrl(e: unknown): string | null {
   const text = e instanceof Error ? e.message : String(e);
@@ -49,12 +59,25 @@ function preloadedChunkUrl(): string | null {
   return null;
 }
 
-/** After a failure: load it again, past the browser's cached failure (a fresh query on the same file). */
+/** How the page reloads when an in-place retry can't help (replaced in tests). */
+let reload: () => void = () => window.location.reload();
+export const setReloadForTests = (fn: () => void): void => { reload = fn; };
+
+/**
+ * After a failure: load it again, past the browser's cached failure (a fresh query on the same file). If the file
+ * can't be named as our own chunk, or a retry already failed, the page reloads instead (the scene is kept in
+ * session storage).
+ */
 export function retryViewer(): Promise<ViewerModule> {
   if (status !== "failed") return loadViewer();
-  attempts += 1;
   const url = failedUrl ?? preloadedChunkUrl();
-  return start(url ? () => import(/* @vite-ignore */ `${url}${url.includes("?") ? "&" : "?"}retry=${attempts}`) as Promise<ViewerModule> : () => import("./Viewer"));
+  const origin = typeof location === "undefined" ? "" : location.origin;
+  if (attempts >= 1 || !url || !isViewerChunkUrl(url, origin)) {
+    reload();
+    return new Promise<ViewerModule>(() => undefined);
+  }
+  attempts += 1;
+  return start(() => import(/* @vite-ignore */ `${url}${url.includes("?") ? "&" : "?"}retry=${attempts}`) as Promise<ViewerModule>);
 }
 
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };

@@ -130,8 +130,8 @@ test.describe("3D compass, motion allowed", () => {
 test.describe("map north arrows", () => {
   test("the step 1 map and the step 2 mini map each show one, clear of their controls", async ({ page }) => {
     await page.goto("/?example=t-bone-intersection#review");
-    await page.getByRole("heading", { level: 1 }).first().waitFor();
-    await page.waitForTimeout(500);
+    // Loaded means the picture is up (the heading shows with the loading box, before the roads are in).
+    await page.locator('.viewer-canvas[data-ready="true"]').waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#location"; });
     await page.locator("img.leaflet-tile-loaded").first().waitFor({ state: "attached" });
     await page.waitForTimeout(800);

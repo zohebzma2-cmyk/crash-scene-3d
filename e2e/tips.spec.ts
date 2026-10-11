@@ -139,6 +139,8 @@ test("the header's Show tips is a big enough tap target", async ({ page }) => {
 test("Location with a tip showing: the map's attribution is on screen and uncovered", async ({ page }) => {
   await page.goto("/?example=t-bone-intersection#review");
   await expect(page.locator("main h1")).toHaveText("Does this match what happened?");
+  // Loaded means the picture is up (the heading shows with the loading box, before the roads are in).
+  await expect(page.locator(".viewer-canvas")).toHaveAttribute("data-ready", "true", { timeout: 30_000 });
   await page.evaluate(() => { location.hash = "#location"; });
   await expect(page.locator("main h1")).toHaveText("Where did it happen?");
   await expect(tip(page)).toHaveCount(1);

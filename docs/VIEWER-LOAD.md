@@ -97,7 +97,7 @@ At 1× CPU (1440): 1,086 ms is three (almost all of it the shader link wait), 20
 
 ### What changed
 
-**Loading state.** `review/ViewerStatus.tsx` draws "Building the scene…" with a progress bar and the four real stages: map data, terrain (counted by tile), 3D models (the viewer chunk) and drawing (until the first frame).
+**Loading state.** `review/ViewerStatus.tsx` draws "Building the scene…" with a progress bar and the four real stages: map data, terrain (counted by tile), 3D view (the viewer chunk) and drawing (until the first frame).
 - **Where the stages come from:** `viewer/load-stages.ts` derives them from the app's own state:
   - the roads' status and per-tile progress (`state/Roads.tsx`);
   - the viewer chunk's status (`viewer/load-viewer.ts`);
@@ -162,7 +162,7 @@ An earlier, quieter pair gave the same picture:
 | 590–2,222 | Main chunk 103 KB gz, plus core 54 KB, CSS 18 KB and two small shared chunks, all in parallel |
 | 2,310 | "Building the scene…": the box with the stages; the 3D chunk (269 KB gz), the scene file and the fonts start |
 | 2,883–3,265 | Overpass, then the 4 terrain tiles at once (map data and terrain tick off) |
-| 3,469 | The top-down diagram under the status box ("Loading the 3D models") |
+| 3,469 | The top-down diagram under the status box ("Loading the 3D view") |
 | 4,947 | The 3D chunk is in ("Drawing the scene") |
 | 5,597 | The first 3D frame: the status box goes, and the 3D view replaces the diagram |
 | after | Save's and the vehicles step's code load in the background |
@@ -194,3 +194,14 @@ What's left on a throttled phone link:
   - `simulate()` (about 120 ms at 4× CPU).
 
 Starting the 3D chunk in parallel with the main chunk would need a separate tiny entry module. That would cost every visitor a round trip, so it was left as an option. Speeding up `ribbonExcess` is a `packages/core` change; it was left alone here.
+
+### Review fixes (2026-10-11)
+- **Saving after a failure:**
+  - A failure (the 3D code, WebGL start, or a lost context) now settles the save's wait at once and sets `data-ready`, since the diagram is the picture. Before, a save after a failed 3D chunk waited 2 × 10 s.
+  - Retry starts a fresh wait, so a save pressed right after Retry waits for the new first frame and keeps the 3D pictures.
+- **Retrying the 3D code:** Retry only re-imports a same-origin `/assets/Viewer-*.js`; anything else, or a second failure, reloads the page.
+- **Screen readers:** one live region for the whole step (`LoadAnnouncer`, mounted once by the app). It says each stage without tile counts, then "The scene is ready."
+- **The boxes:** the loading and failure boxes sit top left with the notice, clear of the crash in the middle. When only the first frame is left (a cached revisit), the loading box waits 300 ms, so it doesn't flash.
+- **Focus:** a step change focuses the new step's title even when its code is still loading (it waits for the title).
+- **Background preload:** Save's code (pdf-lib) loads 2 s after the picture is up, in idle time, and leaving Review cancels it. This keeps its evaluation off a screen the person has already moved to.
+- **The stage name:** "3D models" is now "3D view" (it is the code that draws the 3D view).

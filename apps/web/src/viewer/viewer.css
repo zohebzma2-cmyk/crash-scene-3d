@@ -75,9 +75,16 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 /* The 3D view draws its first frame hidden, on top of the diagram, and only then takes over. */
 .viewer3d.is-building { visibility: hidden; }
 
+/* The notice, the failure box and the loading box stack top left in the picture, under the view chips and clear of
+   the crash in the middle (the diagram's vehicles and labels stay visible around them). */
+.viewer-overlays {
+  position: absolute; left: var(--space-3); top: calc(var(--space-3) + var(--size-touch) + var(--space-4)); z-index: var(--z-controls);
+  box-sizing: border-box; width: min(calc(100% - var(--space-6)), var(--size-panel-w));
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); pointer-events: none;
+}
+.viewer-overlays > * { pointer-events: auto; }
 .viewer-status {
-  position: absolute; left: 50%; top: 50%; z-index: var(--z-controls); translate: -50% -50%;
-  box-sizing: border-box; width: min(calc(100% - var(--space-8)), var(--size-panel-w));
+  box-sizing: border-box;
   display: flex; flex-direction: column; gap: var(--space-3);
   padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
   background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-lg);
@@ -107,10 +114,9 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 .viewer-status.is-error .viewer-status-title { flex-wrap: nowrap; align-items: flex-start; font-weight: var(--weight-semibold); }
 .viewer-status.is-error .viewer-status-title .icon { flex: none; margin-top: calc(var(--space-1) / 2); }
 
-/* The map data failed: the picture is drawn without roads, and this says so (top left, clear of the view chips). */
+/* The map data failed: the picture is drawn without roads, and this says so. */
 .viewer-notice {
-  position: absolute; left: var(--space-3); top: calc(var(--space-3) + var(--size-touch) + var(--space-4)); z-index: var(--z-controls);
-  box-sizing: border-box; max-width: min(calc(100% - var(--space-6)), var(--size-panel-w));
+  box-sizing: border-box;
   display: flex; align-items: center; gap: var(--space-2);
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-radius: var(--radius-md);
   background: var(--color-warning-tint); color: var(--color-warning-tint-text); box-shadow: var(--shadow-md);

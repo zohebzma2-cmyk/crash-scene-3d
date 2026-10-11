@@ -1,11 +1,20 @@
 // What the Review picture is doing while it is built: "Building the scene…" with the real stages (map data,
-// terrain, 3D models, drawing), and, if something fails, what failed with a Retry button. Text only.
+// terrain, 3D view, drawing), and, if something fails, what failed with a Retry button. Text only.
 // The stages come from viewer/load-stages; this component only reads the app's state and draws them.
-import { useEffect, useMemo, useRef } from "react";
+// The boxes sit top left in the picture (like the notice), clear of the crash in the middle; what a screen
+// reader hears goes through the one live region the app keeps (LoadAnnouncer), not through these boxes.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../icons/Icon";
 import { useRoads } from "../state/Roads";
-import { HEADLINE, loadComplete, loadFailure, loadMessage, loadNotice, loadProgress, loadStages, stageChanges, type LoadInputs, type Stage } from "../viewer/load-stages";
+import {
+  HEADLINE, READY_TEXT, loadComplete, loadFailure, loadMessage, loadNotice, loadProgress, loadStages, onlySceneLeft, stageChanges,
+  type LoadInputs, type Stage,
+} from "../viewer/load-stages";
 import { retryViewer, useViewerModule } from "../viewer/load-viewer";
+import { announceLoad, loadAnnouncement } from "./LoadAnnouncer";
+
+/** When only the first frame is left (a revisit with the 3D code cached), the box waits this long before showing, so it doesn't flash. */
+export const SCENE_ONLY_DELAY_MS = 300;
 
 export interface ViewerStatusProps {
   /** The 3D view's first frame (or why it failed). */
@@ -16,6 +25,8 @@ export interface ViewerStatusProps {
   readonly exampleLoading?: boolean;
   /** Retry after the 3D view itself failed (WebGL could not start, or was lost). */
   readonly onRetryScene?: () => void;
+  /** Retry after the 3D code failed to load. */
+  readonly onRetryChunk?: () => void;
 }
 
 function StageRow({ s }: { s: Stage }) {
@@ -44,7 +55,7 @@ function useStageMarks(stages: readonly Stage[]) {
   }, [stages]);
 }
 
-export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScene }: ViewerStatusProps) {
+export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScene, onRetryChunk }: ViewerStatusProps) {
   const roads = useRoads();
   const chunk = useViewerModule();
   const map: LoadInputs["map"] = exampleLoading || roads.status === "loading" ? "loading" : roads.status === "error" ? "failed" : roads.status === "idle" ? "none" : "ready";
@@ -61,16 +72,34 @@ export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScen
   const failure = loadFailure(stages);
   const notice = loadNotice(stages);
   const busy = !failure && !loadComplete(stages);
+  // A revisit with everything cached only waits for the first frame: hold the box back a moment so it doesn't flash.
+  const quick = busy && onlySceneLeft(stages);
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    if (!quick) return;
+    const id = window.setTimeout(() => setWaited(true), SCENE_ONLY_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [quick]);
+  const showBox = busy && (!quick || waited);
   const progress = loadProgress(stages);
+
+  // The one live region: each stage once (no tile counts), and "ready" when the box goes.
+  // "Ready" follows a loading announcement even when it came from the skeleton this box replaced.
+  const liveText = loadMessage(stages, { counts: false });
+  useEffect(() => {
+    if (showBox) announceLoad(liveText);
+    else if (!busy && !failure && loadAnnouncement().startsWith(HEADLINE)) announceLoad(READY_TEXT);
+  }, [showBox, busy, failure, liveText]);
 
   const retry = (s: Stage) => {
     if (s.id === "map") roads.retry();
-    else if (s.id === "models") void retryViewer().catch(() => undefined);
+    else if (s.id === "models") { if (onRetryChunk) onRetryChunk(); else void retryViewer().catch(() => undefined); }
     else onRetryScene?.();
   };
 
+  if (!notice && !failure && !showBox) return null;
   return (
-    <>
+    <div className="viewer-overlays">
       {notice ? (
         <div className="viewer-notice" role="alert" data-testid="viewer-notice">
           <Icon name="warning" className="icon-sm" />
@@ -84,9 +113,9 @@ export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScen
           <button type="button" className="btn btn-secondary viewer-retry" onClick={() => retry(failure)}><Icon name="restart" className="icon-sm" />Retry</button>
         </div>
       ) : null}
-      {busy ? (
+      {showBox ? (
         <div className="viewer-status" data-testid="viewer-loading">
-          <p className="viewer-status-title" role="status" aria-live="polite">
+          <p className="viewer-status-title">
             <strong>{HEADLINE}</strong> <span className="viewer-status-now">{loadMessage(stages).slice(HEADLINE.length).trim()}</span>
           </p>
           <div className="viewer-status-bar" aria-hidden="true"><span style={{ transform: `scaleX(${progress.toFixed(3)})` }} /></div>
@@ -95,6 +124,6 @@ export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScen
           </ul>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
