@@ -34,7 +34,7 @@
    2. The PDF "Hit on" column gets more room, or its note moves under the table.
    3. The PDF map thumbnail: street labels at the pin spaced apart.
    4. The diagram: the scale bar moved off the north arrow.
-   5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together".
+   5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together". **Done on branch `polish/vehicles` (2026-10-11), not merged or deployed.**
 2. **The camera framing fixes** from docs/VISIBILITY-SWEEP.md, in this order:
    1. fit into the unobstructed view, which matters most on phones;
    2. the 900 m orbit clamp;

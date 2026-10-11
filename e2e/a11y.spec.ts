@@ -111,7 +111,7 @@ test.describe("the stepper can't skip the checks", () => {
       await expect(page.locator(".coords-label")).toContainText("From search");
       await page.goto(`/#${target}`);
       await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
-      await expect(page.getByTestId("gate-panel")).toContainText("Pick which way your car (A) was going.");
+      await expect(page.getByTestId("gate-panel")).toContainText("Pick which way your car was going.");
       await expect(page.getByTestId("gate-panel").getByRole("button", { name: "See it anyway" })).toHaveCount(0);
     });
   }

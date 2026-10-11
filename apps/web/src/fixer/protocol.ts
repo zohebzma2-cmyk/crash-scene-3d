@@ -11,6 +11,8 @@ export interface FixRequest {
   readonly roadsKey: number | null;
   /** This device's remembered fix kinds (see memory.ts): only kinds and counts, no scene details. */
   readonly prefer: Readonly<Record<string, number>>;
+  /** The Vehicles step's warnings: fixes that also clear the plain checks (FixOptions.gate). Absent = the Review refusal. */
+  readonly gate?: boolean;
 }
 
 export type FixResponse =

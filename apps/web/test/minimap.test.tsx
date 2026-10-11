@@ -64,7 +64,7 @@ describe("direction checks wait for every direction", () => {
     click(get("button", /See the recreation/));
     await flush();
     expect(checkScene).not.toHaveBeenCalled();
-    expect(text(get("alert"))).toContain("Pick which way your car (A) was going.");
+    expect(text(get("alert"))).toContain("Pick which way your car was going.");
     click(get("radio", "Northbound on Main Street", document.getElementById("vehicle-A")!));
     click(get("radio", "Westbound on Park Street", document.getElementById("vehicle-B")!));
     await flush();

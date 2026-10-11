@@ -18,6 +18,8 @@ export type FixRunner = (scene: Scene, roads: RoadNetwork | null, opts: FixOptio
 export interface SuggestOptions {
   /** This device's remembered fix kinds (memory.ts). */
   readonly prefer?: Readonly<Record<string, number>>;
+  /** For the Vehicles step's warnings: only fixes that also clear the plain checks (FixOptions.gate). */
+  readonly gate?: boolean;
   /** Abort when the scene changes: the search stops and the promise rejects with an AbortError. */
   readonly signal?: AbortSignal;
 }
@@ -57,6 +59,7 @@ interface Job {
   readonly scene: Scene;
   readonly roads: RoadNetwork | null;
   readonly prefer: Readonly<Record<string, number>>;
+  readonly gate: boolean;
   readonly resolve: (s: FixSuggestions) => void;
   readonly reject: (e: unknown) => void;
   readonly signal: AbortSignal | undefined;
@@ -104,7 +107,7 @@ export function createFixer(deps: FixerDeps): FixerService {
     job.cancel = defer(() => {
       if (job.done) return;
       let out: FixSuggestions | null = null, err: unknown = null;
-      try { out = deps.run(job.scene, job.roads, { prefer: job.prefer }); } catch (e) { err = e; }
+      try { out = deps.run(job.scene, job.roads, job.gate ? { prefer: job.prefer, gate: true } : { prefer: job.prefer }); } catch (e) { err = e; }
       finish(job);
       if (out) job.resolve(out); else job.reject(err);
     });
@@ -138,7 +141,7 @@ export function createFixer(deps: FixerDeps): FixerService {
     };
     job.cancel = () => { clearTimeout(timer); stopWorker(); };
     try {
-      w.postMessage({ id: job.id, scene: job.scene, roads: send ? job.roads : null, roadsKey, prefer: job.prefer });
+      w.postMessage({ id: job.id, scene: job.scene, roads: send ? job.roads : null, roadsKey, prefer: job.prefer, ...(job.gate ? { gate: true } : {}) });
     } catch {
       clearTimeout(timer);
       broken = true;
@@ -160,7 +163,7 @@ export function createFixer(deps: FixerDeps): FixerService {
     suggest(scene, roads, opts = {}) {
       return new Promise<FixSuggestions>((resolve, reject) => {
         if (opts.signal?.aborted) { reject(abortError()); return; }
-        const job: Job = { id: nextId++, scene, roads, prefer: opts.prefer ?? {}, resolve, reject, signal: opts.signal, cancel: null, done: false };
+        const job: Job = { id: nextId++, scene, roads, prefer: opts.prefer ?? {}, gate: opts.gate === true, resolve, reject, signal: opts.signal, cancel: null, done: false };
         opts.signal?.addEventListener("abort", () => {
           if (job.done) return;
           const wasCurrent = current === job;

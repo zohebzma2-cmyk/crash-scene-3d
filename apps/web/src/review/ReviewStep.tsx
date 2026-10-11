@@ -68,7 +68,7 @@ function ReviewWarnings({ sim, problems, onEdit }: { sim: SimulationResult; prob
   const all = useMemo(() => {
     // A zone-used note says what the picture actually shows, so it leads.
     const ordered = [...sim.warnings].sort((a, b) => Number(b.code === "zone-used") - Number(a.code === "zone-used"));
-    const fromSim: GateProblem[] = ordered.map((w) => ({ text: w.text, step: "vehicles", blocking: false, vehicleIds: w.vehicleIds }));
+    const fromSim: GateProblem[] = ordered.map((w) => ({ kind: "conflict", text: w.text, step: "vehicles", blocking: false, vehicleIds: w.vehicleIds }));
     const seen = new Set<string>();
     return [...fromSim, ...problems].filter((p) => (seen.has(p.text) ? false : (seen.add(p.text), true)));
   }, [sim, problems]);

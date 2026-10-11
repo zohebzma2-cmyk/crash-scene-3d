@@ -74,6 +74,17 @@ test("@xb no CSP violation on any step: location, vehicles, review (measure, aft
   await page.getByRole("button", { name: "Switch to the dark theme" }).click();
   await page.waitForTimeout(500);
   await where("dark theme");
+
+  // Step 2's one-tap fixes: the fixer's module Web Worker starts and answers under the CSP (worker-src 'self').
+  // The T-bone example with A marked hit on the left doesn't fit together (it only draws with A's right side).
+  await openExample(page, "t-bone-intersection");
+  await page.goto("/#vehicles");
+  await page.locator("#vehicle-A").getByRole("radio", { name: "Hit on the left side", exact: true }).click();
+  await page.getByRole("button", { name: /See the recreation/ }).click();
+  const fixes = page.getByTestId("gate-fixes");
+  await expect(fixes.locator("button.refusal-fix").first()).toBeVisible({ timeout: 30_000 });
+  await expect(fixes).toHaveAttribute("data-fixer", "worker");
+  await where("vehicles (one-tap fixes from the worker)");
 });
 
 test("@xb self-check: this engine reports a blocked <style>, a style attribute and a stylesheet", async ({ page }) => {
