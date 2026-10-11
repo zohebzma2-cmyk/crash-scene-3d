@@ -72,4 +72,32 @@ test.describe("the vehicle card's logo and photo", () => {
     expect(pageErrors()).toEqual([]);
     await shot(page, info, "busy");
   });
+
+  test("@xb the make list shows a logo at the start of each row, decorative, and the page stays inside the screen", async ({ page, pageErrors }, info) => {
+    const csp = await watchCsp(page);
+    await toVehicles(page, "on");
+    const make = page.locator("#vehicle-B").getByRole("combobox", { name: "Make", exact: true });
+    await make.click();
+    await make.pressSequentially("h", { delay: 60 });
+    await expect(make).toHaveAttribute("aria-expanded", "true");
+    const list = page.locator(`[id="${await make.getAttribute("aria-controls")}"]`);
+    const first = list.getByRole("option").first();
+    await expect(first.locator(".make-logo")).toHaveAttribute("data-make-logo", "logo");
+    // The row already names the make: the logo has an empty alt, so the option's name is the make once.
+    await expect(first.locator(".make-logo img")).toHaveAttribute("alt", "");
+    const name = (await first.textContent())?.trim() ?? "";
+    expect(name.length).toBeGreaterThan(0);
+    await expect(list.getByRole("option", { name, exact: true })).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(await csp()).toEqual([]);
+    expect(pageErrors()).toEqual([]);
+    const dir = process.env.E2E_SHOTS_DIR;
+    if (dir) {
+      await make.scrollIntoViewIfNeeded();
+      await page.evaluate(() => window.scrollBy(0, -120));
+      await page.screenshot({ path: `${dir}/media-make-list-${info.project.name}.png` });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.screenshot({ path: `${dir}/media-make-list-dark-${info.project.name}.png` });
+    }
+  });
 });

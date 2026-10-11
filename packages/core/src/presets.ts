@@ -49,6 +49,6 @@ export function typeFromVpic(vehicleTypeName: string, modelName = ""): VehicleTy
   if (n.includes("motorcycle")) return "motorcycle";
   if (n.includes("passenger car")) return "car";
   if (n.includes("multipurpose")) return /van|odyssey|sienna|pacifica|carnival|sedona|quest|caravan|transit|sprinter|promaster|express|savana|metris/i.test(modelName) ? "van" : "suv";
-  if (n.includes("truck")) return /transit|sprinter|promaster|express|savana/i.test(modelName) ? "van" : /\b(f-?[4-9]\d0|[4-6]500|box|cutaway|chassis)\b/i.test(modelName) ? "truck" : "pickup";
+  if (n.includes("truck")) return /transit|sprinter|promaster|express|savana/i.test(modelName) ? "van" : /\b(f-?[4-9]\d0|[4-6]500(?:hd|xd)?|box|cutaway|chassis)\b/i.test(modelName) ? "truck" : "pickup";
   return null;
 }

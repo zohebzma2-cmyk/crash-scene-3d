@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { all, click, flush, get, key, maybe, mockMatchMedia, renderApp, setValue, text } from "./helpers";
@@ -73,12 +74,12 @@ describe("step 2: vehicles", () => {
     expect(maybe("button", /Add another vehicle/)).toBeNull();
     expect([...document.querySelectorAll(".vehicle h2")].map((h) => h.textContent)).toEqual(["Your car", "Vehicle B", "Vehicle C", "Vehicle D"]);
     // C gets a make; remove B; C is now B with its details
-    setValue(card("C").querySelector('input[list="dl-makes"]'), "Ford");
+    setValue(card("C").querySelector('input[id$="-make"]'), "Ford");
     expect(maybe("button", "Remove vehicle A")).toBeNull();
     click(get("button", "Remove vehicle B"));
     await flush();
     expect([...document.querySelectorAll(".vehicle h2")].map((h) => h.textContent)).toEqual(["Your car", "Vehicle B", "Vehicle C"]);
-    expect((card("B").querySelector('input[list="dl-makes"]') as HTMLInputElement).value).toBe("Ford");
+    expect((card("B").querySelector('input[id$="-make"]') as HTMLInputElement).value).toBe("Ford");
     expect(text()).toContain("Vehicle removed. 3 vehicles now.");
   });
 
@@ -100,7 +101,7 @@ describe("step 2: vehicles", () => {
     app = await renderApp(services, { hash: "#vehicles", storage: located() });
     await flush(100);
     expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toContain("2021 Honda Accord");
-    setValue(card("A").querySelector('input[list="dl-makes"]'), "Toyota");
+    setValue(card("A").querySelector('input[id$="-make"]'), "Toyota");
     setValue(card("A").querySelectorAll("input[type=text]")[2] ?? null, "Camry");
     expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toContain("2021 Honda Accord");
     expect(document.querySelector("[data-testid=claim-chip]")?.textContent).not.toContain("Toyota");
@@ -125,11 +126,13 @@ describe("step 2: vehicles", () => {
 
     setValue(make, "Toyota");
     expect(model.value).toBe("");                         // cleared at once
-    expect(b.querySelectorAll("datalist option")).toHaveLength(0);   // and the old make's models are gone
+    act(() => model.focus());
+    const rows = () => [...(document.getElementById(model.getAttribute("aria-controls") ?? "")?.querySelectorAll('[role="option"] .r-main') ?? [])].map((o) => o.textContent);
+    expect(rows()).toEqual([]);                          // and the old make's models are gone
     await vi.advanceTimersByTimeAsync(600);
     await flush();
     expect(models).toHaveBeenLastCalledWith("Toyota", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect([...b.querySelectorAll("datalist option")].map((o) => o.getAttribute("value"))).toEqual(["Camry"]);
+    expect(rows()).toEqual(["Camry"]);
   });
 
   it("lets the claimant pick the type by hand when vPIC can't help, and shows the vPIC failure as text", async () => {
@@ -140,10 +143,21 @@ describe("step 2: vehicles", () => {
     const b = card("B");
     const [year, make] = [...b.querySelectorAll<HTMLInputElement>("input[type=text]")] as [HTMLInputElement, HTMLInputElement];
     setValue(year, "2018");
+    // A make the list doesn't know is still asked for once typing stops (vPIC may know it); the failure is one plain line.
+    act(() => make.focus());
     setValue(make, "Zork");
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(b.textContent).toContain("Pick the type below.");
+    expect(models).toHaveBeenLastCalledWith("Zork", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(b.textContent).toContain("We couldn't load the vehicle list right now. Pick the type below.");
+    // A listed make whose model list fails: the same plain line, never the proxy's busy text.
+    setValue(make, "Ford");
+    act(() => make.blur());
+    await vi.advanceTimersByTimeAsync(600);
+    await flush();
+    expect(models).toHaveBeenLastCalledWith("Ford", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(b.textContent).toContain("We couldn't load the vehicle list right now. Pick the type below.");
+    expect(b.textContent).not.toMatch(/map requests|map service/);
     click(get("radio", "Pickup", b));
     expect(get("radio", "Pickup", b).getAttribute("aria-checked")).toBe("true");
   });

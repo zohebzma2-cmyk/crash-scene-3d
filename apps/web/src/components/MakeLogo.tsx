@@ -26,9 +26,11 @@ export interface MakeLogoProps {
   readonly make: string;
   /** Show the name next to the fallback icon (off where the name is already printed beside it). */
   readonly showName?: boolean;
+  /** Next to the make's name already (a picker row): the logo is decoration, with an empty alt, so the name isn't read twice. */
+  readonly decorative?: boolean;
 }
 
-export function MakeLogo({ make, showName = true }: MakeLogoProps) {
+export function MakeLogo({ make, showName = true, decorative = false }: MakeLogoProps) {
   const { media, vehicles } = useServices();
   const name = make.replace(/\s+/g, " ").trim();
   const key = name.toLowerCase();
@@ -38,12 +40,12 @@ export function MakeLogo({ make, showName = true }: MakeLogoProps) {
     if (!key) return;
     let off = false;
     const timer = window.setTimeout(() => {
-      vehicles.makes().catch(() => [] as string[]).then((list) => {
-        if (off) return;
-        const url = list.some((m) => m.toLowerCase() === key) ? media.makeLogoUrl(name) : null;
-        if (!url) { setShown({ key, src: null }); return; }
-        void media.objectUrl(url).then((r) => { if (!off) setShown({ key, src: r?.src ?? null }); });
-      });
+      // Only a make the vPIC list knows, under the list's spelling ("chevy" asks for Chevrolet's logo); the list
+      // is the one the picker already loaded, so this asks for nothing else.
+      const known = vehicles.canonicalMake(name);
+      const url = known ? media.makeLogoUrl(known) : null;
+      if (!url) { setShown({ key, src: null }); return; }
+      void media.objectUrl(url).then((r) => { if (!off) setShown({ key, src: r?.src ?? null }); });
     }, MEDIA_SETTLE_MS);
     return () => { off = true; window.clearTimeout(timer); };
   }, [key, name, media, vehicles]);
@@ -51,8 +53,8 @@ export function MakeLogo({ make, showName = true }: MakeLogoProps) {
   if (!name) return null;
   const src = shown && shown.key === key ? shown.src : null;
   return (
-    <span className="make-logo" data-make-logo={src ? "logo" : "icon"}>
-      {src ? <img className="make-logo-img" src={src} alt={name} /> : <Icon name="veh-car" className="icon-sm" />}
+    <span className="make-logo" data-make-logo={src ? "logo" : "icon"} {...(decorative ? { "aria-hidden": true } : {})}>
+      {src ? <img className="make-logo-img" src={src} alt={decorative ? "" : name} /> : <Icon name="veh-car" className="icon-sm" />}
       {showName && !src ? <span className="make-logo-name">{name}</span> : null}
     </span>
   );

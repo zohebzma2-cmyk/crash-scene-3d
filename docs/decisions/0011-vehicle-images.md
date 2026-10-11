@@ -64,6 +64,7 @@ Only the make and model text and the model year leave the proxy (as catalog slug
 - That `Authorization: Bearer` + `X-Api-Secret` is accepted on every catalog route with our key, and that no domain allowlist blocks server-side calls (the docs say the secret skips the domain check).
 - Whether catalog image URLs need the key to download (we strip `api_key`; if the CDN needs it, downloads fail and the photo falls back), and how long their signatures last (a cached link that expired refreshes the catalog once).
 - Whether CDN downloads count against the quota (we count only keyed API calls).
+- Where `/brand-logo`'s 302 really points from the deployed function: on cdn.carimagesapi.com (what an unkeyed probe from a laptop got on 2026-10-11) or on carimagesapi.com. Both are allowed redirect hosts today; if it is always the CDN, drop carimagesapi.com from `assetHosts` so the logo redirect can only land on the CDN. If it is some other host, logos from that step fail closed (fallback) until the host is added.
 - The 429 body and headers on quota, and the 60/min limit.
 - Netlify's response size limit for a GLB. A buffered function response is limited to 6 MB and a binary body goes base64-encoded (4/3 larger), so `maxModelBytes` is 4 MB until a streamed response is checked on Netlify; larger models answer `{ fallback: true }`.
 - The Blobs media store `csd-proxy-media` and the rolling daily cap across function instances.
