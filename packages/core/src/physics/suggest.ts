@@ -21,7 +21,7 @@ import { MPH_TO_MPS, RANGE_HALF_MPH, RANGE_STEP_MPH } from "./constants";
 import { angleBetween, dist, makePoly, norm, polyCrossings, project, toRad } from "./geo";
 import { cleanNet, streetName, streetsAtPin } from "./lanes";
 import { ZONE_ANGLE_RAD, speedCases } from "./model";
-import { buildGuide, zonesFacing } from "./placement";
+import { type FacingZone, buildGuide, zonesFacing } from "./placement";
 import { toLatLon, toLocal } from "./projection";
 import { type WorkMeter, drawsAsEntered, simulate } from "./simulate";
 import { checkScene } from "./check";
@@ -44,6 +44,8 @@ const PIN_FIX_MIN_M = 2;
  * 300 ms off the main thread (docs/FIXER-BENCHMARK.md).
  */
 export const FIX_LIMITS = Object.freeze({ checks: 140, units: 1_500_000 });
+/** Work units charged per vehicle for working out which hit sides each vehicle could be reached on (no placing). */
+const FACING_UNITS = 100;
 /** Kept for callers that report the old cap: the most changes judged per search. */
 export const MAX_FIX_TRIALS = FIX_LIMITS.checks;
 
@@ -126,8 +128,6 @@ const FOCUS_FIELD: Readonly<Record<string, FixFocus["field"]>> = {
   "no-workable-speed": "speed",
 };
 
-/** Errors about the entered hit sides themselves: a probe can look for the hit sides that would place. */
-const ZONE_FIXABLE = new Set(["zones-cannot-touch", "bodies-overlap"]);
 /** Refusals about one vehicle's own path on its road: repaired first. */
 const LOCAL = new Set(["wrong-way", "no-such-lane"]);
 const FRONT_ZONES: ReadonlySet<Zone> = new Set<Zone>(["front", "front-left", "front-right"]);
@@ -364,6 +364,34 @@ function pairs(scene: Scene, errors: readonly PlainMessage[]): Candidate[] {
   return out;
 }
 
+/**
+ * Three or four vehicles: the paths of two vehicles changed together (direction or action each; with the hit sides that fit
+ * added during the search). Each vehicle's five cheapest path changes, for the pairs the refusal names first.
+ */
+function pathPairs(scene: Scene, world: PinWorld, errors: readonly PlainMessage[]): Candidate[] {
+  if (scene.vehicles.length < 3) return [];
+  const named = new Set(errors.flatMap((e) => e.vehicleIds));
+  const one = singles(scene, world, errors)
+    .filter((c) => c.changes.length === 1 && (c.changes[0]!.field === "direction" || c.changes[0]!.field === "action"))
+    .sort((x, y) => x.cost - y.cost || cmp(idOf(x.changes), idOf(y.changes)));
+  const per = new Map<VehicleId, Candidate[]>();
+  for (const c of one) {
+    const id = c.changes[0]!.vehicleId!;
+    const list = per.get(id) ?? [];
+    if (list.length < 5) list.push(c);
+    per.set(id, list);
+  }
+  const vs = scene.vehicles;
+  const out: Candidate[] = [];
+  for (let i = 0; i < vs.length; i++) {
+    for (let j = i + 1; j < vs.length; j++) {
+      if (!named.has(vs[i]!.id) && !named.has(vs[j]!.id)) continue;
+      for (const a of per.get(vs[i]!.id) ?? []) for (const b of per.get(vs[j]!.id) ?? []) out.push({ cost: a.cost + b.cost, changes: [...a.changes, ...b.changes] });
+    }
+  }
+  return out;
+}
+
 const valueId = (c: FixChange): string => {
   switch (c.field) {
     case "zone": return String(c.patch.zone);
@@ -493,9 +521,35 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
    * The hit sides that would fit this change: each vehicle whose marked side no other vehicle could reach there takes the
    * reachable side nearest to the one marked, or the one met most squarely. No placing, so it costs next to nothing.
    */
-  const fits = (changes: readonly FixChange[]): FixChange[][] => {
+  // Which hit sides each vehicle could be reached on depends on the paths and speeds, never on the hit sides: worked out once
+  // per set of other changes.
+  const facingMemo = new Map<string, Array<readonly FacingZone[]> | null>();
+  const facingFor = (changes: readonly FixChange[]): Array<readonly FacingZone[]> | null => {
+    const key = idOf(changes.filter((c) => c.field !== "zone"));
+    if (facingMemo.has(key)) return facingMemo.get(key)!;
+    meter.units += FACING_UNITS * scene.vehicles.length;
     const patched = apply(scene, changes);
     const facing = zonesFacing(patched, net, pinOf(patched));
+    facingMemo.set(key, facing);
+    return facing;
+  };
+  /**
+   * Three or four vehicles: could every vehicle touch another with these hit sides? Each one's side has to be reachable by
+   * some vehicle, or it has to be able to reach some other vehicle's side. A change that fails this can't place (the
+   * placement would leave a vehicle touching nothing), so it is skipped without a check.
+   */
+  const couldTouch = (changes: readonly FixChange[]): boolean => {
+    if (scene.vehicles.length < 3) return true;
+    const facing = facingFor(changes);
+    if (!facing) return true;
+    const vs = apply(scene, changes).vehicles;
+    return vs.every((v, i) => facing[i]!.some((z) => z.zone === v.zone)
+      || vs.some((w, j) => j !== i && facing[j]!.some((z) => z.zone === w.zone && z.from.includes(v.id))));
+  };
+
+  const fits = (changes: readonly FixChange[]): FixChange[][] => {
+    const patched = apply(scene, changes);
+    const facing = facingFor(changes);
     if (!facing) return [];
     const out: FixChange[][] = [];
     for (const pick of ["nearest", "squarest"] as const) {
@@ -553,6 +607,7 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
     }
     if (noRoad) continue;
     for (const c of pairs(baseScene, errs)) enqueue({ ...c, cost: base.cost + c.cost, changes: merge(base.changes, c.changes), swap: c.swap && base.changes.length === 0 }, false);
+    for (const c of pathPairs(baseScene, worldFor(baseScene, base.changes), errs)) enqueue({ cost: base.cost + c.cost, changes: merge(base.changes, c.changes) }, true);
     // The hit sides that would fit, everything else as entered.
     if (errs.some((e) => FIT_CODES.has(e.code))) {
       for (const extra of fits(base.changes)) enqueue({ cost: base.cost + zoneCost(extra), changes: merge(base.changes, extra) }, false);
@@ -567,10 +622,11 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
     const q = queue[i]!;
     // Three fixes found and the rest are all bigger: nothing left can come before them.
     if (found.length >= MAX_FIXES && q.size > found[MAX_FIXES - 1]!.size) break;
-    const errs = judge(q.c.changes);
-    if (errs.length === 0) { found.push({ c: q.c, size: q.size, id: q.id }); continue; }
+    const touches = couldTouch(q.c.changes);
+    const errs = touches ? judge(q.c.changes) : null;
+    if (errs && errs.length === 0) { found.push({ c: q.c, size: q.size, id: q.id }); continue; }
     // A direction, action, lane or pin that only works with other hit sides is tried with them.
-    if (q.fit && errs.some((e) => FIT_CODES.has(e.code))) {
+    if (q.fit && (!errs || errs.some((e) => FIT_CODES.has(e.code)))) {
       for (const extra of fits(q.c.changes)) {
         const changes = merge(q.c.changes, extra);
         const id = idOf(changes);

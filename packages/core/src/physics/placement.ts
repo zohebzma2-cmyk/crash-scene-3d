@@ -858,7 +858,14 @@ export function placeDetailed(scene: Scene, rawRoads: RoadNetwork | null, pin: V
 }
 
 /** One hit side another vehicle could reach, and how squarely that vehicle comes at it (radians off the side's centre). */
-export interface FacingZone { readonly zone: Zone; readonly off: number; readonly by: VehicleId }
+export interface FacingZone {
+  readonly zone: Zone;
+  readonly off: number;
+  /** The vehicle that meets it most squarely. */
+  readonly by: VehicleId;
+  /** Every vehicle that could reach it, in scene order. */
+  readonly from: readonly VehicleId[];
+}
 
 /**
  * For the one-tap fixer: for each vehicle (scene order), the hit sides some other vehicle could reach given how each was
@@ -891,8 +898,10 @@ export function zonesFacing(scene: Scene, rawRoads: RoadNetwork | null, pin: Vec
         for (const z of ALL_ZONES) {
           const off = angleBetween(rel, ZONE_ANGLE_RAD[z]);
           if (off >= zoneToleranceRad(z) - 1e-9) continue;
-          const prev = best.get(z);
-          if (!prev || off < prev.off - 1e-12) best.set(z, { zone: z, off, by: scene.vehicles[j]!.id });
+          const prev = best.get(z), id = scene.vehicles[j]!.id;
+          const from = prev ? (prev.from.includes(id) ? prev.from : [...prev.from, id]) : [id];
+          if (!prev || off < prev.off - 1e-12) best.set(z, { zone: z, off, by: id, from });
+          else if (from !== prev.from) best.set(z, { ...prev, from });
         }
       }
     }
