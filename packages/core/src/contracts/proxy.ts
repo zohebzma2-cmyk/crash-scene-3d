@@ -189,8 +189,9 @@ export interface ProviderConfig {
   readonly suggestBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
   /**
    * NHTSA vPIC (makes and model lists): its own token buckets, separate from the map's (owner, 2026-10-11).
-   * `perUser` takes one token per proxy request; `global` one per vPIC call (a model list is four calls,
-   * one per vehicle kind). Cache hits take none. Over the limit a request waits up to ~2.5 s for a token.
+   * Both take one token per vPIC call (a model list is four calls, one per vehicle kind), so the per-user
+   * refill caps one person's share of the global one. Cache hits take none. Over the limit a call waits up
+   * to ~2.5 s for a token.
    */
   readonly vehiclesBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
   readonly cacheTtlS: { readonly search: number; readonly overpass: number; readonly tile: number; readonly terrain: number; readonly vehicles: number };

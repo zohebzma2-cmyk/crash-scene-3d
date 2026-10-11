@@ -144,14 +144,20 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   if (isBucketService(base)) {
     const burst = burstOf(ctx.config, base);
     const maxWaitMs = base === "vehicles" ? VEHICLES_TOKEN_WAIT_MS : MAX_SLOT_WAIT_MS;
-    // One user token per request and service: calls that run side by side (a model list's four vPIC calls)
-    // share the one wait, and all of them are refused if it is.
-    let mine = ctx.userTokens.get(base);
-    if (!mine) {
-      mine = takeBucketToken(ctx, `user:${ctx.userKey}:${base}`, burst.perUser, maxWaitMs, base, "user");
-      ctx.userTokens.set(base, mine);
+    const userBucket = `user:${ctx.userKey}:${base}`;
+    if (base === "vehicles") {
+      // vPIC: one user token per upstream call, so one person's long-run share of the global bucket is capped at
+      // perUser.refillPerS calls a second, below the global refill (a model list is four calls).
+      await takeBucketToken(ctx, userBucket, burst.perUser, maxWaitMs, base, "user");
+    } else {
+      // One user token per request and service: calls in one request share the one wait.
+      let mine = ctx.userTokens.get(base);
+      if (!mine) {
+        mine = takeBucketToken(ctx, userBucket, burst.perUser, maxWaitMs, base, "user");
+        ctx.userTokens.set(base, mine);
+      }
+      await mine;
     }
-    await mine;
     await takeBucketToken(ctx, `global:${base}`, burst.global, maxWaitMs, base, "global");
     return;
   }

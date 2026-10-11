@@ -158,6 +158,22 @@ describe("typing two vehicles like a person", () => {
   });
 });
 
+describe("when the makes list fails", () => {
+  it("is not asked for again on every lookup, and a half-typed make still waits before it is asked for", async () => {
+    const api = fakeApi((url) => (url.pathname === PROXY_ROUTES.makes ? json({ code: "upstream", message: "x" }, 502) : null));
+    await openVehicles(api);
+    const [year, make] = fields("B");
+    await typeLikeAPerson(year, "2019", 120);
+    // "chev", a pause longer than the debounce but shorter than the unknown-make wait, then "rolet".
+    await typeLikeAPerson(make, "chev", 120, { 4: LOOKUP_DEBOUNCE_MS + UNKNOWN_MAKE_WAIT_MS - 300 });
+    setValue(make, "chevrolet");
+    await vi.advanceTimersByTimeAsync(LOOKUP_DEBOUNCE_MS + UNKNOWN_MAKE_WAIT_MS + 200);
+    await flush();
+    expect(api.makes()).toHaveLength(1);
+    expect(api.models().filter((p) => p.includes("year=2019"))).toEqual([`${PROXY_ROUTES.models}?make=chevrolet&year=2019`]);
+  });
+});
+
 describe("busy answers", () => {
   it("are retried after their Retry-After before anything is shown", async () => {
     const api = fakeApi((url, n) => (url.pathname === PROXY_ROUTES.models && n <= 3 ? busy(1) : null));

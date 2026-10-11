@@ -21,6 +21,8 @@ export const VEHICLE_LOOKUP_MESSAGES = {
 
 /** Extra wait before asking for a make the makes list doesn't know (on top of the card's own pause). */
 export const UNKNOWN_MAKE_WAIT_MS = 800;
+/** After the makes list failed (even after the retries), it isn't asked for again for this long. */
+export const MAKES_RETRY_AFTER_MS = 30_000;
 
 /** Everyday names for makes, matched after the exact name. The value must be in vPIC's list to be used. */
 const MAKE_ALIASES: Readonly<Record<string, string>> = {
@@ -113,7 +115,12 @@ export function createVehiclesService(fetchFn: FetchLike, deps: VehiclesDeps = {
         if (list.length > 0) sessionSet("makes", list);
         return list;
       })
-      .catch((e: unknown) => { makesPromise = null; throw vehicleError(e); });
+      .catch((e: unknown) => {
+        // Keep the failure for a while: asking again on every lookup is the traffic this service exists to avoid.
+        const failed = makesPromise;
+        setTimeout(() => { if (makesPromise === failed) makesPromise = null; }, MAKES_RETRY_AFTER_MS);
+        throw vehicleError(e);
+      });
     return makesPromise;
   }
 
@@ -145,10 +152,11 @@ export function createVehiclesService(fetchFn: FetchLike, deps: VehiclesDeps = {
     },
     async models(make, year, opts: ModelsOptions = {}) {
       const typed = make.trim();
-      // The makes list is fetched once; without it (it failed) the typed text is asked for as it is.
+      // The makes list is fetched once; without it (it failed) the typed text is asked for as it is, after the
+      // same longer pause as an unknown make, so a half-typed make still isn't asked for.
       const list = await untilAborted(makes().catch((): string[] => []), opts.signal);
       const known = resolveMake(typed, list);
-      if (!known && list.length > 0) await abortableSleep(UNKNOWN_MAKE_WAIT_MS, opts.signal, sleep);
+      if (!known) await abortableSleep(UNKNOWN_MAKE_WAIT_MS, opts.signal, sleep);
       return untilAborted(modelList(known ?? typed, year), opts.signal);
     },
   };

@@ -10,8 +10,9 @@
 //
 // Search, crossing, type-ahead, Overpass and terrain stay live by default: the live checks are there to verify them, and
 // the 3D picture needs the real roads and ground. A spec that verifies one of the stubbed routes on purpose passes
-// `keep` (e2e/live/vehicles.live.spec.ts keeps the vehicles). E2E_LIVE_API=all turns the guard off for a deliberate full live check, which the owner runs by hand.
-import type { Page } from "@playwright/test";
+// `keep` (e2e/live/vehicles.live.spec.ts keeps the vehicles). E2E_LIVE_API=all turns the guard off for a deliberate
+// full live check, which the owner runs by hand. e2e/helpers.ts applies it to every test's browser context.
+import type { BrowserContext, Page } from "@playwright/test";
 import { NO_TILE_PNG } from "../packages/proxy/src/fixture-tiles";
 import { routeVehiclesToFakeProxy } from "./fake-proxy";
 
@@ -26,7 +27,7 @@ export function isLiveTarget(baseURL = process.env.BASE_URL): boolean {
 }
 
 /** Answer the non-essential proxy routes inside the test instead of on the live site. Returns what was kept live. */
-export async function stubNonEssentialApi(page: Page, opts: { keep?: readonly GuardedRoute[] } = {}): Promise<readonly GuardedRoute[]> {
+export async function stubNonEssentialApi(page: Page | BrowserContext, opts: { keep?: readonly GuardedRoute[] } = {}): Promise<readonly GuardedRoute[]> {
   if (process.env.E2E_LIVE_API === "all") return ["vehicles", "tiles"];
   const keep = new Set(opts.keep ?? []);
   if (!keep.has("vehicles")) await routeVehiclesToFakeProxy(page);

@@ -112,7 +112,7 @@ describe("the vPIC limiter", () => {
     // than this person's own bucket allows.
     const { global, perUser } = config.vehiclesBurst;
     expect(ok).toBeGreaterThanOrEqual(global.capacity / 4);
-    expect(ok).toBeLessThanOrEqual(Math.min(perUser.capacity + perUser.refillPerS * 3, (global.capacity + global.refillPerS * 3) / 4));
+    expect(ok).toBeLessThanOrEqual(Math.min(perUser.capacity + perUser.refillPerS * 5, global.capacity + global.refillPerS * 5) / 4);
     // vPIC itself saw no more than the global bucket allows (a request may wait 2.5 s for its user token, then 2.5 s more).
     expect(t.calls.length).toBeLessThanOrEqual(global.capacity + global.refillPerS * 5);
     const refused = res.find((r) => r.status === 429)!;
@@ -126,9 +126,27 @@ describe("the vPIC limiter", () => {
     const t = setup(vpic);
     for (const [i, make] of ["Honda", "honda", " HONDA "].entries()) expect((await settle(t.get(models(make, 2020), `u${i}`))).status).toBe(200);
     expect(t.calls).toHaveLength(4);
-    // The four kinds were asked side by side, each with its own global token, and one user token for the request.
+    // The four kinds were asked side by side, each with its own global token and its own user token.
     expect(t.tokenCalls.filter((k) => k === "global:vehicles")).toHaveLength(4);
-    expect(t.tokenCalls.filter((k) => k === "user:u0:vehicles")).toHaveLength(1);
+    expect(t.tokenCalls.filter((k) => k === "user:u0:vehicles")).toHaveLength(4);
+  });
+
+  it("caps one person's share: a scripted caller gets at most the per-user refill, and someone else still gets a list", async () => {
+    const t = setup(vpic);
+    const { perUser, global } = config.vehiclesBurst;
+    expect(perUser.refillPerS).toBeLessThan(global.refillPerS);
+    // A script asks for a new cold list every second for 20 s.
+    const script: Promise<Response>[] = [];
+    for (let i = 0; i < 20; i++) {
+      script.push(t.get(models("Ford", 1981 + i), "script"));
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    // Meanwhile a person opens the vehicles step.
+    const person = await settle(t.get(models("Honda", 2019), "person"));
+    expect(person.status).toBe(200);
+    await settle(Promise.all(script));
+    const scriptCalls = t.calls.filter((c) => c.url.includes("/make/Ford/")).length;
+    expect(scriptCalls).toBeLessThanOrEqual(perUser.capacity + perUser.refillPerS * 25);
   });
 
   it("serves an expired list when vPIC is down or the limit is reached, instead of an error", async () => {

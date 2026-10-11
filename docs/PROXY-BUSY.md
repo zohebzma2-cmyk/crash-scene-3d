@@ -51,11 +51,11 @@ Line numbers are at the deployed commit 2deab93.
 
 **Proxy (`packages/proxy`, `packages/core/src/contracts/proxy.ts`):**
 - **Own buckets:** vPIC has its own token buckets, `ProviderConfig.vehiclesBurst`, separate from the map's:
-  - **Per user:** 8 at once, refilling 1/s, one token per proxy request. The long-run rate stays 1 a second.
+  - **Per user:** 24 at once (six cold lists), refilling 1/s, one token per vPIC call. One person can never take more than half the global refill.
   - **All users:** 16 at once, refilling 2/s, one token per vPIC call.
   - **Waiting:** a request waits up to 2.5 s for a token (`VEHICLES_TOKEN_WAIT_MS`) before it is refused.
   - **Cache hits** take no token.
-- **Side by side:** the four vPIC kinds are asked at once (`vpicAll`). One user token covers the request.
+- **Side by side:** the four vPIC kinds are asked at once (`vpicAll`). Each call takes a user token and a global token.
 - **Per-topic wording:** busy, timeout and upstream answers are worded per topic (`BUSY_MESSAGES` / `TIMEOUT_MESSAGES` / `UPSTREAM_MESSAGES`):
   - map: "We're getting a lot of map requests right now…";
   - search: "We're getting a lot of searches right now…";
@@ -77,7 +77,7 @@ Measured with the same scripted typing (160 ms between keys, a 700 ms pause afte
 | | Requests to /api/vehicles | Refused on a cold proxy (old limits) |
 |---|---|---|
 | Before | 4: makes, Honda 2021 (A's claim), **chev 2019**, **chevy 2019** | 2 (Honda 2021: 450 ms after makes; chevy: 650 ms after chev) |
-| After | 3: makes, Honda 2021, **Chevrolet 2019** (shared by B and A) | 0, and with the new limits a person can't reach the per-user bucket of 8 by typing |
+| After | 3: makes, Honda 2021, **Chevrolet 2019** (shared by B and A) | 0. Three cold lists are 12 vPIC calls; the per-user bucket holds 24 |
 
 The e2e (`e2e/vehicles-typing.spec.ts`) runs the real proxy code with its real limits behind the page. It sees at most 5 requests (the extra ones are Honda 2019, when the pause after A's year passes the debounce, and Ford 2019), none twice and none refused.
 

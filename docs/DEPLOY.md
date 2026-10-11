@@ -126,7 +126,7 @@ Do this on the first deploy (a deploy preview is fine), in this order.
 7. **Rate limits.**
    - Send two searches less than a second apart from one browser: the second answers `429` with JSON `{"code":"busy", ..., "retryAfterS": ...}` and a `Retry-After` header.
    - A single map view (about 20 tiles at once) loads fully, with no `429`s. Tiles and terrain use token buckets: per user burst 64, refill 16/s, plus a global cap.
-   - Vehicle lookups (vPIC) use their own token buckets: per user 8 refilling 1/s (one per request), all users 16 refilling 2/s (one per vPIC call). Typing two vehicles never sees a busy message: `e2e/live/vehicles.live.spec.ts` checks this once (see "Our own test traffic").
+   - Vehicle lookups (vPIC) use their own token buckets: per user 24 refilling 1/s and all users 16 refilling 2/s, both counted in vPIC calls (a model list is four). Typing two vehicles never sees a busy message: `e2e/live/vehicles.live.spec.ts` checks this once (see "Our own test traffic").
    - Every `429` the proxy sends is logged as `proxy: busy topic=… service=… limiter=user|global` (no user data). Read it with `npx -y netlify-cli@27.9.0 logs --source functions --since 1h`.
    - Do not hammer the real providers to test this; two quick requests are enough.
 8. **Upstream identity.** A search works end to end (Nominatim returns a result). If a provider answers 403, the User-Agent contact in `ProviderConfig` is the first thing to check.

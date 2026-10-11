@@ -1,7 +1,7 @@
 // A fake /api/vehicles for e2e: the REAL proxy code (createProxy with defaultProviderConfig, so the real
 // limits, cache and messages) running in the test process, with a made-up vPIC behind it. Playwright routes the
 // page's /api/vehicles/* requests to it. Nothing leaves the machine.
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { createProxy, defaultProviderConfig, memoryStore } from "../packages/proxy/src/index";
 
 /** Made-up vPIC lists (public make and model names only). */
@@ -38,7 +38,7 @@ export interface ApiSeen { readonly path: string; readonly status: number }
  * Route the page's /api/vehicles/* to a fresh real proxy (cold cache, real limits) over the fake vPIC.
  * Returns every answer it gave, and every vPIC call it made.
  */
-export async function routeVehiclesToFakeProxy(page: Page, opts: { latencyMs?: number } = {}): Promise<{ answers: ApiSeen[]; upstream: string[] }> {
+export async function routeVehiclesToFakeProxy(page: Page | BrowserContext, opts: { latencyMs?: number } = {}): Promise<{ answers: ApiSeen[]; upstream: string[] }> {
   const upstream: string[] = [];
   const vpic = fakeVpic(opts.latencyMs ?? 150);
   const proxy = createProxy(defaultProviderConfig(), {

@@ -44,17 +44,18 @@ export function watchErrors(page: Page): () => string[] {
   return () => [...errors];
 }
 
-export const test = base.extend<{ pageErrors: () => string[]; liveGuard: void }>({
+export const test = base.extend<{ pageErrors: () => string[] }>({
+  // Against a deployed copy (BASE_URL not on this machine), every page in the test's context gets its vehicle lookups
+  // and map tiles answered inside the test, so our runs don't spend the live proxy's shared budget
+  // (e2e/live-guard.ts). Nothing changes for local runs.
+  context: async ({ context }, use) => {
+    if (isLiveTarget()) await stubNonEssentialApi(context);
+    await use(context);
+  },
   pageErrors: async ({ page }, use) => {
     const get = watchErrors(page);
     await use(get);
   },
-  // Against a deployed copy (BASE_URL not on this machine), the vehicle lookups and map tiles are answered inside the
-  // test, so our runs don't spend the live proxy's shared budget (e2e/live-guard.ts). Nothing changes for local runs.
-  liveGuard: [async ({ page }, use) => {
-    if (isLiveTarget()) await stubNonEssentialApi(page);
-    await use();
-  }, { auto: true }],
 });
 export { expect };
 

@@ -56,11 +56,11 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     suggestBurst: { perUser: { capacity: 12, refillPerS: 3 }, global: { capacity: 20, refillPerS: 10 } },
     // NHTSA vPIC: its own buckets, separate from the map's (owner, 2026-10-11; docs/PROXY-BUSY.md). It used to be
     // 1 req/s per user, refused at once, and 1 req/s globally per vPIC call, while a model list is four calls: opening
-    // the vehicles step (makes + vehicle A's models) or a pause inside a typed make got a 429. Per user: one token per
-    // proxy request, 8 at once refilling 1/s (two vehicles typed by a person use about 3 to 5, and the long-run rate
-    // stays 1 a second). All users: one token per vPIC call, 16 at once (four cold model lists) refilling 2/s. Cache
-    // hits (30 days, shared through Blobs) take no token.
-    vehiclesBurst: { perUser: { capacity: 8, refillPerS: 1 }, global: { capacity: 16, refillPerS: 2 } },
+    // the vehicles step (makes + vehicle A's models) or a pause inside a typed make got a 429. Both buckets count vPIC
+    // calls (a list is four). Per user: 24 at once (six cold lists; two vehicles typed by a person need about three)
+    // refilling 1/s, so one person never takes more than half the global refill. All users: 16 at once (four cold
+    // lists) refilling 2/s. Cache hits (30 days, shared through Blobs) take no token.
+    vehiclesBurst: { perUser: { capacity: 24, refillPerS: 1 }, global: { capacity: 16, refillPerS: 2 } },
     cacheTtlS: { search: DAY_S, overpass: 7 * DAY_S, tile: 7 * DAY_S, terrain: 30 * DAY_S, vehicles: 30 * DAY_S },
   };
 }

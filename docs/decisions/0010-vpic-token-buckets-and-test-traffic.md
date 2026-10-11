@@ -19,16 +19,16 @@ Status: Proposed, 2026-10-11 (asked for by the owner after the vehicles-step "ma
 
 ## Decision
 - **Buckets:** `ProviderConfig.vehiclesBurst`, separate from the map's buckets:
-  - **Per user:** capacity 8, refill 1/s, one token per proxy request.
+  - **Per user:** capacity 24, refill 1/s, one token per vPIC call, so one person can never take more than half the global refill.
   - **Global:** capacity 16, refill 2/s, one token per vPIC call.
   - **Waiting:** up to 2.5 s for a token.
   - **Cache:** 30 days, shared through Blobs; hits take no token.
-- **What changes from rule 6:** the per-user long-run rate stays 1 a second. The global long-run rate to vPIC goes from 1 to 2 calls a second, plus a burst of 16. With the 30-day shared cache, real traffic stays far below that.
+- **What changes from rule 6:** the per-user long-run rate stays 1 vPIC call a second. The global long-run rate to vPIC goes from 1 to 2 calls a second, plus a burst of 16. With the 30-day shared cache, real traffic stays far below that.
 - **Messages:** busy, timeout and upstream messages are per topic (map, search, vehicle list). A vehicle lookup never says "map".
 - **App etiquette:** one request per make and year, under the makes list's spelling; session cache; a retry after Retry-After up to 2.5 s before any message.
 - **Live runs:** e2e specs against a deployed copy answer `/api/vehicles/*` and `/api/geo/tile/*` inside the test (`e2e/live-guard.ts`). Only `e2e/live/vehicles.live.spec.ts` verifies vehicles live, once after a relevant deploy. There is no test key.
 
 ## Consequences
-- **CLAUDE.md hard rule 6** should list vPIC next to tiles and terrain in its exception, for example: "NHTSA vPIC uses token buckets too: per user 8 refilling 1/s, all users 16 refilling 2/s per vPIC call." That is the owner's edit to make.
+- **CLAUDE.md hard rule 6** should list vPIC next to tiles and terrain in its exception, for example: "NHTSA vPIC uses token buckets too: per user 24 refilling 1/s and all users 16 refilling 2/s, counted in vPIC calls." That is the owner's edit to make.
 - **Logs:** every 429 is logged with its topic, service and limiter, so the next report can be traced from the function log.
 - **Load test:** the README "Next version" proxy load test should include the vPIC buckets.
