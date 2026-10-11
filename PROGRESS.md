@@ -43,6 +43,7 @@
 
    After those come the DESIGN §7 decisions (C1 start framing, C3 driver views). Then remove the sweep's opt-in gate so check.sh runs it.
 3. **Round B:** the vehicle picker (vPIC type-ahead with aliases), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
+   - **Photos, 3D models and logos: done on branch `roundB/images` (2026-10-11), not merged or deployed.** Routes `/api/vehicles/image`, `/api/vehicles/model`, `/api/logos/make` (packages/proxy/src/media.ts); MakeLogo and VehiclePhoto on the vehicle card; photos in the PDF table and on the stills. Decision 0010 lists what can only be checked after a deploy with the real keys (`CARIMAGES_API_KEY`, `CARIMAGES_API_SECRET`, `LOGO_DEV_SECRET_KEY`; `LOGO_DEV_TOKEN` is not used). Ask the owner before any deploy.
 4. **The fixer review follow-ups and the rest of README "Next version".**
 
 ## Open risks
@@ -59,7 +60,7 @@
 - **The privacy pre-commit hook exists but isn't on.** Turning it on (`git config core.hooksPath .githooks`) is the owner's call.
 
 ## Where things are
-- **Decisions:** docs/decisions (0001–0009).
+- **Decisions:** docs/decisions (0001–0010).
 - **Benchmarks:** docs/FIXER-BENCHMARK.md.
 - **Diagnosis:** docs/VISIBILITY-SWEEP.md.
 - **Red team:** docs/RED-TEAM.md.
