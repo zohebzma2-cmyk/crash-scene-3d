@@ -3,7 +3,7 @@
 // nothing is skipped silently. Details that can't be drawn at all (parseScene errors, no pin yet)
 // have no "See it anyway".
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { canonicalJson, parseScene, type PlainMessage, type Scene, type VehicleId } from "@csd/core";
+import { canonicalJson, parseScene, type PlainMessage, type Scene, type SceneVehicle, type VehicleId } from "@csd/core";
 import { useServices } from "../services/context";
 import type { Doc } from "./doc";
 import { useDoc } from "./DocProvider";
@@ -22,7 +22,15 @@ const isStep = (s: string): s is StepKey => STEPS.some((x) => x.key === s);
 /** How long a step change waits for a lazily loaded step's title to appear, to focus it. */
 const TITLE_WAIT_MS = 10_000;
 
+/**
+ * What kind of problem it is, so the warning reads right: a detail not given yet ("missing": no pin, a direction not
+ * picked, an empty speed), a value that can't be used as typed ("unusable"), or details that don't fit together
+ * ("conflict": the plain checks). Only conflicts can be accepted with "See it anyway".
+ */
+export type GateProblemKind = "missing" | "unusable" | "conflict";
+
 export interface GateProblem {
+  readonly kind: GateProblemKind;
   readonly text: string;
   /** The step where it can be fixed. */
   readonly step: "location" | "vehicles";
@@ -45,24 +53,29 @@ export function runGate(
   fieldErrors: readonly FieldError[] = [],
 ): GateProblem[] {
   const out: GateProblem[] = [];
-  if (!located) out.push({ text: NOT_LOCATED_TEXT, step: "location", blocking: true, vehicleIds: [] });
+  if (!located) out.push({ kind: "missing", text: NOT_LOCATED_TEXT, step: "location", blocking: true, vehicleIds: [] });
   scene.vehicles.forEach((v, i) => {
-    if (directionSet[i] !== true) out.push({ text: `Pick which way ${v.id === "A" ? "your car (A)" : `vehicle ${v.id}`} was ${v.action === "parked" || v.action === "backing" ? "facing" : "going"}.`, step: "vehicles", blocking: true, vehicleIds: [v.id], focus: "direction" });
+    if (directionSet[i] !== true) out.push({ kind: "missing", text: pickDirectionText(v), step: "vehicles", blocking: true, vehicleIds: [v.id], focus: "direction" });
   });
-  for (const e of fieldErrors) out.push({ text: `Vehicle ${e.vehicleId}: ${e.text}`, step: "vehicles", blocking: true, vehicleIds: [e.vehicleId as VehicleId] });
+  for (const e of fieldErrors) out.push({ kind: e.missing ? "missing" : "unusable", text: `Vehicle ${e.vehicleId}: ${e.text}`, step: "vehicles", blocking: true, vehicleIds: [e.vehicleId as VehicleId] });
   const parsed = parseScene(scene);
   if (!parsed.ok) {
-    for (const text of parsed.errors) out.push({ text, step: /^Vehicle [A-D]:/.test(text) ? "vehicles" : "location", blocking: true, vehicleIds: [] });
+    for (const text of parsed.errors) out.push({ kind: "unusable", text, step: /^Vehicle [A-D]:/.test(text) ? "vehicles" : "location", blocking: true, vehicleIds: [] });
     return out;
   }
   // Checks that compare directions mean nothing until every direction is the claimant's own pick.
   if (directionSet.some((x) => x !== true)) return out;
   try {
-    for (const m of check(parsed.value)) out.push({ text: m.text, step: "vehicles", blocking: false, vehicleIds: m.vehicleIds });
+    for (const m of check(parsed.value)) out.push({ kind: "conflict", text: m.text, step: "vehicles", blocking: false, vehicleIds: m.vehicleIds });
   } catch {
-    out.push({ text: CHECK_FAILED_TEXT, step: "vehicles", blocking: false, vehicleIds: [] });
+    out.push({ kind: "conflict", text: CHECK_FAILED_TEXT, step: "vehicles", blocking: false, vehicleIds: [] });
   }
   return out;
+}
+
+/** "Pick which way your car was going." / "Pick which way vehicle B was facing." (parked or backing: the way it faced). */
+export function pickDirectionText(v: Pick<SceneVehicle, "id" | "action">): string {
+  return `Pick which way ${v.id === "A" ? "your car" : `vehicle ${v.id}`} was ${v.action === "parked" || v.action === "backing" ? "facing" : "going"}.`;
 }
 
 /** What identifies the details the claimant has accepted warnings for. */

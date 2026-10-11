@@ -67,7 +67,7 @@ export function SpeedInput({ vehicle, onChange }: SpeedInputProps) {
   const settle = (d: string | null) => {
     setDraft(d);
     const r = d == null ? null : parseSpeedText(d);
-    setFieldError(fieldKey, r && !r.ok ? { text: r.text, vehicleId: vehicle.id } : null);
+    setFieldError(fieldKey, r && !r.ok ? { text: r.text, vehicleId: vehicle.id, missing: d != null && d.trim() === "" } : null);
     return r;
   };
   // The speed to come back to when "Not sure" is turned off again.

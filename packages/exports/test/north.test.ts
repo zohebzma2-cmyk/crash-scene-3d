@@ -105,3 +105,95 @@ describe("diagram obstacles", () => {
     }
   });
 });
+
+describe("scale bars and north arrow keep apart (owner, 2026-10-10)", () => {
+  const overflow = JSON.parse(readFileSync(new URL("./data/overflow-3v.json", import.meta.url), "utf8")) as { scene: Scene; sim: SimulationResult };
+  const cases: Array<[string, string, { scene: Scene; sim: SimulationResult }]> = [
+    ...Object.entries(real).map(([name, v]) => [name, name, v] as [string, string, { scene: Scene; sim: SimulationResult }]),
+    ["overflow-3v", "t-bone-intersection", overflow],
+  ];
+  /** Horizontal clear space from a to b (b to the right of a); negative when they overlap. */
+  const clearRight = (a: R, b: R) => b.x - (a.x + a.w);
+  const touch = (a: R, b: R) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  function expectApart(arrow: R, chip: R, bars: ReadonlyArray<{ bar: R; label: R }>, minGap: number, what: string) {
+    expect(inside(arrow, chip, 0.01), `${what}: arrow inside the chip`).toBe(true);
+    bars.forEach((b, i) => {
+      expect(inside(b.bar, chip, 0.01), `${what}: bar ${i + 1} inside the chip`).toBe(true);
+      expect(inside(b.label, chip, 0.01), `${what}: label ${i + 1} inside the chip`).toBe(true);
+      expect(clearRight(arrow, b.bar), `${what}: bar ${i + 1} clear of the arrow`).toBeGreaterThanOrEqual(minGap);
+      expect(touch(arrow, b.label), `${what}: label ${i + 1} over the arrow`).toBe(false);
+      expect(clearRight(b.bar, b.label), `${what}: bar ${i + 1} clear of its label`).toBeGreaterThan(0);
+      bars.slice(i + 1).forEach((o, j) => {
+        expect(touch(b.bar, o.bar), `${what}: bar ${i + 1} over bar ${i + j + 2}`).toBe(false);
+        expect(touch(b.label, o.label), `${what}: label ${i + 1} over label ${i + j + 2}`).toBe(false);
+      });
+    });
+  }
+
+  it("lays the chip out apart at any diagram size and scale (PDF and PNG styles)", async () => {
+    const measure = await brandMeasure();
+    const { scaleChip } = await import("../src/north");
+    const { pdfChipStyle } = await import("../src/pdf");
+    const { pngChipStyle } = await import("../src/png");
+    const { scaleBars } = await import("../src/diagram");
+    const styles = [
+      ...[1.25, 1.375].map((lead) => ({ name: `pdf ${lead}`, st: pdfChipStyle(MIN_DIAGRAM_TEXT_PT, MIN_DIAGRAM_TEXT_PT * lead, 0.75), min: MIN_DIAGRAM_TEXT_PT * 0.5 })),
+      { name: "png", st: pngChipStyle(), min: 10 },
+    ];
+    let n = 0;
+    for (const { name, st, min } of styles) {
+      for (const width of [120, 180, 264, 400, 1600]) {
+        for (const pxPerM of [0.5, 1, 2.5, 6, 15, 40, 90]) {
+          const bars = scaleBars(pxPerM, width * 0.3);
+          const chip = scaleChip([10, 20], [bars.metric, bars.us], st, measure);
+          expectApart(chip.arrow, chip.rect, chip.bars.map((b) => ({ bar: b.box, label: b.labelBox })), min, `${name} ${width} wide at ${pxPerM}/m`);
+          n++;
+        }
+      }
+    }
+    expect(n).toBe(105);
+  });
+
+  it("in the PDF diagram, for every example and the overflow scene", async () => {
+    for (const [name, example, { scene, sim }] of cases) {
+      const { stamp } = await sceneFile(scene, sim, CREATED);
+      for (const thumb of [true, false]) {
+        const r = await buildPdf({
+          model: buildModel(scene, sim, stamp), scene, sim, roads: loadRoads(example, scene.location), fonts: brandFonts(), createdAt: CREATED,
+          sceneFileName: "crash-scene.json", ...(thumb ? { mapThumbnail: syntheticPng(800, 600, "map") } : {}),
+        });
+        const n = r.report[0]!.north!;
+        expect(n.bars).toHaveLength(2);
+        expectApart(n.arrow, n.chip, n.bars, MIN_DIAGRAM_TEXT_PT * 0.5, `${name} pdf`);
+        expect(inside(n.chip, n.box)).toBe(true);
+        for (const k of n.keep) expect(overlap(n.chip, k), `${name}: chip over the scene`).toBe(false);
+      }
+    }
+  }, 120_000);
+
+  it("in the PNG diagram, clear of the legend too, even when the legend is wide", async () => {
+    const tc = testCanvas();
+    const fam = await tc.factory.registerFonts(brandFonts());
+    let stacked = 0;
+    for (const [name, example, { scene, sim }] of cases) {
+      const { stamp } = await sceneFile(scene, sim, CREATED);
+      const plain = buildModel(scene, sim, stamp);
+      // A legend as wide as the longest labels make it: the scale card must move above it rather than overlap.
+      const wide = { ...plain, measurements: plain.measurements.map((m) => (m.marker !== null ? { ...m, label: `${m.label}, with a much longer synthetic label that runs on` } : m)) };
+      for (const [kind, model] of [["plain", plain], ["wide legend", wide]] as const) {
+        const { layout } = await renderDiagramPng({ model, sim, roads: loadRoads(example, scene.location) }, tc.factory, fam);
+        const what = `${name} png (${kind})`;
+        expectApart(layout.north, layout.scaleCard, layout.bars, 10, what);
+        expect(layout.legend, `${what}: has a legend`).not.toBeNull();
+        expect(touch(layout.scaleCard, layout.legend!), `${what}: scale card over the legend`).toBe(false);
+        for (const c of layout.cards) if (c !== layout.scaleCard) expect(touch(layout.scaleCard, c), `${what}: scale card over ${JSON.stringify(c)}`).toBe(false);
+        expect(layout.scaleCard.y + layout.scaleCard.h).toBeLessThanOrEqual(1600 - layout.band);
+        for (const k of layout.keep) expect(touch(layout.scaleCard, k), `${what}: scale card over the scene`).toBe(false);
+        if (layout.scaleCard.y + layout.scaleCard.h <= layout.legend!.y) stacked++;
+      }
+    }
+    // the wide legends really pushed the scale card up
+    expect(stacked).toBeGreaterThan(0);
+  }, 120_000);
+});

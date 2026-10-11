@@ -13,6 +13,13 @@
 .vehicle-grid { display: grid; grid-template-columns: repeat(2, minmax(var(--space-0), 1fr)); gap: var(--space-8); padding: var(--space-6); align-items: start; }
 .vehicle-grid > .group:first-child { grid-column: 1 / -1; }
 .ymm { display: grid; grid-template-columns: minmax(var(--space-0), var(--size-year-field)) repeat(2, minmax(var(--space-0), 1fr)); gap: var(--space-3); }
+/* Year, make and model are type-ahead lists (VehicleCombobox): the shared .combo-pop under each field, rows at least --size-touch tall. */
+.vcombo .combo-option { align-items: center; }
+.vcombo .combo-option.is-free .r-main { font-weight: var(--weight-regular); color: var(--color-text-secondary); }
+/* A hairline sets "Use 'X' as typed" apart from vPIC's names. */
+.vcombo .combo-option + .combo-option.is-free { border-top: var(--size-border) solid var(--color-border); }
+.vcombo .combo-note { border-top: none; }
+.vcombo .combo-list + .combo-note { border-top: var(--size-border) solid var(--color-border); }
 .lookup { font-size: var(--text-sm); color: var(--color-text-secondary); display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-6); }
 .lookup .icon { color: var(--color-success-text); }
 .lookup.is-warn { color: var(--color-warning-text); }
@@ -65,5 +72,8 @@
 .warnings-title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-bold); }
 .warnings ul { display: flex; flex-direction: column; gap: var(--space-2); padding-left: var(--space-8); list-style: disc; font-size: var(--text-sm); }
 .warnings-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* The gate's grouped warnings (missing / need changing / don't fit together) and its one-tap fixes (DESIGN.md section 18). */
+.warnings-body, .gate-fixes { display: flex; flex-direction: column; gap: var(--space-3); }
+.gate-fixes .refusal-status { margin: var(--space-0); }
 .warnings .link-btn { color: inherit; align-self: flex-start; }
 

@@ -1,0 +1,47 @@
+{
+"Count": 5,
+"Message": "Results returned successfully",
+"SearchCriteria": "Make:chevrolet | ModelYear:2019 | VehicleType:truck",
+"Results": [
+{
+"Make_ID": 467,
+"Make_Name": "CHEVROLET",
+"Model_ID": 1848,
+"Model_Name": "Express",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"Make_ID": 467,
+"Make_Name": "CHEVROLET",
+"Model_ID": 1850,
+"Model_Name": "Silverado",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"Make_ID": 467,
+"Make_Name": "CHEVROLET",
+"Model_ID": 4086,
+"Model_Name": "Colorado",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"Make_ID": 467,
+"Make_Name": "CHEVROLET",
+"Model_ID": 24906,
+"Model_Name": "Silverado HD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"Make_ID": 467,
+"Make_Name": "CHEVROLET",
+"Model_ID": 25279,
+"Model_Name": "Silverado LD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+}
+]
+}

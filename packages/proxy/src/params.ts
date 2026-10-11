@@ -60,10 +60,15 @@ export const crossStreetsParams = z.strictObject({
 
 export const noParams = z.strictObject({});
 
-const VEHICLE_MAKE = /^[A-Za-z0-9][A-Za-z0-9 .&'/-]{0,39}$/;
+/**
+ * A make as vPIC spells them: letters and digits first, then also spaces and . & ' / - ( ) , ! (for "TH!NK",
+ * "Scuderia Cameron Glickenhaus (SCG)", "Hunter Design Group, LLC"); up to 60 characters, as the picker allows.
+ */
+export const MAKE_MAX_CHARS = 60;
+export const VEHICLE_MAKE = /^[A-Za-z0-9][A-Za-z0-9 .&'/(),!-]{0,59}$/;
 export const modelsParams = (currentYear: number) =>
   z.strictObject({
-    make: text(1, 40).refine((s) => VEHICLE_MAKE.test(s)),
+    make: text(1, MAKE_MAX_CHARS).refine((s) => VEHICLE_MAKE.test(s)),
     year: int(1950, currentYear + 2),
   });
 

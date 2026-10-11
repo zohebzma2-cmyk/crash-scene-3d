@@ -12,14 +12,14 @@ import "./styles/index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { createServices, fixturesRequested } from "./services";
+import { createServices, fixturesRequested, vehiclesFromProxyRequested } from "./services";
 import { bootPreload } from "./boot";
 
 // ?theme=dark|light forces a theme (screenshots, links).
 const theme = new URLSearchParams(window.location.search).get("theme");
 if (theme === "dark" || theme === "light") document.documentElement.classList.add(theme);
 
-const services = createServices({ fixtures: fixturesRequested(window.location.search) });
+const services = createServices({ fixtures: fixturesRequested(window.location.search), vehiclesFromProxy: vehiclesFromProxyRequested(window.location.search) });
 bootPreload(services, window.location.search, window.location.hash);
 const root = document.getElementById("root");
 if (root) createRoot(root).render(<StrictMode><App services={services} /></StrictMode>);

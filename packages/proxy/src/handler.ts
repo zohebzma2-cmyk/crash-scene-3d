@@ -1,7 +1,7 @@
 // createProxy: routes, validation, response shaping. Upstream mechanics live in upstream.ts.
 import {
-  PROXY_ROUTES, typeFromVpic,
-  type CrossStreetsResult, type PlaceResult, type ProviderConfig, type ProxyCapabilities, type ProxyError, type VehicleModelResult,
+  PROXY_ROUTES, normName, typeFromVpic,
+  type CrossStreetsResult, type PlaceResult, type ProviderConfig, type ProxyCapabilities, type ProxyError, type ProxyTopic, type VehicleModelResult,
 } from "@csd/core";
 import {
   findCrossings, findCrossStreets, matchCrossStreet, mergeSearchResults, overpassBboxQuery, overpassCrossingQuery,
@@ -37,7 +37,19 @@ const SUGGEST_OVERFETCH = 2;
 /** Where the second dropdown looks for crossings, and how many candidate streets "A and B" tries. */
 const CROSS_STREETS_RADIUS_M = 2000;
 const MAX_STREET_CANDIDATES = 2;
+/**
+ * The vPIC vehicle types the picker covers: cars, MPVs (SUVs and vans), trucks (pickups and heavy trucks) and
+ * motorcycles. Bus, trailer, low-speed and incomplete vehicles have no class of ours, so their makes aren't listed;
+ * the claimant can still type one.
+ */
 const VPIC_KINDS = ["car", "mpv", "truck", "motorcycle"] as const;
+type VpicKind = (typeof VPIC_KINDS)[number];
+/** Store key of the makes index: normalized make name -> the vPIC kinds it is listed under. */
+const MAKE_KINDS_KEY = "vehicles/make-kinds";
+/** vPIC spells makes in capitals; these don't title-case on their own. */
+/** Words that stay in capitals inside a make's name. */
+const KEEP_UPPER: ReadonlySet<string> = new Set(["BMW", "GMC", "KTM", "AMG", "LLC", "USA", "UK", "II", "III", "IV", "EV", "RV", "MV", "SRT", "CNG", "LTD"]);
+const MAKE_CASE: Readonly<Record<string, string>> = { KIA: "Kia", RAM: "Ram", "TH!NK": "TH!NK", MCLAREN: "McLaren", "MERCEDES-AMG": "Mercedes-AMG", DELOREAN: "DeLorean" };
 
 function errorResponse(status: number, error: ProxyError): Response {
   const headers: Record<string, string> = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" };
@@ -393,10 +405,26 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     return dataResponse(entry, ttlS);
   }
 
-  /** One vPIC list call, cached on its own so a retry after a busy answer only fetches what is missing. */
-  async function vpic(ctx: Ctx, path: string): Promise<Record<string, unknown>[]> {
+  /**
+   * vPIC lists for the given vehicle kinds (all four unless a make's own kinds are known), asked side by side
+   * (each call takes its own global token). Each list is cached on its own, so after a failure only the missing
+   * ones are fetched again; the first failure is thrown once every call has settled (so the ones that worked are
+   * all cached). `lists[i]` belongs to `kinds[i]`.
+   */
+  async function vpicAll(ctx: Ctx, pathOf: (kind: VpicKind) => string, kinds: readonly VpicKind[] = VPIC_KINDS): Promise<{ lists: Record<string, unknown>[][]; stale: boolean; fetchedAt?: number }> {
+    const settled = await Promise.allSettled(kinds.map((kind) => vpic(ctx, pathOf(kind))));
+    const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
+    if (failed) throw failed.reason;
+    const parts = settled.map((s) => (s as PromiseFulfilledResult<{ rows: Record<string, unknown>[]; stale: boolean; fetchedAt: number }>).value);
+    const stale = parts.some((p) => p.stale);
+    // A list made from expired parts is as old as its oldest part.
+    return { lists: parts.map((p) => p.rows), stale, ...(stale ? { fetchedAt: Math.min(...parts.map((p) => p.fetchedAt)) } : {}) };
+  }
+
+  /** One vPIC list call, cached on its own. The key is lowercased: vPIC doesn't care about case, so neither does the cache. */
+  async function vpic(ctx: Ctx, path: string): Promise<{ rows: Record<string, unknown>[]; stale: boolean; fetchedAt: number }> {
     const entry = await fetchUpstream(ctx, {
-      cacheKey: `vpic/${path}`,
+      cacheKey: `vpic/${path.toLowerCase()}`,
       ttlS: config.cacheTtlS.vehicles,
       calls: [{ service: "vehicles", url: `${config.vehicles.url}/${path}${path.includes("?") ? "&" : "?"}format=json` }],
       process: (bytes, ct) => {
@@ -405,26 +433,75 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
         return { bytes, contentType: ct };
       },
     });
-    return (parseJsonBody(entry.bytes) as { Results: Record<string, unknown>[] }).Results;
+    // Only plain objects are rows: a null, a string or an array in Results is skipped (the cached body is the same
+    // either way, and it is filtered again on every read), so it can never throw below.
+    const results = (parseJsonBody(entry.bytes) as { Results: unknown[] }).Results;
+    const rows = results.filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null && !Array.isArray(r));
+    return { rows, stale: entry.stale, fetchedAt: entry.fetchedAt };
   }
 
-  const titleCase = (s: string) =>
-    s.length <= 3 ? s.toUpperCase() : s.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bBmw\b/, "BMW").replace(/\bGmc\b/, "GMC");
+  /**
+   * vPIC's capitals as a name: "HARLEY-DAVIDSON" -> "Harley-Davidson", "BUELL (EBR)" -> "Buell (EBR)" (a short
+   * part in brackets stays an acronym), "JASPER'S HOT RODS LLC" -> "Jasper's Hot Rods LLC" (nothing capitalised
+   * after an apostrophe; known acronyms stay).
+   */
+  const titleCase = (s: string): string => {
+    const fixed = MAKE_CASE[s.toUpperCase()];
+    if (fixed) return fixed;
+    if (s.length <= 3) return s.toUpperCase();
+    return s.replace(/\(([^)]*)\)|[A-Za-z0-9]+(?:'[A-Za-z]+)?/g, (part: string, inBrackets: string | undefined) => {
+      if (inBrackets !== undefined) return inBrackets.length <= 5 ? `(${inBrackets.toUpperCase()})` : `(${titleCase(inBrackets)})`;
+      const upper = part.toUpperCase();
+      return KEEP_UPPER.has(upper) ? upper : upper.charAt(0) + part.slice(1).toLowerCase();
+    });
+  };
 
   async function makes(ctx: Ctx, url: URL): Promise<Response> {
     const p = parseQuery(url, noParams);
     if (!p.ok) return badRequest(p.fields);
     const entry = await composite(ctx, "vehicles/makes", config.cacheTtlS.vehicles, async () => {
       const names = new Map<string, string>();
-      for (const kind of VPIC_KINDS) { // one at a time: each call takes its own global slot
-        for (const row of await vpic(ctx, `GetMakesForVehicleType/${kind}`)) {
+      const kinds: Record<string, VpicKind[]> = {};
+      const { lists, stale, fetchedAt } = await vpicAll(ctx, (kind) => `GetMakesForVehicleType/${kind}`);
+      for (const [i, rows] of lists.entries()) {
+        const kind = VPIC_KINDS[i] as VpicKind;
+        for (const row of rows) {
           const n = typeof row.MakeName === "string" ? row.MakeName.trim() : "";
-          if (n) names.set(n.toUpperCase(), titleCase(n));
+          if (!n) continue;
+          names.set(n.toUpperCase(), titleCase(n));
+          const k = normName(n);
+          const list = (kinds[k] ??= []);
+          if (!list.includes(kind)) list.push(kind);
         }
       }
-      return json([...names.values()].sort((x, y) => x.localeCompare(y)));
+      // Which vehicle kinds each make is listed under, so a models lookup asks vPIC only about those.
+      // Best effort: without the index a models lookup asks about all four kinds, so a failed write never fails this.
+      try {
+        await deps.store.set(MAKE_KINDS_KEY, json(kinds).bytes, "application/json; charset=utf-8", config.cacheTtlS.vehicles);
+      } catch {
+        console.warn("proxy: the vPIC make-kinds index wasn't stored");
+      }
+      return { ...json([...names.values()].sort((x, y) => x.localeCompare(y))), stale, ...(fetchedAt !== undefined ? { fetchedAt } : {}) };
     });
     return dataResponse(entry, config.cacheTtlS.vehicles);
+  }
+
+  /**
+   * The vehicle kinds vPIC lists this make under, from the makes index when it is in the store (even past its
+   * time: makes barely change). All four when there is no index or the make isn't in it (typed by hand).
+   */
+  async function kindsFor(make: string): Promise<readonly VpicKind[]> {
+    try {
+      const stored = await deps.store.get(MAKE_KINDS_KEY);
+      if (!stored) return VPIC_KINDS;
+      const index = JSON.parse(decode(stored.value)) as Record<string, unknown>;
+      const listed = index[normName(make)];
+      if (!Array.isArray(listed)) return VPIC_KINDS;
+      const kinds = VPIC_KINDS.filter((k) => listed.includes(k));
+      return kinds.length > 0 ? kinds : VPIC_KINDS;
+    } catch {
+      return VPIC_KINDS;
+    }
   }
 
   async function models(ctx: Ctx, url: URL): Promise<Response> {
@@ -433,15 +510,16 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     const { make, year } = p.data;
     const entry = await composite(ctx, keyOf("vehicles/models", { make: norm(make), year }), config.cacheTtlS.vehicles, async () => {
       const out = new Map<string, VehicleModelResult>();
-      for (const kind of VPIC_KINDS) {
-        const rows = await vpic(ctx, `GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}/vehicletype/${kind}`);
+      const kinds = await kindsFor(make);
+      const { lists, stale, fetchedAt } = await vpicAll(ctx, (kind) => `GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}/vehicletype/${kind}`, kinds);
+      for (const rows of lists) {
         for (const row of rows) {
           const name = typeof row.Model_Name === "string" ? row.Model_Name.trim() : "";
           const vpicType = typeof row.VehicleTypeName === "string" ? row.VehicleTypeName : "";
           if (name && !out.has(name.toUpperCase())) out.set(name.toUpperCase(), { name, vpicType, type: typeFromVpic(vpicType, name) });
         }
       }
-      return json([...out.values()].sort((x, y) => x.name.localeCompare(y.name)));
+      return { ...json([...out.values()].sort((x, y) => x.name.localeCompare(y.name))), stale, ...(fetchedAt !== undefined ? { fetchedAt } : {}) };
     });
     return dataResponse(entry, config.cacheTtlS.vehicles);
   }
@@ -454,12 +532,18 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
   // ---- entry point ----------------------------------------------------------------------------
 
   return async (req: Request): Promise<Response> => {
+    let topic: ProxyTopic = "map";
     try {
       if (req.method !== "GET") return errorResponse(405, { code: "bad-request", message: "Only GET is supported." });
       const url = new URL(req.url);
-      const ctx: Ctx = { config, deps, userKey: deps.userKey(req), userSlots: new Set(), inflight, health, deadline: deps.now() + config.limits.timeoutMs };
       const path = url.pathname;
       const R = PROXY_ROUTES;
+      topic = path === R.makes || path === R.models ? "vehicles"
+        : path === R.search || path === R.suggest || path === R.crossing || path === R.crossStreets ? "search" : "map";
+      const ctx: Ctx = {
+        topic, config, deps, userKey: deps.userKey(req), userSlots: new Set(), userTokens: new Map(), inflight, health,
+        deadline: deps.now() + config.limits.timeoutMs,
+      };
       if (path === R.search) return await search(ctx, url);
       if (path === R.overpass) return await overpass(ctx, url);
       if (path === R.crossing) return await crossing(ctx, url);
@@ -472,7 +556,11 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
       if (path.startsWith(`${R.terrain}/`)) return await tile(ctx, "terrain", path.slice(R.terrain.length + 1), url, req);
       return errorResponse(404, { code: "not-found", message: "That wasn't found." });
     } catch (e) {
-      if (e instanceof ProxyFailure) return errorResponse(e.status, e.error);
+      if (e instanceof ProxyFailure) {
+        // One line per refused request, naming the limit (never the user key, the query or an address).
+        if (e.status === 429) console.warn(`proxy: busy topic=${topic}${e.why ? ` service=${e.why.service} limiter=${e.why.limiter}` : ""}`);
+        return errorResponse(e.status, e.error);
+      }
       console.error("proxy: unexpected error", e instanceof Error ? e.message : "unknown");
       return errorResponse(500, { code: "upstream", message: "Something went wrong on our side. Please try again shortly.", retryAfterS: 5 });
     }

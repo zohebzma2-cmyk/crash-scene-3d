@@ -16,7 +16,7 @@ scope.onmessage = (e) => {
     if (req.roads && req.roadsKey !== null) held = { key: req.roadsKey, net: req.roads };
     const roads = req.roadsKey === null ? null : held && held.key === req.roadsKey ? held.net : req.roads;
     if (req.roadsKey !== null && !roads) throw new Error("road data missing");
-    reply = { id: req.id, ok: true, result: suggestFixes(req.scene, roads, { prefer: req.prefer }) };
+    reply = { id: req.id, ok: true, result: suggestFixes(req.scene, roads, { prefer: req.prefer, gate: req.gate === true }) };
   } catch (err) {
     reply = { id: req.id, ok: false, message: err instanceof Error ? err.message : "failed" };
   }

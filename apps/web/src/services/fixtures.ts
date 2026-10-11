@@ -2,7 +2,7 @@
 // It exists only in a dev server or a build made with VITE_FIXTURES=1: a normal production build
 // neither honors ?fixtures=1 nor contains the map data. (?example=<name> still works there; it loads
 // just that scene.json and uses the real services. See examples.ts.)
-import { type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult, type RoadNetwork, type Scene } from "@csd/core";
+import { typeFromVpic, type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult, type RoadNetwork, type Scene } from "@csd/core";
 import { mapConfig } from "../config/map";
 import { dist, nearestOnPolyline, polylineCrossings } from "../lib/geometry";
 import { fakeToLatLon, fakeToLocal } from "./fakes";
@@ -11,6 +11,7 @@ import type { GeoService, RoadsService, VehiclesService } from "./types";
 import { countingTiles, type RoadsDeps } from "./roads";
 import { townLookups } from "./towns";
 import { ServiceError } from "./types";
+import { resolveMake } from "./vehicles";
 
 export interface FixtureEnv {
   readonly DEV?: boolean;
@@ -188,20 +189,41 @@ export function createFixtureGeo(split: (q: string) => { a: string; b: string; n
   };
 }
 
-const MAKES: Record<string, Array<{ name: string; type: "car" | "suv" | "pickup" | "van" | null; vpicType: string }>> = {
-  Honda: [{ name: "Accord", type: "car", vpicType: "Passenger Car" }, { name: "CR-V", type: "suv", vpicType: "Multipurpose Passenger Vehicle (MPV)" }, { name: "Odyssey", type: "van", vpicType: "Multipurpose Passenger Vehicle (MPV)" }],
-  Toyota: [{ name: "Camry", type: "car", vpicType: "Passenger Car" }, { name: "RAV4", type: "suv", vpicType: "Multipurpose Passenger Vehicle (MPV)" }, { name: "Tacoma", type: "pickup", vpicType: "Truck" }],
-  Ford: [{ name: "Escape", type: "suv", vpicType: "Multipurpose Passenger Vehicle (MPV)" }, { name: "F-150", type: "pickup", vpicType: "Truck" }, { name: "Fusion", type: "car", vpicType: "Passenger Car" }],
-  Chevrolet: [{ name: "Malibu", type: "car", vpicType: "Passenger Car" }, { name: "Silverado 1500", type: "pickup", vpicType: "Truck" }, { name: "Equinox", type: "suv", vpicType: "Multipurpose Passenger Vehicle (MPV)" }],
-  Subaru: [{ name: "Outback", type: "suv", vpicType: "Multipurpose Passenger Vehicle (MPV)" }, { name: "Impreza", type: "car", vpicType: "Passenger Car" }],
+// An offline slice of NHTSA vPIC for fixtures mode and the e2e tests: real makes and models with the model
+// years they were sold (approximate), typed the way the proxy types them (typeFromVpic). Makes without
+// models here still show in the list, as do a few obscure ones that share prefixes, so ranking is exercised.
+const CAR = "Passenger Car";
+const MPV = "Multipurpose Passenger Vehicle (MPV)";
+const TRUCK = "Truck";
+const MOTO = "Motorcycle";
+type FixtureModel = readonly [name: string, vpicType: string, from: number, to?: number];
+const MODELS: Readonly<Record<string, readonly FixtureModel[]>> = {
+  Chevrolet: [["Silverado 1500", TRUCK, 1999], ["Silverado 2500HD", TRUCK, 2001], ["Colorado", TRUCK, 2004], ["Malibu", CAR, 1997, 2025], ["Equinox", MPV, 2005], ["Tahoe", MPV, 1995], ["Corvette", CAR, 1981], ["Camaro", CAR, 1981, 2024], ["Express", TRUCK, 1996]],
+  Honda: [["Accord", CAR, 1981], ["Civic", CAR, 1981], ["CR-V", MPV, 1997], ["HR-V", MPV, 2016], ["Odyssey", MPV, 1995], ["Pilot", MPV, 2003], ["Ridgeline", TRUCK, 2006], ["Gold Wing", MOTO, 1981]],
+  Ford: [["F-150", TRUCK, 1981], ["F-250", TRUCK, 1981], ["F-650", TRUCK, 2000], ["Escape", MPV, 2001], ["Explorer", MPV, 1991], ["Mustang", CAR, 1981], ["Fusion", CAR, 2006, 2020], ["Ranger", TRUCK, 1983], ["Transit", TRUCK, 2015]],
+  Volkswagen: [["Jetta", CAR, 1981], ["Golf", CAR, 1985], ["Passat", CAR, 1990], ["Beetle", CAR, 1998, 2019], ["Tiguan", MPV, 2009], ["Atlas", MPV, 2018]],
+  "Harley-Davidson": [["Street Glide", MOTO, 2006], ["Road King", MOTO, 1994], ["Sportster", MOTO, 1981], ["Fat Boy", MOTO, 1990]],
+  Toyota: [["Camry", CAR, 1983], ["Corolla", CAR, 1981], ["RAV4", MPV, 1996], ["Highlander", MPV, 2001], ["4Runner", MPV, 1984], ["Sienna", MPV, 1998], ["Tacoma", TRUCK, 1995], ["Tundra", TRUCK, 2000]],
+  Subaru: [["Outback", MPV, 1995], ["Impreza", CAR, 1993], ["Forester", MPV, 1998]],
+  Ram: [["1500", TRUCK, 2011], ["2500", TRUCK, 2011], ["ProMaster", TRUCK, 2014]],
+  Nissan: [["Altima", CAR, 1993], ["Rogue", MPV, 2008], ["Frontier", TRUCK, 1998]],
 };
+const OTHER_MAKES = [
+  "Acura", "Audi", "BMW", "Buick", "Cadillac", "Champion Bus", "Chang Jiang", "Chrysler", "Dodge", "GMC", "Hyundai", "Jeep", "Kia",
+  "Land Rover", "Lexus", "Mazda", "Mercedes-Benz", "Merch Motorcycle Co.", "Mercury", "Mini", "Ram Transcorp", "Tesla", "Toyo Motors", "Volvo",
+];
 
 export function createFixtureVehicles(): VehiclesService {
+  const names = [...Object.keys(MODELS), ...OTHER_MAKES].sort((a, b) => a.localeCompare(b));
   return {
-    makes: async () => Object.keys(MAKES).sort(),
-    models: async (make) => {
-      const key = Object.keys(MAKES).find((k) => k.toLowerCase() === make.trim().toLowerCase());
-      return key ? (MAKES[key] ?? []).map((m) => ({ name: m.name, vpicType: m.vpicType, type: m.type })) : [];
+    makes: async () => names,
+    canonicalMake: (text) => resolveMake(text, names),
+    models: async (make, year) => {
+      const key = resolveMake(make, Object.keys(MODELS));
+      return (key ? MODELS[key] ?? [] : [])
+        .filter(([, , from, to]) => year >= from && year <= (to ?? year))
+        .map(([name, vpicType]) => ({ name, vpicType, type: typeFromVpic(vpicType, name) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     },
   };
 }

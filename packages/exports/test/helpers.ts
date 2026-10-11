@@ -93,6 +93,26 @@ export interface PdfRead {
   readonly extent: { minX: number; maxX: number; minY: number; maxY: number };
 }
 
+/**
+ * The vehicles table on page 1 as text, one entry per printed line (top to bottom), the pieces on that line joined
+ * with " | " from left to right: everything between the "Vehicles" and "Key measurements" headings. Line breaks
+ * inside cells show as separate entries, so any change in wrapping shows up.
+ */
+export function tableLines(read: PdfRead): string[] {
+  const page = read.positioned.filter((p) => p.page === 1);
+  const headingY = (word: string) => page.find((p) => p.str.replace(/\s+/g, "") === word)?.y;
+  const top = headingY("VEHICLES");
+  const bottom = headingY("KEYMEASUREMENTS");
+  if (top === undefined || bottom === undefined) throw new Error("no vehicles table on page 1");
+  const rows = new Map<number, Array<{ x: number; s: string }>>();
+  for (const p of page) {
+    if (!p.str.trim() || p.y >= top - 0.5 || p.y <= bottom + 0.5) continue;
+    const key = Math.round(p.y * 2) / 2;
+    rows.set(key, [...(rows.get(key) ?? []), { x: p.x, s: p.str.trim() }]);
+  }
+  return [...rows.entries()].sort((a, b) => b[0] - a[0]).map(([, items]) => items.sort((a, b) => a.x - b.x).map((i) => i.s).join(" | "));
+}
+
 export async function readPdf(bytes: Uint8Array): Promise<PdfRead> {
   const task = getDocument({ data: bytes.slice(), useSystemFonts: false });
   const doc = await task.promise;
@@ -227,4 +247,17 @@ export function withPngText(png: Uint8Array, key: string, value: string): Uint8A
   chunk.writeUInt32BE(crc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
   const iend = png.length - 12;
   return new Uint8Array(Buffer.concat([Buffer.from(png.subarray(0, iend)), chunk, Buffer.from(png.subarray(iend))]));
+}
+
+/** A plain synthetic map picture with the pin dead centre, drawn the way the app marks it (a dot with a ring, at 2x). No map data. */
+export function centredMapPng(width: number, height: number): Uint8Array {
+  const cv = createCanvas(width, height) as Canvas;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#EDE9E0";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath(); ctx.arc(width / 2, height / 2, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2563EB";
+  ctx.beginPath(); ctx.arc(width / 2, height / 2, 14, 0, Math.PI * 2); ctx.fill();
+  return new Uint8Array(cv.toBuffer("image/png"));
 }

@@ -27,6 +27,7 @@ export function setup(upstream: Upstream) {
   const inner = memoryStore();
   const slotCalls: string[] = [];
   const tokenCalls: string[] = [];
+  const returned: string[] = [];
   const setKeys: string[] = [];
   const store: KvStore = {
     get: (k) => inner.get(k),
@@ -35,10 +36,11 @@ export function setup(upstream: Upstream) {
     takeSlot: (k, n, i) => { slotCalls.push(k); return inner.takeSlot(k, n, i); },
     reserveSlot: (k, n, i, w) => { slotCalls.push(k); return inner.reserveSlot(k, n, i, w); },
     takeToken: (k, n, l) => { tokenCalls.push(k); return inner.takeToken(k, n, l); },
+    returnToken: (k, n, l) => { returned.push(k); return inner.returnToken!(k, n, l); },
   };
   const proxy = createProxy(config, { fetch, store, now: () => Date.now(), userKey: (req) => req.headers.get("x-user") ?? "user-1" });
   const get = (path: string, user = "user-1") => proxy(new Request(`https://app.test${path}`, { headers: { "x-user": user } }));
-  return { calls, store, slotCalls, tokenCalls, setKeys, proxy, get };
+  return { calls, store, slotCalls, tokenCalls, returned, setKeys, proxy, get };
 }
 
 /** Advance fake time until the promise settles (or `maxMs` pass). */
