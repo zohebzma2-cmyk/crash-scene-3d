@@ -23,9 +23,11 @@ Set these in Netlify under Site configuration → Environment variables. Nothing
 | Variable | Required? | Value | Notes |
 |---|---|---|---|
 | `PROXY_USER_SALT` | **Yes, in production** | a long random secret (48+ bytes) | Mixed into the per-caller hash used for rate limits (SHA-256 of IP + date + this salt). **If it is missing, every `/api/*` request gets a plain 500** with "This service isn't set up yet" (`resolveSalt` in `packages/proxy/src/userkey.ts`). Mark it as a secret and give it Functions scope at runtime. |
+| `CARIMAGES_API_KEY`, `CARIMAGES_API_SECRET` | Optional | from the CarImages dashboard | Vehicle photos and 3D models (decision 0011). Without either, `/api/vehicles/image` and `/api/vehicles/model` answer their fallback and the app shows its own icons. Secret, Functions scope. Read at call time; never logged or sent to the browser. |
+| `LOGO_DEV_SECRET_KEY` | Optional | logo.dev secret key | Maker logos from logo.dev's API when CarImages has none. Secret, Functions scope. (`LOGO_DEV_TOKEN`, the publishable key, is not used.) |
 | `NETLIFY_LOCAL_MEMORY_STORE` | Never in production | `1` | Local and test only: uses an in-process store instead of Blobs. It cannot enforce the 1 req/s limit across several function instances. |
 
-There are no provider API keys: OSM tiles, Nominatim, Overpass, Terrarium terrain and NHTSA vPIC need none. The User-Agent contact is the repo URL, held in `packages/proxy/src/config.ts`.
+OSM tiles, Nominatim, Overpass, Terrarium terrain and NHTSA vPIC need no keys; only the optional media providers above do. If the CarImages subscription ever ends, its terms require deleting the stored images: empty the Blobs store `csd-proxy-media` (it holds only photos, models, logos and their catalog). The User-Agent contact is the repo URL, held in `packages/proxy/src/config.ts`.
 
 ### Generating the salt without anyone else seeing it
 
@@ -131,7 +133,8 @@ Do this on the first deploy (a deploy preview is fine), in this order.
    - Do not hammer the real providers to test this; two quick requests are enough.
 8. **Upstream identity.** A search works end to end (Nominatim returns a result). If a provider answers 403, the User-Agent contact in `ProviderConfig` is the first thing to check.
 9. **Privacy spot check.** Function logs contain no addresses, coordinates or raw IPs.
-10. **No source maps.** `apps/web/vite.config.ts` turns `build.sourcemap` on only for `--mode development` and for `VITE_FIXTURES=1` (the e2e build), so a production `npm run build` writes no `.map` files (checked: 0). On the deploy, `curl -sI https://<deploy-url>/assets/<the main js file>.map` must not return 200. Never set `VITE_FIXTURES=1` in the Netlify build environment: it also turns source maps on (and bundles the fixtures).
+10. **Media (only with the keys set, and with the owner's go-ahead).** Pick a common model on the Vehicles step: the card shows the maker logo and a photo, and the browser's network panel shows only `/api/vehicles/image` and `/api/logos/make` on our origin. The function log has at most the one "keys are not set" line and no key. Netlify → Blobs shows `csd-proxy-media`. The full list of what to check is in docs/decisions/0011-vehicle-images.md, "Only checkable after a deploy".
+11. **No source maps.** `apps/web/vite.config.ts` turns `build.sourcemap` on only for `--mode development` and for `VITE_FIXTURES=1` (the e2e build), so a production `npm run build` writes no `.map` files (checked: 0). On the deploy, `curl -sI https://<deploy-url>/assets/<the main js file>.map` must not return 200. Never set `VITE_FIXTURES=1` in the Netlify build environment: it also turns source maps on (and bundles the fixtures).
 
 ## Our own test traffic
 

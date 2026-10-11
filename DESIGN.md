@@ -356,6 +356,7 @@ Four steps, all reading and writing one shared scene state. Back never loses wor
   - **Requests** (docs/PROXY-BUSY.md): the makes once per session (cached by the proxy 30 days); the models once per make and year, never per keystroke, under the makes list's spelling ("chevy" asks for Chevrolet), about 450 ms after typing stops or at once after a pick. A make the list doesn't know waits 800 ms longer and the next keystroke cancels it, so half a make ("chev") is never asked for. Both lists are cached for the session (memory and sessionStorage) and by the proxy (30 days); the proxy asks vPIC only about the kinds the make is listed under. A busy answer is retried after its Retry-After, up to 2.5 s, before anything shows. vPIC has no trims, so there is no trim field.
   - **Type, weight and size**: picking a model fills the type from vPIC's vehicle type (section 16), with the line "Pickup from NHTSA vPIC (Truck). Weight and size: pickup class average." and the vPIC badge on the tile; weight and size come from the preset table with their sources. If vPIC fails or doesn't know the model, the claimant picks the type by hand.
   - **Failures**: a lookup that still fails after the retries is one plain line worded for the vehicle list ("The vehicle list is busy right now.", "…is slow to answer right now.", "We couldn't reach the vehicle list.", "We couldn't load the vehicle list right now."), followed by "Pick the type below." on the card, "Type the make; it still works." / "Type the model; it still works." in the lists. Never the proxy's map wording and never a busy screen; typing keeps working.
+- **Logo and photo** (round B, decision 0011): the maker's logo sits before the card's year/make/model line (`--size-icon` high) once the make is one the list knows; otherwise our car icon. A stock photo of the picked model (3:2, `--space-16` high on desktop, `--space-12` on phones) sits at the right of the card header once a model from the list is picked: our type icon with a spinner while it loads, and just our type icon when there is no photo. Never any error text for either. In the picker's make list each row starts with the maker's logo (decorative: the row already names the make), or our car icon. When a logo.dev logo is shown, "Logos provided by Logo.dev" (a link, `--text-xs`, tertiary text) appears under the cards.
 - **What was it doing?** Going straight, turning left, turning right, backing up, parked. Parked hides speed.
 - **Which way was it going / facing?** N, E, S, W. The arrow and caption update ("Facing east, backing up on Maple Ave").
 - **About how fast at the moment of the crash?** mph. This is the speed at impact (decided 2026-10-09). **Not sure** → posted limit ±5 mph, limit entered by the claimant or 25 mph if unknown (said in every place the speed appears).
@@ -574,13 +575,15 @@ export const mapProvider = {
 ## 11. Data rules
 
 - Repo examples, screenshots and design frames use made-up claims and people. Test searches use public landmarks only.
-- No API keys: OSM tiles, Nominatim, Overpass, Terrarium terrain and NHTSA vPIC need none.
+- No API keys in the browser: OSM tiles, Nominatim, Overpass, Terrarium terrain and NHTSA vPIC need none; the CarImages and logo.dev keys are server-side secrets of the proxy (decision 0011).
 - **The browser calls only its own origin** (`/api/*`). The proxy then calls, and nothing else:
   1. OSM tiles (the area in view).
   2. Photon type-ahead (the typed text and a bias point rounded to about 1 km) and Nominatim search as the on-submit fallback (the typed text only).
   3. Overpass (roads, buildings and parking around the pin, and named streets for an intersection search).
   4. AWS Terrarium elevation tiles (the area around the pin).
   5. NHTSA vPIC (model year and make text only; makes list).
+  6. CarImages (make, model and model year only) for the stock photo and the 3D model, and its brand logo.
+  7. logo.dev (the maker's web domain, or the make name for its search) for a logo CarImages doesn't have.
 - Google Fonts is a prototype convenience; the app self-hosts its fonts.
 
 ---

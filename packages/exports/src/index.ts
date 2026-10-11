@@ -1,13 +1,13 @@
 // Exports API (signatures are locked). Files are made on the device; the canvas
 // is injected so the same code can run server-side later.
 import type { ExportBundle, ExportFile, ExportFormat, ExportRequest } from "@csd/core";
-import type { CanvasFactory } from "./canvas-types";
+import type { CanvasFactory, VehicleMediaProvider } from "./canvas-types";
 import { buildModel, fileClaim } from "./model";
 import { buildPdf } from "./pdf";
 import { buildDiagramPng, buildStillPng } from "./png";
 import { sceneFile } from "./scene-file";
 
-export type { CanvasFactory, CanvasLike } from "./canvas-types";
+export type { CanvasFactory, CanvasLike, VehicleMediaProvider } from "./canvas-types";
 export { sceneFile } from "./scene-file";
 export { footerBandHeight } from "./png";
 export { PNG_METERS_PER_PIXEL_KEY } from "./png-meta";
@@ -22,11 +22,37 @@ function isoSeconds(d: Date): string {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** One save: all requested files, one timestamp, one fingerprint. */
-export async function buildExports(req: ExportRequest, canvas: CanvasFactory): Promise<ExportBundle> {
+/** A provider that takes longer than this for a photo is skipped: the save never waits on a photo. */
+export const PHOTO_WAIT_MS = 3000;
+const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** Each vehicle's photo (PNG) from the provider, by vehicle id; a slow, failing or non-PNG answer is left out. */
+async function gatherPhotos(req: ExportRequest, media: VehicleMediaProvider | undefined): Promise<Map<string, Uint8Array>> {
+  const out = new Map<string, Uint8Array>();
+  if (!media) return out;
+  await Promise.all(req.scene.vehicles.map(async (v) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const png = await Promise.race([
+        media.vehiclePhoto(v),
+        new Promise<null>((r) => { timer = setTimeout(() => r(null), PHOTO_WAIT_MS); }),
+      ]);
+      if (png && png.byteLength > 8 && PNG_SIG.every((b, i) => png[i] === b)) out.set(v.id, png);
+    } catch {
+      // no photo for this one
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+  return out;
+}
+
+/** One save: all requested files, one timestamp, one fingerprint. `media` (optional) adds the vehicles' stock photos. */
+export async function buildExports(req: ExportRequest, canvas: CanvasFactory, media?: VehicleMediaProvider): Promise<ExportBundle> {
   const createdAt = isoSeconds((req.now ?? (() => new Date()))());
   const { text, stamp } = await sceneFile(req.scene, req.sim, createdAt);
   const model = buildModel(req.scene, req.sim, stamp);
+  const photos = req.formats.some((f) => f === "pdf" || f === "png-impact" || f === "png-rest") ? await gatherPhotos(req, media) : new Map<string, Uint8Array>();
   const base = `crash-scene-${fileClaim(req.scene.claim.number)}`;
   const wanted = new Set(req.formats);
   const files: ExportFile[] = [];
@@ -44,6 +70,7 @@ export async function buildExports(req: ExportRequest, canvas: CanvasFactory): P
       const pdf = await buildPdf({
         model, scene: req.scene, sim: req.sim, roads: req.roads, fonts: req.fonts, createdAt,
         ...(req.mapThumbnail ? { mapThumbnail: req.mapThumbnail } : {}),
+        ...(photos.size ? { vehiclePhotos: photos } : {}),
         sceneFileName: `${base}.json`,
       });
       files.push({ name: `${base}.pdf`, mime: "application/pdf", bytes: pdf.bytes });
@@ -76,7 +103,7 @@ export async function buildExports(req: ExportRequest, canvas: CanvasFactory): P
         if (!still || still.length === 0) { skipped.push({ format, reason: `The 3D picture of ${what} wasn't captured, so this file was left out.` }); continue; }
         try {
           const shown = model.adjustedNotes.length ? `${caption}: the picture uses a different hit side than entered (see the PDF)` : caption;
-          files.push({ name: `${base}-${suffix}.png`, mime: "image/png", bytes: await buildStillPng(still, shown, model, canvas, fam) });
+          files.push({ name: `${base}-${suffix}.png`, mime: "image/png", bytes: await buildStillPng(still, shown, model, canvas, fam, photos) });
         } catch (e) {
           skipped.push({ format, reason: `The 3D picture of ${what} couldn't be read (${why(e)}), so this file was left out.` });
         }

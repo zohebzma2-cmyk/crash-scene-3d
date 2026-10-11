@@ -9,6 +9,7 @@ import { useDoc } from "../state/DocProvider";
 import { useFlow } from "../state/Flow";
 import { useUi } from "../state/Ui";
 import { Tips } from "../tips/Tips";
+import { LogoCredit } from "./MakeLogo";
 import { MiniMap } from "./MiniMap";
 import { VehicleCard, vehicleListReason, type MakesState } from "./VehicleCard";
 import { GatePanel } from "./Warnings";
@@ -68,6 +69,7 @@ export function VehiclesStep() {
               <VehicleCard key={doc.vehicleKeys[i] ?? v.id} vehicle={v} canRemove={v.id !== "A" && scene.vehicles.length > LIMITS.minVehicles} directionSet={doc.directionSet[i] === true} onRemove={() => remove(v.id)} makes={makes} />
             ))}
           </div>
+          <LogoCredit />
           {scene.vehicles.length < LIMITS.maxVehicles ? (
             <button className="btn btn-quiet add-vehicle" type="button" id="add-vehicle" onClick={add}><Icon name="plus" className="icon-sm" /><span>Add another vehicle</span></button>
           ) : null}

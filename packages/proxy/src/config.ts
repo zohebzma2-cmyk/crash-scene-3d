@@ -1,4 +1,5 @@
 import type { ProviderConfig } from "@csd/core";
+import { MAKE_DOMAINS } from "./make-domains";
 
 const DAY_S = 24 * 60 * 60;
 const SEARCH_ATTRIBUTION = "Search by Photon (komoot) · Nominatim · © OpenStreetMap contributors";
@@ -63,5 +64,37 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     // A call waits at most 2.5 s for both tokens together. Cache hits (30 days, shared through Blobs) take no token.
     vehiclesBurst: { perUser: { capacity: 12, refillPerS: 1 }, global: { capacity: 16, refillPerS: 2 } },
     cacheTtlS: { search: DAY_S, overpass: 7 * DAY_S, tile: 7 * DAY_S, terrain: 30 * DAY_S, vehicles: 30 * DAY_S },
+    // Vehicle photos, 3D models and maker logos (docs/decisions/0011-vehicle-images.md). The browser asks only
+    // after a make and model are picked, and everything is cached long, so the buckets are small.
+    media: {
+      carimages: {
+        apiUrl: "https://carimagesapi.com/api/v1",
+        brandLogoUrl: "https://carimagesapi.com/brand-logo",
+        assetHosts: ["cdn.carimagesapi.com", "carimagesapi.com"],
+        // The free plan serves WebP only (docs, checked 2026-10-11); the app converts to PNG for the PDF.
+        format: "webp",
+        // 4 MB until streamed function responses are checked on Netlify: a buffered response is limited to 6 MB,
+        // and a binary body is sent base64-encoded (4/3 larger). See decision 0011.
+        maxModelBytes: 4 * 1024 * 1024,
+        // Free plan: 5,000 calls a month and 60 a minute. Global 20 at once refilling 0.5/s (30 a minute) keeps
+        // under the minute limit; 120 a day keeps a month under 3,800.
+        burst: { perUser: { capacity: 8, refillPerS: 0.2 }, global: { capacity: 20, refillPerS: 0.5 } },
+        dailyCap: 120,
+        perUserDailyCap: 15,
+        cooldownS: 15 * 60,
+      },
+      logodev: {
+        apiUrl: "https://api.logo.dev",
+        assetHosts: ["img.logo.dev"],
+        attribution: "Logos provided by Logo.dev",
+        attributionUrl: "https://logo.dev",
+        makeDomains: MAKE_DOMAINS,
+        burst: { perUser: { capacity: 4, refillPerS: 0.2 }, global: { capacity: 10, refillPerS: 0.5 } },
+        dailyCap: 60,
+        perUserDailyCap: 10,
+        cooldownS: 15 * 60,
+      },
+      cacheTtlS: { image: 30 * DAY_S, logo: 365 * DAY_S, model: 30 * DAY_S, catalog: 7 * DAY_S, libraries: DAY_S, logoMiss: 7 * DAY_S },
+    },
   };
 }

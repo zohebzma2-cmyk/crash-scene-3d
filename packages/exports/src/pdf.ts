@@ -19,6 +19,10 @@ import { PdfCanvas, type Extent, type PdfFonts, type Region } from "./pdf-canvas
 import { PX_TO_PT, color, px, vehicleColor } from "./style";
 
 const OSM_CREDIT = "© OpenStreetMap contributors";
+/** Header of the PDF's photo cell and caption of a still's photo card. */
+export const STOCK_PHOTO_LABEL = "Stock photo";
+/** Under the vehicles table when it shows a photo: what the photos are and whose. */
+export const STOCK_PHOTO_NOTE = "Stock photos are catalog pictures of the model entered (CarImages, carimagesapi.com), not photos of the vehicles involved.";
 /** On the road outline the roads are OpenStreetMap data (not tiles). */
 const OSM_DATA_CREDIT = "Map data © OpenStreetMap contributors";
 /** No printed text below this (pt), except labels inside the diagram. */
@@ -64,6 +68,8 @@ export interface PdfInput {
   readonly roads: RoadNetwork | null;
   readonly fonts: BrandFonts;
   readonly mapThumbnail?: Uint8Array;
+  /** Stock photos (PNG) by vehicle id: when any is given, the vehicles table gains a fixed-width photo cell. */
+  readonly vehiclePhotos?: ReadonlyMap<string, Uint8Array>;
   /** File name of the scene file whose fingerprint is printed. */
   readonly sceneFileName: string;
   readonly createdAt: string;
@@ -377,7 +383,7 @@ function assumptionsLeft(shown: number, total: number): string {
   return total - shown === 1 ? `assumption ${total}` : `assumptions ${shown + 1} to ${total}`;
 }
 
-function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "full" | "split", footerH: number, laterRoom: number): Built {
+function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "full" | "split", footerH: number, laterRoom: number, photos: ReadonlyMap<string, PDFImage> = new Map()): Built {
   const { model } = input;
   const m = s.m;
   const { M, CW, colW, colGap, body, small, gapBig, gapSm, hair, radius, pad } = m;
@@ -545,6 +551,14 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   /* Vehicles table. A hit side the picture couldn't use keeps a short cell ("Front *"); its full wording is a note under the table. */
   const frac = [0.045, 0.17, 0.16, 0.225, 0.295, 0.105];
   const cw = frac.map((f) => f * CW);
+  // Stock photos, only when there is at least one: a fixed-width cell after the letter, its width taken from Speed and
+  // Direction (in proportion to their shares). The letter, Vehicle and Type columns keep their widths.
+  const photoW = photos.size > 0 ? px("space-16") * PX_TO_PT * 1.25 : 0;
+  if (photoW > 0) {
+    const fromSpeed = photoW * (cw[4]! / (cw[3]! + cw[4]!));
+    cw[4] = cw[4]! - fromSpeed;
+    cw[3] = cw[3]! - (photoW - fromSpeed);
+  }
   const padX = px("space-2") * PX_TO_PT * 0.75;
   // Only when a cell carries the mark does "Hit on" widen, to its longest short value, and only at the expense of the
   // speed column: Vehicle, Type and Direction keep their widths, so their wrapping never changes.
@@ -554,11 +568,20 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     cw[5] = cw[5]! + more;
     cw[4] = cw[4]! - more;
   }
-  const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w), a), [M]);
+  const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w + (i === 0 ? photoW : 0)), a), [M]);
   const padY = px("space-2") * PX_TO_PT * 0.5 * pad;
+  /** The photo's box in its cell (3:2, the providers' shape), and the picture fitted inside it keeping its own shape. */
+  const photoBoxW = Math.max(0, photoW - padX * 2);
+  const photoBoxH = (photoBoxW * 2) / 3;
+  const photoFit = (img: PDFImage) => {
+    const k = Math.min(photoBoxW / img.width, photoBoxH / img.height);
+    return { w: img.width * k, h: img.height * k };
+  };
   const headLabels = ["", "Vehicle", "Type, weight", "Direction", "Speed at impact, as entered", "Hit on"];
   const headLs = headLabels.map((t, i) => s.lines(t, cw[i]! - padX * 2, "sansBold", small));
-  const tHeadH = Math.max(...headLs.map((l) => l.length)) * lh(small) + padY * 2;
+  // The photo cell's header says what it is: a stock photo of the model, never a photo of the vehicle.
+  const photoHeadLs = photoW > 0 ? s.lines(STOCK_PHOTO_LABEL, photoW - padX * 2, "sansBold", small) : [];
+  const tHeadH = Math.max(...headLs.map((l) => l.length), photoHeadLs.length) * lh(small) + padY * 2;
   const bs = Math.min(cw[0]! - padX, px("space-5") * PX_TO_PT * Math.min(1, 0.6 + pad * 0.4));
   const rows = model.vehicles.map((v) => {
     const cells = [
@@ -572,9 +595,13 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const noteW = cw[4]! + (cells[4]!.length === 1 ? cw[5]! : 0) - padX * 2;
     const noteLs = [...(v.brakingNote ? s.lines(v.brakingNote, noteW, "sans", small) : []), ...(v.speedNote ? s.lines(v.speedNote, noteW, "sans", small) : [])];
     const h = Math.max(Math.max(cells[0]!.length, cells[1]!.length, cells[2]!.length, cells[4]!.length) * lh(body), cells[3]!.length * lh(body) + noteLs.length * lh(small)) + padY * 2;
-    return { v, cells, noteLs, h: Math.max(h, bs + hair * 2) };
+    const photo = photos.get(v.id) ?? null;
+    return { v, cells, noteLs, photo, h: Math.max(h, bs + hair * 2, photo ? photoBoxH + padY * 2 : 0) };
   });
-  const footLs = model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small));
+  const footLs = [
+    ...model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small)),
+    ...(rows.some((r) => r.photo) ? s.lines(STOCK_PHOTO_NOTE, CW, "sans", small) : []),
+  ];
   const footGap = gapSm * 0.5;
   const table: Block = {
     h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0) + (footLs.length ? footGap + footLs.length * lh(small) : 0), gapBefore: gapBig, kind: "main", name: "Vehicles",
@@ -582,6 +609,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       let y = y0 + heading(sh, "body", M, y0, "Vehicles");
       sh.box("body", M, y, CW, tHeadH, color("color-surface-2"), undefined, 0);
       headLs.forEach((ls, i) => sh.block("body", cx[i]! + padX, y + padY, ls, "sansBold", small, color("color-text-secondary")));
+      if (photoHeadLs.length) sh.block("body", M + cw[0]! + padX, y + padY, photoHeadLs, "sansBold", small, color("color-text-secondary"));
       y += tHeadH;
       for (const r of rows) {
         const rowY = y;
@@ -590,6 +618,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
           c.circle(cc, bs / 2, vehicleColor(r.v.id));
           c.text({ k: "text", at: [cc[0], cc[1] + body * 0.3], text: r.v.id, font: "sansBold", size: Math.max(MIN_TEXT_PT, body * 0.85), color: color("color-text-on-brand"), anchor: "middle" });
           c.poly([[M, rowY + r.h], [M + CW, rowY + r.h]], false, undefined, { color: color("color-border"), width: hair });
+          if (r.photo) {
+            const f = photoFit(r.photo);
+            c.image(r.photo, M + cw[0]! + padX + (photoBoxW - f.w) / 2, rowY + padY + (photoBoxH - f.h) / 2, f.w, f.h);
+          }
         });
         sh.block("body", cx[1]! + padX, y + padY, r.cells[0]!, "sans", body, color("color-text"));
         sh.block("body", cx[2]! + padX, y + padY, r.cells[1]!, "sans", body, color("color-text"));
@@ -837,6 +869,12 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     try { thumb = await doc.embedPng(input.mapThumbnail); } catch { notes.push(input.roads ? "The map picture couldn't be read, so the PDF shows the road outline instead." : "The map picture couldn't be read, so the PDF says the map isn't available."); }
   }
 
+  // Stock photos of the vehicles: one that can't be read is simply left out (the cell stays empty).
+  const photos = new Map<string, PDFImage>();
+  for (const [id, bytes] of input.vehiclePhotos ?? []) {
+    try { photos.set(id, await doc.embedPng(bytes)); } catch { /* left out */ }
+  }
+
   // Measuring needs a canvas; use a scratch page that is removed afterwards.
   const scratch = doc.addPage([pageW, pageH]);
   const measureCv = new PdfCanvas(doc, scratch, fonts);
@@ -850,7 +888,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     const head2 = header(new Sheet(measureCv, m), false);
     sh.headerH = head1 - m.M;
     const limit = m.H - m.M - foot.height - m.gapBig;
-    const built = buildBlocks(sh, input, thumb, mode, foot.height, limit - head2);
+    const built = buildBlocks(sh, input, thumb, mode, foot.height, limit - head2, photos);
     let blocks: Block[] = [...built.first, ...built.rest];
     let movedText = built.movedList;
     // Split mode: page 1 must hold its sections and the assumptions heading with its "continued" line.

@@ -383,3 +383,21 @@ describe("reserveSlot: a queue of one every interval, refused past maxWait", () 
     expect(starts.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("media entries", () => {
+  it("live in their own store (wiped together if the CarImages subscription ends); everything else stays in the cache", async () => {
+    vi.useRealTimers();
+    const cache = fakeBlobs();
+    const media = fakeBlobs();
+    const kv = kvOnBlobs({ cache, media, slots: fakeBlobs(), geoStore: () => fakeBlobs(), userStore: () => fakeBlobs(), listStores: async () => [], deleteStore: async () => undefined });
+    await kv.set("media/ci/img/ford/f-150/p702/front34/400", new Uint8Array([1, 2]), "image/webp", 60);
+    await kv.set("vpic/GetMakesForVehicleType/car", new Uint8Array([3]), "application/json", 60);
+    expect(media.data.size).toBe(1);
+    expect(cache.data.size).toBe(1);
+    expect((await kv.get("media/ci/img/ford/f-150/p702/front34/400"))?.value).toEqual(new Uint8Array([1, 2]));
+    await kv.delete("media/ci/img/ford/f-150/p702/front34/400");
+    expect(media.data.size).toBe(0);
+    // The stored name is a hash: nothing readable about the vehicle is in it.
+    expect([...cache.data.keys()][0]).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
