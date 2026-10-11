@@ -57,7 +57,8 @@ export function planNormalisation(box: Box3, target: Footprint): Normalisation {
 /** Wrap `root` in two groups that apply `planNormalisation` (the turn inside, then scale and offset). */
 export function normalise(root: Object3D, target: Footprint): Group {
   root.updateMatrixWorld(true);
-  const box = new Box3().setFromObject(root);
+  // Precise: the box of the vertices themselves, not of rotated node boxes (which would leave the model short of its footprint).
+  const box = new Box3().setFromObject(root, true);
   const n = planNormalisation(box, target);
   const yaw = new Group();
   yaw.rotation.y = n.yawRad;

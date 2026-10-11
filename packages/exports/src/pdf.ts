@@ -507,7 +507,9 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const noteW = cw[4]! + (cells[4]!.length === 1 ? cw[5]! : 0) - padX * 2;
     const noteLs = [...(v.brakingNote ? s.lines(v.brakingNote, noteW, "sans", small) : []), ...(v.speedNote ? s.lines(v.speedNote, noteW, "sans", small) : [])];
     const h = Math.max(Math.max(cells[0]!.length, cells[1]!.length, cells[2]!.length, cells[4]!.length) * lh(body), cells[3]!.length * lh(body) + noteLs.length * lh(small)) + padY * 2;
-    return { v, cells, noteLs, h: Math.max(h, bs + (v.paint ? swatchD + swatchGap : 0) + hair * 2) };
+    // The badge's centre sits at padY + max(lh/2, bs/2 − padY/2) (see the row drawing); a swatch hangs under it.
+    const badgeBottom = padY + Math.max(lh(body) / 2, bs / 2 - padY / 2) + bs / 2;
+    return { v, cells, noteLs, h: Math.max(h, bs + hair * 2, v.paint ? badgeBottom + swatchGap + swatchD + padY : 0) };
   });
   const table: Block = {
     h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0), gapBefore: gapBig, kind: "main", name: "Vehicles",

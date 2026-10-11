@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 // Round B colours: the picker on the vehicle card, and the picked paint in the mini map and the top-down diagram.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FACTORY_COLORS, type Scene } from "@csd/core";
+import { FACTORY_COLORS, contrastRatio, hexToRgb01, type Scene } from "@csd/core";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { fakePlaceVehicles, fakeSimulate } from "../src/services/fakes";
 import { Diagram } from "../src/components/Diagram";
 import { PaintChip } from "../src/components/PaintChip";
-import { inkVar, paintStyle } from "../src/lib/paint";
+import { INK, inkVar, paintStyle } from "../src/lib/paint";
 import { all, click, flush, get, key, mount, renderApp, setValue } from "./helpers";
 import { makeServices, tbone } from "./fakes";
 
@@ -70,7 +70,7 @@ describe("the colour picker on the vehicle card", () => {
     await flush(50);
     const dot = get("radio", "Yellow", picker("A")).querySelector<HTMLElement>(".paint-dot")!;
     expect(dot.style.getPropertyValue("--swatch")).toBe(FACTORY_COLORS[11]!.hex);
-    expect(dot.style.getPropertyValue("--paint-ink")).toMatch(/^var\(--color-(surface|text)\)$/);
+    expect([INK.light, INK.dark]).toContain(dot.style.getPropertyValue("--paint-ink"));
   });
 });
 
@@ -111,10 +111,18 @@ describe("the picked paint in the mini map and the diagram", () => {
     } finally { m.unmount(); }
   });
 
-  it("ink falls back to luminance where tokens can't be resolved: dark ink on near-white, light ink on near-black", () => {
-    expect(inkVar("#fdfdfc")).toBe("var(--color-text)");
-    expect(inkVar("#050506")).toBe("var(--color-surface)");
+  it("the ink on paint: dark on near-white, light on near-black, at least 4.5:1 on every factory colour in both themes", () => {
+    expect(inkVar("#fdfdfc")).toBe(INK.dark);
+    expect(inkVar("#050506")).toBe(INK.light);
     expect(paintStyle({ id: "A" })).toEqual({});
+    // The surface and text tokens (design/tokens.css), light / dark. INK.light is surface in light mode and text in dark mode.
+    const THEMES = [{ light: "#FFFFFF", dark: "#0F172A" }, { light: "#F8FAFC", dark: "#0F172A" }];
+    for (const hex of [...FACTORY_COLORS.map((c) => c.hex), "#fdfdfc", "#050506", "#ffffff", "#000000"]) {
+      for (const t of THEMES) {
+        const ink = inkVar(hex) === INK.light ? t.light : t.dark;
+        expect(contrastRatio(hexToRgb01(hex), hexToRgb01(ink)), `${hex} on ${ink}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 
   it("the chip next to a catalog photo says what was picked, and nothing for Not sure", () => {

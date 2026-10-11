@@ -2,7 +2,8 @@
 // Catalog models end to end in the unit world: the service (GLB, fallback, errors, watermark), parsing the synthetic
 // fixture, the hook that swaps models in and frees them (dispose on change and unmount).
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Box3, Vector3, type Mesh } from "three";
 import type { Scene, SimulationResult } from "@csd/core";
@@ -15,7 +16,7 @@ import { fakeSimulate } from "../../src/services/fakes";
 import { flush, mount } from "../helpers";
 import { tbone } from "../fakes";
 
-const BOX = readFileSync(join(process.cwd(), "apps/web/fixtures/models/synthetic-box-car.glb"));
+const BOX = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../fixtures/models/synthetic-box-car.glb"));
 const ab = (b: Buffer): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 const glbResponse = (headers: Record<string, string> = {}) => new Response(ab(BOX), { status: 200, headers: { "content-type": "model/gltf-binary", ...headers } });
 const Q = { year: 2021, make: "Synthetic", model: "Box car" };
@@ -132,10 +133,36 @@ describe("useCatalogModels", () => {
     // The claimant edits the model: the old one is freed and our model shows again (this one has no catalog model).
     m.unmount();
     m = mount(<Probe {...sceneWith("Synthetic", "Other")} load={load} out={out} />);
+    await flush(5);                                 // freed once the closing commit is done
     for (const g of geos) expect(g).toHaveBeenCalledTimes(1);
     await flush(20);
     expect(out.current.size).toBe(0);
     m.unmount();
+  });
+
+  it("a vehicle edited while the viewer stays open: the old model leaves the picture first, then is freed", async () => {
+    const asset: VehicleModelAsset = { bytes: ab(BOX), watermarked: false };
+    const load = vi.fn<ModelLoader>(async (q) => (q.model === "Box car" ? asset : null));
+    const out = { current: new Map() as ReadonlyMap<string, CatalogModel> };
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { createRoot } = await import("react-dom/client");
+    const { act } = await import("react");
+    const root = createRoot(host);
+    act(() => root.render(<Probe {...sceneWith("Synthetic", "Box car")} load={load} out={out} />));
+    await flush(50);
+    const loaded = out.current.get("A")!;
+    const spies: Array<ReturnType<typeof vi.spyOn>> = [];
+    loaded.object.traverse((o) => { if ((o as Mesh).isMesh) spies.push(vi.spyOn((o as Mesh).geometry, "dispose")); });
+    let disposedWhileShown = false;
+    for (const sp of spies) sp.mockImplementation(() => { if (out.current.get("A") === loaded) disposedWhileShown = true; });
+    act(() => root.render(<Probe {...sceneWith("Synthetic", "Other")} load={load} out={out} />));
+    await flush(20);
+    expect(out.current.get("A")).toBeUndefined();
+    for (const sp of spies) expect(sp).toHaveBeenCalledTimes(1);
+    expect(disposedWhileShown).toBe(false);
+    act(() => root.unmount());
+    host.remove();
   });
 
   it("frees a model that arrives after the vehicle changed (never drawn, never leaked)", async () => {

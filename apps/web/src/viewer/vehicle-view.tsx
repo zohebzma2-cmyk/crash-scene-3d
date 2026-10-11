@@ -1,6 +1,6 @@
 // The vehicles in the scene: solid models at the current time, and the dashed rest-pose outlines.
 // Geometry comes from vehicle-models (cached); materials are bound to tokens and disposed on unmount.
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import { Line } from "@react-three/drei";
 import { MeshStandardMaterial, type Color, type Group, type Material } from "three";
 import { vehicleColor, type Paintable, type Pose, type RoadNetwork, type VehicleResult } from "@csd/core";
@@ -25,20 +25,24 @@ export class VehicleMaterials {
     this.taillight = new MeshStandardMaterial({ color: colors["--color-scene-taillight"], emissive: colors["--color-scene-taillight"], emissiveIntensity: 0.5, roughness: 0.3 });
   }
 
-  /**
-   * The body material of vehicle `v`, in `vehicleColor(v)`: its picked paint, or its token colour for "Not sure".
-   * The colour is set only when the paint changes (never per frame); the letter badges and outlines stay in the token.
-   */
-  bodyFor(v: Paintable): MeshStandardMaterial {
-    let m = this.body.get(v.id);
-    if (!m) { m = new MeshStandardMaterial({ roughness: 0.45, metalness: 0.15 }); this.body.set(v.id, m); }
-    const fill = vehicleColor(v, vehicleToken);       // a token name, or the picked "#rrggbb"
-    if (m.userData.fill !== fill) {
-      if (fill.startsWith("--")) m.color.copy(this.colors[fill as SceneToken]);
-      else m.color.set(fill);                          // sRGB hex to the working colour space
-      m.userData.fill = fill;
-    }
+  /** The body material of vehicle `id` (created once; its colour is set by `paintBody`, after the commit). */
+  bodyFor(id: string): MeshStandardMaterial {
+    let m = this.body.get(id);
+    if (!m) { m = new MeshStandardMaterial({ color: this.colors[vehicleToken(id)], roughness: 0.45, metalness: 0.15 }); this.body.set(id, m); }
     return m;
+  }
+
+  /** The colour key `vehicleColor(v)` gives: a token name for "Not sure", or the picked "#rrggbb". */
+  static fillOf(v: Paintable): string {
+    return vehicleColor(v, vehicleToken);
+  }
+
+  /** Set a body material to `fill` (a token name or a hex): only when it changes, never per frame. */
+  paintBody(m: MeshStandardMaterial, fill: string): void {
+    if (m.userData.fill === fill) return;
+    if (fill.startsWith("--")) m.color.copy(this.colors[fill as SceneToken]);
+    else m.color.set(fill);                          // sRGB hex to the working colour space
+    m.userData.fill = fill;
   }
 
   dispose(): void {
@@ -88,10 +92,14 @@ export function VehicleMesh({ v, paint, catalog, pose, mats, terrain, register, 
     for (const k of ["body", "glass", "headlight", "taillight", "tire"] as const) if (parts[k] !== model.parts[k]) parts[k].dispose();
   }, [parts, model]);
   const ground = heightAt(terrain ?? null, { x: pose.xM, y: pose.yM });
-  const body = mats.bodyFor(paint ?? { id: v.id });
-  const fill = body.userData.fill as string;
-  // The catalog model takes the same colour as our body material (vehicleColor), set when the paint or the model changes.
-  useEffect(() => { if (catalog) applyTint(catalog.plan, body.color); }, [catalog, body, fill]);
+  const body = mats.bodyFor(v.id);
+  const fill = VehicleMaterials.fillOf(paint ?? { id: v.id });
+  // Our body and the catalog model take vehicleColor(v) after the commit and before the next frame (a layout effect):
+  // render stays pure, and no frame shows a catalog model in its own paint.
+  useLayoutEffect(() => {
+    mats.paintBody(body, fill);
+    if (catalog) applyTint(catalog.plan, body.color);
+  }, [mats, body, fill, catalog]);
   return (
     <group ref={(g) => register?.(v.id, g)} position={toThree({ x: pose.xM, y: pose.yM }, ground)} rotation={[0, headingToYaw(pose.headingRad), 0]}>
       {catalog ? <primitive object={catalog.object} /> : (

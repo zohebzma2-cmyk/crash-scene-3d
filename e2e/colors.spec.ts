@@ -14,7 +14,8 @@ const BLUE = FACTORY_COLORS.find((c) => c.name === "Blue")!;
 const SHOTS = process.env.COLORS_SHOTS;
 
 async function shot(page: Page, name: string, project: string): Promise<void> {
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/colors-${name}-${project}.png` });
+  // caret: "initial" — hiding the caret makes Playwright inject a <style>, which the page's CSP refuses (WebKit reports it).
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/colors-${name}-${project}.png`, caret: "initial" });
 }
 
 type Hue = "red" | "blue";

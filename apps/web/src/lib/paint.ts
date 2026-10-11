@@ -4,46 +4,27 @@
 // for contrast). Stylesheets read `var(--vehicle-paint, var(--vehicle))`, so with no paint they draw the
 // vehicle token exactly as before. This is the one place app code turns a paint into CSS.
 import type { CSSProperties } from "react";
-import { contrastRatio, inkOn, paintOf, relativeLuminance, hexToRgb01, type Paintable } from "@csd/core";
-import { resolveColor } from "./dom";
-
-type Rgb = readonly [number, number, number];
-
-/** "rgb(r, g, b)" / "rgb(r g b / a)" / "color(srgb r g b)" to 0..1 channels; null when unreadable (jsdom). */
-export function parseRgb(css: string): Rgb | null {
-  const rgb = css.match(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
-  if (rgb) return [Number(rgb[1]) / 255, Number(rgb[2]) / 255, Number(rgb[3]) / 255];
-  const srgb = css.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-  if (srgb) return [Number(srgb[1]), Number(srgb[2]), Number(srgb[3])];
-  return null;
-}
-
-/** The two inks a glyph on paint can take: the surface and text tokens (one light, one dark, in either theme). */
-const INKS = { light: "--color-surface", dark: "--color-text" } as const;
+import { hexToRgb01, paintOf, relativeLuminance, type Paintable } from "@csd/core";
 
 /**
- * The ink token for a glyph, check mark or line drawn on `hex`, as `var(--…)`: whichever of the surface and
- * text tokens has more contrast against the paint in the current theme. Where tokens can't be resolved (tests
- * without CSS) it decides by the paint's luminance alone.
+ * Below this paint luminance the light ink reads better than the dark one: about the crossover between the white
+ * surface and the near-black text token (the two inks; see `inkVar`).
+ */
+export const LIGHT_INK_BELOW = 0.2;
+
+/** The light and the dark ink in either theme: the surface and text tokens swap places in dark mode, so each is a light-dark() pair. */
+export const INK = {
+  light: "light-dark(var(--color-surface), var(--color-text))",
+  dark: "light-dark(var(--color-text), var(--color-surface))",
+} as const;
+
+/**
+ * The ink for a glyph, check mark or line drawn on `hex`. Decided by the paint alone (no DOM reads, so it costs
+ * nothing per render) and written as a light-dark() pair, so it stays right when the theme flips without a
+ * re-render. At least 4.5:1 on every factory colour and on near-white and near-black paints (test/paint.test.tsx).
  */
 export function inkVar(hex: string): string {
-  const surface = typeof document !== "undefined" ? parseRgb(resolveColor(INKS.light)) : null;
-  const text = typeof document !== "undefined" ? parseRgb(resolveColor(INKS.dark)) : null;
-  if (surface && text) {
-    const pick = inkOn<"s" | "t">(hex, "s", "t", (k) => (k === "s" ? surface : text));
-    // `inkOn` picks the token with more contrast; when surface is the dark one (dark theme), that's still right.
-    return `var(${pick.ink === "s" ? INKS.light : INKS.dark})`;
-  }
-  const l = relativeLuminance(hexToRgb01(hex));
-  // White text beats near-black text below this luminance (about the crossover between a white surface and the near-black text token).
-  return l < 0.2 ? `var(${INKS.light})` : `var(${INKS.dark})`;
-}
-
-/** Contrast of the chosen ink on the paint, for tests and the dev overlay (null where tokens can't be resolved). */
-export function inkContrast(hex: string): number | null {
-  const css = inkVar(hex).slice(4, -1);
-  const rgb = parseRgb(resolveColor(css));
-  return rgb ? contrastRatio(hexToRgb01(hex), rgb) : null;
+  return relativeLuminance(hexToRgb01(hex)) < LIGHT_INK_BELOW ? INK.light : INK.dark;
 }
 
 /** Inline custom properties for a paint hex: the fill and the ink drawn on it. */

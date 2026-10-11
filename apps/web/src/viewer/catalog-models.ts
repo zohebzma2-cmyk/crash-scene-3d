@@ -32,20 +32,26 @@ export function catalogWants(scene: Scene, sim: SimulationResult): Want[] {
 export function useCatalogModels(scene: Scene, sim: SimulationResult, load: ModelLoader | undefined): ReadonlyMap<string, CatalogModel> {
   const [models, setModels] = useState<ReadonlyMap<string, CatalogModel>>(() => new Map());
   const live = useRef(new Map<string, Live>());
+  /** Models taken out of `models`: freed only after the commit that removed them, so no frame draws a freed model. */
+  const dropped = useRef<CatalogModel[]>([]);
+  /** The deferred "free everything" of an unmount; a remount (React strict mode in dev) cancels it and keeps the models. */
+  const closing = useRef<number | null>(null);
   const wants = useMemo(() => (load ? catalogWants(scene, sim) : []), [load, scene, sim]);
   const wantKey = wants.map((w) => `${w.id}:${w.key}`).join(";");
 
   useEffect(() => {
+    if (closing.current !== null) { window.clearTimeout(closing.current); closing.current = null; }
     const cur = live.current;
     const publish = () => setModels(new Map([...cur].flatMap(([id, e]) => (e.model ? [[id, e.model] as const] : []))));
-    let dropped = false;
+    let changed = false;
     for (const [id, e] of [...cur]) {
-      if (wants.some((w) => w.id === id && w.key === e.key)) continue;
+      // Kept: still wanted, and either loaded or still loading (an unmount aborted the ones in flight).
+      if (wants.some((w) => w.id === id && w.key === e.key) && (e.model || !e.ctrl.signal.aborted)) continue;
       e.ctrl.abort();
-      if (e.model) { disposeModel(e.model.object); dropped = true; }
+      if (e.model) { dropped.current.push(e.model); changed = true; }
       cur.delete(id);
     }
-    if (dropped) publish();
+    if (changed) publish();
     if (!load) return;
     for (const w of wants) {
       if (cur.has(w.id)) continue;
@@ -54,10 +60,15 @@ export function useCatalogModels(scene: Scene, sim: SimulationResult, load: Mode
       const { signal } = entry.ctrl;
       load(w.q, signal)
         .then((asset) => (asset ? parseGlb(asset.bytes, signal).then((root): CatalogModel => {
-          const object = normalise(root, w.foot);
-          object.traverse((o) => { if ((o as Mesh).isMesh) (o as Mesh).castShadow = true; });
-          fitToSceneLighting(object);
-          return { object, plan: planTint(object), watermarked: asset.watermarked };
+          try {
+            const object = normalise(root, w.foot);
+            object.traverse((o) => { if ((o as Mesh).isMesh) (o as Mesh).castShadow = true; });
+            fitToSceneLighting(object);
+            return { object, plan: planTint(object), watermarked: asset.watermarked };
+          } catch (e) {
+            disposeModel(root);
+            throw e;
+          }
         }) : null))
         .then((m) => {
           if (!m) return;
@@ -71,10 +82,26 @@ export function useCatalogModels(scene: Scene, sim: SimulationResult, load: Mode
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantKey, load]);
 
+  // Free the models a commit has taken out of the picture.
+  useEffect(() => {
+    if (!dropped.current.length) return;
+    const list = dropped.current;
+    dropped.current = [];
+    for (const m of list) disposeModel(m.object);
+  }, [models]);
+
   useEffect(() => () => {
-    for (const e of live.current.values()) { e.ctrl.abort(); if (e.model) disposeModel(e.model.object); }
-    live.current.clear();
-    setModels(new Map());   // a remount (React strict mode) must not draw the freed models
+    const cur = live.current;
+    for (const e of cur.values()) if (!e.model) e.ctrl.abort();
+    // The picture is going away (the Canvas with it): free everything once this commit is done, unless a remount
+    // (strict mode) takes the models back first.
+    closing.current = window.setTimeout(() => {
+      closing.current = null;
+      for (const e of cur.values()) { e.ctrl.abort(); if (e.model) disposeModel(e.model.object); }
+      cur.clear();
+      for (const m of dropped.current) disposeModel(m.object);
+      dropped.current = [];
+    }, 0);
   }, []);
 
   return models;

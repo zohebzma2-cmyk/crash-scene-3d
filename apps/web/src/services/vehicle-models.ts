@@ -24,6 +24,9 @@ export interface VehicleModelsService {
   load(q: VehicleModelQuery, signal?: AbortSignal): Promise<VehicleModelAsset | null>;
 }
 
+/** How many fetched models the session keeps (each up to MAX_MODEL_BYTES). */
+export const CACHE_MODELS = 4;
+
 /** Largest GLB we accept (the provider's models are ~1.4 MB). */
 export const MAX_MODEL_BYTES = 12_000_000;
 
@@ -46,6 +49,8 @@ export function createVehicleModelsService(fetchFn: FetchLike, timeoutMs = API_T
       if (!p) {
         p = fetchModel(fetchFn, q, timeoutMs);
         cache.set(key, p);
+        // A few models are kept for the session (a viewer reopened, two vehicles of the same model); older ones go.
+        while (cache.size > CACHE_MODELS) cache.delete(cache.keys().next().value!);
         // A failure isn't remembered: the next viewer opening asks again.
         void p.then((r) => { if (!r) cache.delete(key); });
       }

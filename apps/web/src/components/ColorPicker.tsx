@@ -21,7 +21,7 @@ const CUSTOM_START = FACTORY_COLORS.find((c) => c.name === "Gray")!.hex;
 export function paintChoice(color: SceneVehicle["color"]): Choice {
   const p = color ? paintOf({ id: "", color }) : null;
   if (!p) return UNSURE;
-  const f = FACTORY_COLORS.find((c) => c.name === p.name && c.hex.toLowerCase() === p.hex.toLowerCase());
+  const f = FACTORY_COLORS.find((c) => c.name.toLowerCase() === p.name.trim().toLowerCase() && c.hex.toLowerCase() === p.hex.toLowerCase());
   return f ? keyOf(f) : CUSTOM;
 }
 
@@ -37,11 +37,11 @@ export function ColorPicker({ vehicle: v, onChange }: ColorPickerProps) {
   const ids = useId();
   const choice = paintChoice(v.color);
   const current = paintOf(v);
-  const customHex = choice === CUSTOM && current ? current.hex.toLowerCase() : CUSTOM_START;
+  const customHex = current ? current.hex.toLowerCase() : CUSTOM_START;
   const pick = (c: Choice) => {
     if (c === UNSURE) onChange(null);
     else if (c === CUSTOM) onChange(customPaint(customHex));
-    else onChange(FACTORY_COLORS.find((f) => keyOf(f) === c) ?? null);
+    else { const f = FACTORY_COLORS.find((x) => keyOf(x) === c); onChange(f ? { name: f.name, hex: f.hex } : null); }
   };
   return (
     <fieldset className="group paint-picker" data-paint-picker={v.id}>
@@ -54,7 +54,7 @@ export function ColorPicker({ vehicle: v, onChange }: ColorPickerProps) {
           </Radio>
         ))}
         <Radio value={CUSTOM} className="paint-swatch" data-paint={CUSTOM_PAINT_NAME}>
-          <span className="paint-dot is-custom" style={swatchStyle(customHex)} aria-hidden="true">{choice === CUSTOM ? <Icon name="check" className="icon-sm" /> : <Icon name="plus" className="icon-sm" />}</span>
+          <span className="paint-dot is-custom" style={choice === CUSTOM ? swatchStyle(customHex) : undefined} aria-hidden="true">{choice === CUSTOM ? <Icon name="check" className="icon-sm" /> : <Icon name="plus" className="icon-sm" />}</span>
           <span className="paint-name">Custom</span>
         </Radio>
         <Radio value={UNSURE} className="paint-swatch" data-paint="unsure" aria-label="Not sure of the colour">
