@@ -89,3 +89,38 @@
 .gate-fixes .refusal-status { margin: var(--space-0); }
 .warnings .link-btn { color: inherit; align-self: flex-start; }
 
+
+/* ---------- Colour picker (round B) ----------
+   The swatch fill is the claimant's data: it arrives as the inline custom property --swatch (and the check mark's
+   ink, chosen for contrast, as --paint-ink); see lib/paint.ts. Everything else here is a token. */
+.paint-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--size-tile-min), 1fr)); gap: var(--space-2); }
+.paint-swatch {
+  display: flex; align-items: center; gap: var(--space-2);
+  min-height: var(--size-touch); padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm); border: var(--size-border) solid var(--color-border-strong);
+  background-color: var(--color-surface); color: var(--color-text-secondary);
+  font-size: var(--text-xs); font-weight: var(--weight-medium); text-align: start; cursor: pointer;
+}
+.paint-swatch:hover { border-color: var(--color-text-tertiary); color: var(--color-text); }
+.paint-swatch[aria-checked="true"] { border-color: var(--color-selected-ring); border-width: var(--size-focus-ring); background-color: var(--color-brand-tint); color: var(--color-brand-tint-text); font-weight: var(--weight-bold); }
+.paint-dot {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: var(--size-icon); height: var(--size-icon); border-radius: var(--radius-full);
+  background-color: var(--swatch, var(--color-surface)); color: var(--paint-ink, var(--color-text));
+  /* In dark mode the plain border vanishes against Black and Dark blue: the dots take the stronger tertiary text colour there. */
+  border: var(--size-border) solid light-dark(var(--color-border-strong), var(--color-text-tertiary));
+}
+.paint-dot.is-unsure { border-style: dashed; }
+.paint-dot .icon { width: var(--size-icon-sm); height: var(--size-icon-sm); }
+.paint-name { min-width: var(--space-0); overflow-wrap: anywhere; }
+.paint-custom { display: inline-flex; align-items: center; gap: var(--space-3); min-height: var(--size-touch); margin-top: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-medium); cursor: pointer; }
+.paint-custom input { width: var(--size-touch); height: var(--size-touch); padding: var(--space-0); border: var(--size-border) solid var(--color-border-strong); border-radius: var(--radius-xs); background-color: var(--color-surface); cursor: pointer; }
+.paint-picker .hint { margin-top: var(--space-2); }
+
+/* The picked colour next to a catalog photo (round B): a chip, so a photo in the catalog's own paint never misleads. */
+.paint-chip { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-full); border: var(--size-border) solid var(--color-border-strong); background-color: var(--color-surface); color: var(--color-text); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+.paint-chip .paint-dot { width: var(--size-icon-sm); height: var(--size-icon-sm); }
+
+/* A catalog photo with a picked colour: the photo, and under it the "Picked: Red" chip (round B). */
+.vehicle-photo-wrap { flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+.vehicle-photo-chip { white-space: nowrap; }

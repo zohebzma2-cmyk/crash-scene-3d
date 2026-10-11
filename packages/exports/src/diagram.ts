@@ -2,7 +2,7 @@
 // simulation result (and the road layout when there is one). The PDF and the
 // PNG both replay this plan, so they show the same picture. World frame:
 // x east, y north, meters. Output frame: y down, in the box's units.
-import { M_TO_FT, buildRoadArt, formatDistance, placeStreetNames, streetNameSpots } from "@csd/core";
+import { M_TO_FT, buildRoadArt, formatDistance, inkOn, placeStreetNames, streetNameSpots, vehicleColor as bodyColor } from "@csd/core";
 import type { Pose, RoadNetwork, SimulationResult, Vec2, VehicleResult, VehicleType } from "@csd/core";
 import { roundedRectPts, type Measure, type Pt, type Prim } from "./draw";
 import { MIN_DRAWN_MOVE_M, markerKeys } from "./model";
@@ -39,6 +39,11 @@ export interface DiagramOptions {
   readonly obstacles?: readonly Rect[];
   /** Space kept free of vehicles, markers and the impact ring (cards drawn over the picture), output units. */
   readonly insets?: { readonly top?: number; readonly right?: number; readonly bottom?: number; readonly left?: number };
+  /**
+   * Picked paint by vehicle letter ("#rrggbb", from `paintByLetter(model)`). It fills the body at rest through core's
+   * `vehicleColor()`; the outline, the ghost, the path and the letter stay in the vehicle token colour.
+   */
+  readonly paint?: Readonly<Record<string, string>>;
 }
 
 export interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
@@ -136,14 +141,15 @@ function detailLines(type: VehicleType, L: number, W: number): Array<Array<[numb
   }
 }
 
-function drawVehicle(prims: Prim[], t: Transform, rv: VehicleResult, pose: Pose, opts: { fill: string | null; outline?: string; lines: boolean; minLine: number }) {
+function drawVehicle(prims: Prim[], t: Transform, rv: VehicleResult, pose: Pose, opts: { fill: string | null; outline?: string; lines: boolean; minLine: number; painted?: boolean }) {
   const body = bodyPts(t, pose, rv.type, rv.lengthM, rv.widthM);
-  const base = vehicleColor(rv.id);
+  const base = opts.fill ?? vehicleColor(rv.id);
   prims.push({ k: "poly", pts: body, closed: true, ...(opts.fill ? { fill: opts.fill } : {}), ...(opts.outline ? { stroke: { color: opts.outline, width: Math.max(opts.minLine, 0.14 * t.s), join: "round" as const } } : {}) });
   if (!opts.lines) return;
   const f: Pt = [Math.sin(pose.headingRad), Math.cos(pose.headingRad)];
   const r: Pt = [Math.cos(pose.headingRad), -Math.sin(pose.headingRad)];
-  const lineColor = mix(color("color-surface"), base, 0.85);
+  // On a picked paint the window lines take whichever of the surface and text inks reads better on it.
+  const lineColor = opts.painted ? inkOn(base, color("color-surface"), color("color-text")).ink : mix(color("color-surface"), base, 0.85);
   for (const ln of detailLines(rv.type, rv.lengthM, rv.widthM)) {
     const pts = ln.map(([u, d]) => { const v = rv.lengthM / 2 - d; return toPx(t, [pose.xM + u * r[0] + v * f[0], pose.yM + u * r[1] + v * f[1]]); });
     prims.push({ k: "poly", pts, stroke: { color: lineColor, width: Math.max(opts.minLine * 0.8, 0.12 * t.s), cap: "round", join: "round" } });
@@ -329,8 +335,12 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
       drawVehicle(prims, t, rv, rv.impactPose, { fill: null, outline: g, lines: false, minLine });
     }
   }
+  const paint = opts.paint ?? {};
   for (const rv of sim.vehicles) {
-    drawVehicle(prims, t, rv, rv.restPose, { fill: vehicleColor(rv.id), lines: true, minLine });
+    const fill = bodyColor({ id: rv.id, color: paint[rv.id] ? { name: rv.id, hex: paint[rv.id]! } : null }, vehicleColor);
+    const painted = fill !== vehicleColor(rv.id);
+    // A painted body keeps an outline in its token colour, so the vehicle is told apart by its letter colour, never by paint.
+    drawVehicle(prims, t, rv, rv.restPose, { fill, lines: true, minLine, painted, ...(painted ? { outline: vehicleColor(rv.id) } : {}) });
   }
 
   // Measurement lines (stopping at the letter circles), then numbered markers kept off the vehicle bodies, then the letters on top.

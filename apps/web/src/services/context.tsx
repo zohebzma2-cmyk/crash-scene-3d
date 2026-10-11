@@ -12,3 +12,8 @@ export function useServices(): Services {
   if (!s) throw new Error("ServicesProvider is missing.");
   return s;
 }
+
+/** The services when a provider is there, else null (components that also render on their own in tests). */
+export function useOptionalServices(): Services | null {
+  return useContext(ServicesContext);
+}

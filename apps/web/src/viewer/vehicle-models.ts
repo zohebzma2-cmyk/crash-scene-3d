@@ -40,7 +40,7 @@ type Slot = (typeof SLOTS)[number];
 /** Gap between the body's nose and the bumper/lights, so their faces never share a plane with the body's. */
 const NOSE_M = 0.03;
 /** Every model is this much smaller than its footprint on each side: absorbs the few cm of overlap the physics lets two touching boxes have. */
-const SKIN_M = 0.02;
+export const SKIN_M = 0.02;
 /** Wheels sit this far inside the body side. */
 const WHEEL_INSET_M = 0.04;
 /** How far the mirrors stop short of the footprint edge. */

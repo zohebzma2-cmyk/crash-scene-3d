@@ -3,7 +3,8 @@
 // (`ready`) and typing has settled. While it loads: our type icon with a spinner. With no photo (none known,
 // no keys, over quota, offline): our type icon, quietly. Never an error.
 import { useEffect, useState } from "react";
-import { PRESETS, vehicleName, type SceneVehicle } from "@csd/core";
+import { PRESETS, paintOf, vehicleName, type SceneVehicle } from "@csd/core";
+import { PaintChip } from "./PaintChip";
 import { Icon } from "../icons/Icon";
 import { useServices } from "../services/context";
 import { MEDIA_SETTLE_MS } from "./MakeLogo";
@@ -33,10 +34,18 @@ export function VehiclePhoto({ vehicle: v, ready }: VehiclePhotoProps) {
   const src = current?.src ?? null;
   // "none": not asked (no model picked yet); "icon": asked, and there is no photo to show.
   const state = url === null ? "none" : loading ? "loading" : src ? "photo" : "icon";
-  return (
+  const photo = (
     <div className="vehicle-photo" data-photo={state} aria-busy={loading || undefined}>
       {src ? <img src={src} alt={`Stock photo of a ${vehicleName(v) ?? "vehicle"}`} /> : <Icon name={PRESETS[v.type].icon} className="icon-lg" />}
       {loading ? <span className="spinner" aria-hidden="true" /> : null}
+    </div>
+  );
+  // The catalog photo is in the catalog's own paint: with a colour picked, a chip under it says which one was (round B).
+  if (!src || !paintOf(v)) return photo;
+  return (
+    <div className="vehicle-photo-wrap">
+      {photo}
+      <PaintChip vehicle={v} className="vehicle-photo-chip" />
     </div>
   );
 }

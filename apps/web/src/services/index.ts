@@ -22,8 +22,14 @@ import { createFixMemory } from "../fixer/memory";
 import { createVehiclesService } from "./vehicles";
 import { createMediaService } from "./media";
 import { createFixtureMediaFetch, fixtureMediaMode } from "./media-fixtures";
+import { createFixtureModelFetch, createVehicleModelsService } from "./vehicle-models";
+
+// Fixture GLBs (scripts/make-fixture-glb.mjs) exist only in a dev server or a VITE_FIXTURES=1 build, like the map data.
+const FIXTURE_BUILD = import.meta.env.DEV || import.meta.env.VITE_FIXTURES === "1";
+const fixtureModels = (FIXTURE_BUILD ? import.meta.glob("../../fixtures/models/*.glb", { query: "?url", import: "default" }) : {}) as Record<string, () => Promise<string>>;
 
 export * from "./types";
+export type { VehicleModelAsset, VehicleModelQuery, VehicleModelsService } from "./vehicle-models";
 export { fixturesAllowed, fixturesRequested };
 
 export interface CreateServicesOptions {
@@ -66,7 +72,8 @@ export function createServices(opts: CreateServicesOptions): Services {
     ? () => new Worker(new URL("../fixer/fixer.worker.ts", import.meta.url), { type: "module", name: "fixer" }) as unknown as WorkerLike
     : null;
   const search = opts.search ?? (typeof window !== "undefined" ? window.location.search : "");
-  const media = createMediaService(fx ? createFixtureMediaFetch(fixtureMediaMode(search)) : fetchFn);
+  const mediaFetch = fx ? createFixtureMediaFetch(fixtureMediaMode(search)) : fetchFn;
+  const media = createMediaService(mediaFetch);
   return {
     mode: fx ? "fixtures" : "live",
     media,
@@ -85,5 +92,7 @@ export function createServices(opts: CreateServicesOptions): Services {
     }),
     pdf: createPdfPreviewService(),
     examples: createExamplesService(),
+    // The one client of the model route; in fixtures mode the synthetic GLBs answer first, then images' media fixtures.
+    vehicleModels: createVehicleModelsService(fx ? createFixtureModelFetch(fixtureModels, mediaFetch) : fetchFn),
   };
 }

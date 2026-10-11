@@ -1,9 +1,10 @@
 // The picture on the Review step: the 3D viewer when the browser has WebGL,
 // otherwise the top-down diagram (ViewerSlot), which is also shown while the
 // 3D code loads. three.js is loaded lazily so the other steps stay light.
-import { Suspense, forwardRef, lazy, useCallback, useImperativeHandle, useRef, useState } from "react";
+import { Suspense, forwardRef, lazy, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ViewerHandle } from "../viewer/types";
 import { ViewerSlot, type ViewerSlotProps } from "./ViewerSlot";
+import { useOptionalServices } from "../services/context";
 
 const Viewer = lazy(() => import("../viewer/Viewer").then((m) => ({ default: m.Viewer })));
 
@@ -42,11 +43,14 @@ export const SceneView = forwardRef<ViewerHandle | null, SceneViewProps>(functio
     },
     handleKey: (e) => inner.current?.handleKey?.(e) ?? false,
   }), [webgl]);
+  // Catalog 3D models (round B), when the app has the service: the viewer swaps them in once loaded.
+  const models = useOptionalServices()?.vehicleModels;
+  const loadModel = useMemo(() => (models ? models.load.bind(models) : undefined), [models]);
   const fallback = <ViewerSlot {...props} onReady={webgl ? undefined : props.onReady} {...(onSelectVehicle ? { onSelectVehicle } : {})} />;
   if (!webgl) return fallback;
   return (
     <Suspense fallback={fallback}>
-      <Viewer ref={inner} {...props} onReady={handleReady} showMeasureValues={!phone} {...(onSelectVehicle ? { onSelectVehicle } : {})} />
+      <Viewer ref={inner} {...props} onReady={handleReady} showMeasureValues={!phone} {...(onSelectVehicle ? { onSelectVehicle } : {})} {...(loadModel ? { loadModel } : {})} />
     </Suspense>
   );
 });

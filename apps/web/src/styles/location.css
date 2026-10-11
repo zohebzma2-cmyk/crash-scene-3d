@@ -98,11 +98,13 @@
 .veh-marker {
   position: relative; display: flex; align-items: center; justify-content: center;
   width: 100%; height: 100%;
-  border-radius: var(--radius-full); background: var(--color-surface); box-shadow: var(--shadow-md);
-  border: var(--size-focus-ring) solid var(--vehicle); color: var(--vehicle);
+  border-radius: var(--radius-full); background-color: var(--vehicle-paint, var(--color-surface)); box-shadow: var(--shadow-md);
+  border: var(--size-focus-ring) solid var(--vehicle); color: var(--paint-ink, var(--vehicle));
 }
+/* With a picked paint (round B) the disc is the paint and the glyph takes the ink chosen for contrast (lib/paint.ts);
+   the ring and the letter badge stay in the vehicle token colour, so identity never depends on paint. */
 .veh-marker svg { width: var(--size-icon); height: var(--size-icon); }
-.veh-marker b { position: absolute; top: calc(var(--space-2) * -1); right: calc(var(--space-2) * -1); width: var(--space-5); height: var(--space-5); border-radius: var(--radius-full); background: var(--vehicle); color: var(--color-text-on-brand); font-size: var(--text-xs); display: flex; align-items: center; justify-content: center; }
+.veh-marker b { position: absolute; top: calc(var(--space-2) * -1); right: calc(var(--space-2) * -1); width: var(--space-5); height: var(--space-5); border-radius: var(--radius-full); background: var(--vehicle); color: var(--color-text-on-brand); font-size: var(--text-xs); display: flex; align-items: center; justify-content: center; outline: var(--size-border) solid var(--color-surface); }
 
 
 /* Full screen: controls stay clear of the notch and the home bar. */

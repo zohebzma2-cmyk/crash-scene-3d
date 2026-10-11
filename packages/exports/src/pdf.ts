@@ -14,7 +14,7 @@ import { planDiagram, planPinStreetLabels, planRoadOutline, scaleBars, type Box 
 import { thumbnailMetersPerPixel } from "./png-meta";
 import { roundedRectPts, wrapText, type FontKey, type Pt } from "./draw";
 import { WORDMARK, drawMarkPdf, lockup } from "./logo";
-import { HIT_ON_MARK, type ReportModel } from "./model";
+import { HIT_ON_MARK, paintByLetter, type ReportModel } from "./model";
 import { PdfCanvas, type Extent, type PdfFonts, type Region } from "./pdf-canvas";
 import { PX_TO_PT, color, px, vehicleColor } from "./style";
 
@@ -437,7 +437,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       }
       const diaBox: Box = { x: rx, y: y + headingH(), w: colW, h: diaH };
       const diaOpts = {
-        box: diaBox, letters: true, markers: true, streetLabels: true, ghosts: true,
+        box: diaBox, letters: true, markers: true, streetLabels: true, ghosts: true, paint: paintByLetter(model),
         minTextSize: MIN_DIAGRAM_TEXT_PT, minLine: hair * 0.8, minTagRadius: MIN_DIAGRAM_TEXT_PT * 0.8,
       };
       // The north arrow and the scale bars sit on one chip in a corner of the diagram. The picture is planned once to
@@ -583,9 +583,12 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   const photoHeadLs = photoW > 0 ? s.lines(STOCK_PHOTO_LABEL, photoW - padX * 2, "sansBold", small) : [];
   const tHeadH = Math.max(...headLs.map((l) => l.length), photoHeadLs.length) * lh(small) + padY * 2;
   const bs = Math.min(cw[0]! - padX, px("space-5") * PX_TO_PT * Math.min(1, 0.6 + pad * 0.4));
+  // Paint swatch under the letter badge (the badge itself stays in the vehicle token colour).
+  const swatchD = bs * 0.6, swatchGap = hair * 3;
   const rows = model.vehicles.map((v) => {
     const cells = [
-      s.lines(v.name, cw[1]! - padX * 2, "sans", body),
+      // The picked colour is named after the vehicle ("Honda Accord · Red") and gets a swatch under the letter.
+      s.lines(v.paint ? `${v.name} · ${v.paint.label}` : v.name, cw[1]! - padX * 2, "sans", body),
       s.lines(v.typeWeight, cw[2]! - padX * 2, "sans", body),
       s.lines(v.direction, cw[3]! - padX * 2, "sans", body),
       s.lines(v.speed, cw[4]! - padX * 2, "mono", body),
@@ -596,7 +599,9 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const noteLs = [...(v.brakingNote ? s.lines(v.brakingNote, noteW, "sans", small) : []), ...(v.speedNote ? s.lines(v.speedNote, noteW, "sans", small) : [])];
     const h = Math.max(Math.max(cells[0]!.length, cells[1]!.length, cells[2]!.length, cells[4]!.length) * lh(body), cells[3]!.length * lh(body) + noteLs.length * lh(small)) + padY * 2;
     const photo = photos.get(v.id) ?? null;
-    return { v, cells, noteLs, photo, h: Math.max(h, bs + hair * 2, photo ? photoBoxH + padY * 2 : 0) };
+    // The badge's centre sits at padY + max(lh/2, bs/2 − padY/2) (see the row drawing); a swatch hangs under it.
+    const badgeBottom = padY + Math.max(lh(body) / 2, bs / 2 - padY / 2) + bs / 2;
+    return { v, cells, noteLs, photo, h: Math.max(h, bs + hair * 2, photo ? photoBoxH + padY * 2 : 0, v.paint ? badgeBottom + swatchGap + swatchD + padY : 0) };
   });
   const footLs = [
     ...model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small)),
@@ -617,6 +622,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
           const cc: Pt = [cx[0]! + cw[0]! / 2, rowY + padY + Math.max(lh(body) / 2, bs / 2 - padY / 2)];
           c.circle(cc, bs / 2, vehicleColor(r.v.id));
           c.text({ k: "text", at: [cc[0], cc[1] + body * 0.3], text: r.v.id, font: "sansBold", size: Math.max(MIN_TEXT_PT, body * 0.85), color: color("color-text-on-brand"), anchor: "middle" });
+          if (r.v.paint) c.circle([cc[0], cc[1] + bs / 2 + swatchGap + swatchD / 2], swatchD / 2, r.v.paint.hex, { color: color("color-border-strong"), width: hair });
           c.poly([[M, rowY + r.h], [M + CW, rowY + r.h]], false, undefined, { color: color("color-border"), width: hair });
           if (r.photo) {
             const f = photoFit(r.photo);

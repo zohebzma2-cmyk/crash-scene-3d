@@ -1606,6 +1606,27 @@ describe("the PDF \"Hit on\" column (owner, 2026-10-10)", () => {
       expect(tableLines(read), name).toEqual(before[name]);
     }
   }, 60_000);
+
+  it("round B colours: with no colour the examples' table is the snapshot; a picked colour only names itself and adds a swatch, every column keeps its edge", async () => {
+    const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
+    const before = JSON.parse(readFileSync(new URL("./data/table-text-2deab93.json", import.meta.url), "utf8")) as Record<string, string[]>;
+    for (const [name, { scene, sim }] of Object.entries(real)) {
+      expect(scene.vehicles.every((v) => v.color == null), `${name} has no colour`).toBe(true);
+      const plain = await makePdf(scene, sim);
+      expect(tableLines(plain.read), name).toEqual(before[name]);
+      const painted: Scene = { ...scene, vehicles: scene.vehicles.map((v) => ({ ...v, color: { name: "Red", hex: "#b3151b" } })) };
+      const red = await makePdf(painted, sim);
+      // Column edges unchanged: the swatch sits under the letter (column 0) and the name wraps in its own column,
+      // so no column, least of all "Hit on", gives up room. Only the rows may grow.
+      const a = red.r.report[0]!.table!.cols, p = plain.r.report[0]!.table!.cols;
+      a.forEach((x, i) => expect(x, `${name} column edge ${i}`).toBeCloseTo(p[i]!, 6));
+      expect(countOf(norm(red.read.text), "· Red"), name).toBe(scene.vehicles.length);
+      // The rest of the table reads the same once the colour words are taken out (the name may wrap "· Red" onto its next line).
+      // Words in reading order without the cell separators, which follow the line layout.
+      const strip = (ls: string[]) => norm(ls.join(" ").replace(/ ?· Red/g, "").replace(/(?<!\|) ·(?= \|)/g, "").replace(/ Red\b/g, "").replace(/\|/g, " "));
+      expect(strip(tableLines(red.read)), name).toBe(strip(before[name]!));
+    }
+  }, 90_000);
 });
 
 describe("street names at the pin on the PDF map (owner, 2026-10-10)", () => {

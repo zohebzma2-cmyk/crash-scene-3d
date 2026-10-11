@@ -12,6 +12,7 @@ import type { FixMemory } from "../fixer/memory";
 import type { MediaService } from "./media";
 
 export type { MediaAnswer, MediaService, VehicleRef } from "./media";
+import type { VehicleModelsService } from "./vehicle-models";
 
 export type ServiceErrorCode = "busy" | "timeout" | "upstream" | "bad-request" | "not-found" | "network" | "bad-response";
 
@@ -166,4 +167,6 @@ export interface Services {
   readonly exports: ExportsService;
   readonly pdf: PdfPreviewService;
   readonly examples: ExamplesService;
+  /** Catalog 3D models (round B). Optional: without it the viewer always draws our own low-poly models. */
+  readonly vehicleModels?: VehicleModelsService;
 }

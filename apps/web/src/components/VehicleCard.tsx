@@ -13,6 +13,7 @@ import { ServiceError } from "../services/types";
 import { VEHICLE_LOOKUP_MESSAGES } from "../services/vehicles";
 import { useDoc } from "../state/DocProvider";
 import { useRoads } from "../state/Roads";
+import { ColorPicker } from "./ColorPicker";
 import { DirectionPicker } from "./DirectionPicker";
 import { ImpactZones } from "./ImpactZones";
 import { VehiclePhoto } from "./VehiclePhoto";
@@ -322,6 +323,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
               {VEHICLE_TYPES.map((t) => <Tile key={t} value={t} icon={PRESETS[t].icon} label={PRESETS[t].label} badge={t === v.type && v.typeSource === "vpic" ? <span className="auto">vPIC</span> : null} />)}
             </RadioGroup>
           </fieldset>
+          <ColorPicker vehicle={v} onChange={(color) => patch({ color: color ?? undefined })} />
         </div>
 
         <fieldset className="group">

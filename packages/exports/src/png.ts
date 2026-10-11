@@ -6,7 +6,7 @@ import type { RoadNetwork, SimulationResult } from "@csd/core";
 import { planDiagram, rectsTouch, scaleBars, type Rect } from "./diagram";
 import { layoutText, roundedRectPts, wrapText, type FontKey, type Measure, type Prim, type Pt, type Stroke } from "./draw";
 import type { CanvasFactory, CanvasLike } from "./canvas-types";
-import type { ReportModel } from "./model";
+import { paintByLetter, type ReportModel } from "./model";
 import { scaleChip, scaleChipPrims, type ScaleChipStyle } from "./north";
 import { WORDMARK, drawMarkCanvas, lockup } from "./logo";
 import { decodePng } from "./png-decode";
@@ -312,7 +312,7 @@ export async function renderDiagramPng(input: DiagramPngInput, factory: CanvasFa
   const fit = (stacked: boolean) => {
     const bottomInset = (stacked ? maxCardH + SPACE(4) + scaleH : Math.max(maxCardH, scaleH)) + edge + SPACE(4);
     const plan = planDiagram(sim, roads, {
-      box: { x: 0, y: 0, w: S, h: area }, letters: true, markers: true, streetLabels: true, ghosts: true,
+      box: { x: 0, y: 0, w: S, h: area }, letters: true, markers: true, streetLabels: true, ghosts: true, paint: paintByLetter(input.model),
       minTextSize: px("text-base"), minLine: 2, minTagRadius: px("text-lg"),
       insets: { top: titleBottom + SPACE(4), bottom: bottomInset, left: SPACE(4), right: SPACE(4) },
     }, pen.measure);
