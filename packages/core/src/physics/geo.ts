@@ -95,11 +95,52 @@ export function segmentCross(p: Vec2, p2: Vec2, q: Vec2, q2: Vec2): { t: number;
 
 export interface Crossing { readonly point: Vec2; /** Arc length along the first polyline. */ readonly sA: number; readonly sB: number }
 
-/** Every crossing of two polylines. */
+/**
+ * Margin for the bounding-box screen in polyCrossings, m. segmentCross accepts t and u up to 1e-9 past either end, which
+ * is under 1e-6 m for any segment shorter than 1,000 km, so boxes grown by this never drop a crossing it would find.
+ */
+const BOX_MARGIN_M = 1e-6;
+
+/** Bounding boxes of a polyline's segments, [minX, maxX, minY, maxY] per segment, cached per polyline. */
+const segBoxCache = new WeakMap<Poly, Float64Array>();
+function segBoxes(poly: Poly): Float64Array {
+  const hit = segBoxCache.get(poly);
+  if (hit) return hit;
+  const n = Math.max(0, poly.pts.length - 1);
+  const out = new Float64Array(4 * n);
+  for (let i = 0; i < n; i++) {
+    const p = poly.pts[i]!, q = poly.pts[i + 1]!;
+    out[4 * i] = Math.min(p.x, q.x) - BOX_MARGIN_M; out[4 * i + 1] = Math.max(p.x, q.x) + BOX_MARGIN_M;
+    out[4 * i + 2] = Math.min(p.y, q.y) - BOX_MARGIN_M; out[4 * i + 3] = Math.max(p.y, q.y) + BOX_MARGIN_M;
+  }
+  segBoxCache.set(poly, out);
+  return out;
+}
+
+/** Crossings already worked out, per pair of polylines (polylines are never changed after makePoly). */
+const crossingCache = new WeakMap<Poly, WeakMap<Poly, readonly Crossing[]>>();
+
+/**
+ * Every crossing of two polylines, in the order of a's segments, then b's. Segment pairs whose boxes miss are skipped, and a
+ * pair of polylines seen before is answered from a cache: the same result, faster. The caller gets its own array.
+ */
 export function polyCrossings(a: Poly, b: Poly): Crossing[] {
+  let inner = crossingCache.get(a);
+  const hit = inner?.get(b);
+  if (hit) return [...hit];
+  const out = crossingsOf(a, b);
+  if (!inner) { inner = new WeakMap(); crossingCache.set(a, inner); }
+  inner.set(b, out);
+  return [...out];
+}
+
+function crossingsOf(a: Poly, b: Poly): Crossing[] {
   const out: Crossing[] = [];
+  const ba = segBoxes(a), bb = segBoxes(b);
   for (let i = 0; i + 1 < a.pts.length; i++) {
+    const ax0 = ba[4 * i]!, ax1 = ba[4 * i + 1]!, ay0 = ba[4 * i + 2]!, ay1 = ba[4 * i + 3]!;
     for (let j = 0; j + 1 < b.pts.length; j++) {
+      if (bb[4 * j]! > ax1 || bb[4 * j + 1]! < ax0 || bb[4 * j + 2]! > ay1 || bb[4 * j + 3]! < ay0) continue;
       const p = a.pts[i]!, p2 = a.pts[i + 1]!, q = b.pts[j]!, q2 = b.pts[j + 1]!;
       const hit = segmentCross(p, p2, q, q2);
       if (!hit) continue;

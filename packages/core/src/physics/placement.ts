@@ -247,7 +247,30 @@ function turnGuide(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2): Guide
   return { poly: makePoly(pts), roadId: appWay.id, laneIndex: lane, facingOffset: 0, moving: true, fallback: false };
 }
 
+/**
+ * Guides already built, per road network (or none): a guide depends only on the network, the pin and the vehicle's letter,
+ * action and travel (never its zone, type or speed), so the zone fallback's many trials and the fixer's candidates share them.
+ * Guides are never changed after they are built. Bounded: a full table is simply emptied.
+ */
+const guideCache = new WeakMap<object, Map<string, Guide | PlainMessage>>();
+const NO_ROADS = {};
+const GUIDE_CACHE_MAX = 4096;
+
 export function buildGuide(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2): Guide | PlainMessage {
+  const owner = roads ?? NO_ROADS;
+  let table = guideCache.get(owner);
+  if (!table) { table = new Map(); guideCache.set(owner, table); }
+  const t = v.travel;
+  const key = JSON.stringify([pin.x, pin.y, v.id, v.action, t.bearingDeg, t.roadId, t.roadName, t.lane]);
+  const hit = table.get(key);
+  if (hit) return hit;
+  const g = buildGuideFresh(v, roads, pin);
+  if (table.size >= GUIDE_CACHE_MAX) table.clear();
+  table.set(key, g);
+  return g;
+}
+
+function buildGuideFresh(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2): Guide | PlainMessage {
   if (v.action === "turn-left" || v.action === "turn-right") return turnGuide(v, roads, pin);
   const facing = toRad(v.travel.bearingDeg);
   const backing = v.action === "backing";
@@ -498,9 +521,18 @@ export interface PlaceOptions {
   readonly exactZones?: boolean;
 }
 
-/** Is there a road (or a parking lot) within ROAD_REACH_M of the pin? */
+/** Is there a road (or a parking lot) within ROAD_REACH_M of the pin? Remembered per network and pin (the answer never changes). */
+const nearPinCache = new WeakMap<RoadNetwork, Map<string, boolean>>();
 function roadNearPin(roads: RoadNetwork, pin: Vec2): boolean {
-  return roads.ways.some((w) => project(makePoly(w.centerline), pin).dist <= ROAD_REACH_M) || roads.parking.some((p) => pointInRing(pin, p.outline));
+  let table = nearPinCache.get(roads);
+  if (!table) { table = new Map(); nearPinCache.set(roads, table); }
+  const key = `${pin.x},${pin.y}`;
+  const hit = table.get(key);
+  if (hit !== undefined) return hit;
+  const near = roads.ways.some((w) => project(makePoly(w.centerline), pin).dist <= ROAD_REACH_M) || roads.parking.some((p) => pointInRing(pin, p.outline));
+  if (table.size >= GUIDE_CACHE_MAX) table.clear();
+  table.set(key, near);
+  return near;
 }
 
 /** The full placement, with guides and contacts, for the simulation and the checks. */
@@ -632,12 +664,22 @@ function placeCore(scene: Scene, rawRoads: RoadNetwork | null, pin: Vec2, opts: 
     const feas = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => i !== j && feasible(i, j)));
     const midV = velocities(drafts.map((d, k) => ({ veh: d.veh, travel: pinTravel[k]! })), "mid");
     /** Where i and j could meet: their crossing, or (same lane) the shared projection; parallel lanes never meet. */
+    const meetMemo = new Map<number, Vec2 | null>();
     const meet = (i: number, j: number): Vec2 | null => {
+      const k = i * n + j;
+      if (meetMemo.has(k)) return meetMemo.get(k)!;
       const gi = drafts[i]!.guide, gj = drafts[j]!.guide;
-      if (polyCrossings(gi.poly, gj.poly).length === 0 && dist(project(gi.poly, pin).point, project(gj.poly, pin).point) > 1) return null;
-      return contactPoint(gi, gj, pin);
+      const at = polyCrossings(gi.poly, gj.poly).length === 0 && dist(project(gi.poly, pin).point, project(gj.poly, pin).point) > 1 ? null : contactPoint(gi, gj, pin);
+      meetMemo.set(k, at);
+      return at;
     };
-    const pts = (i: number, j: number): Vec2 => meet(i, j) ?? contactPoint(drafts[i]!.guide, drafts[j]!.guide, pin);
+    const ptsMemo = new Map<number, Vec2>();
+    const pts = (i: number, j: number): Vec2 => {
+      const k = i * n + j;
+      let at = ptsMemo.get(k);
+      if (!at) { at = meet(i, j) ?? contactPoint(drafts[i]!.guide, drafts[j]!.guide, pin); ptsMemo.set(k, at); }
+      return at;
+    };
     const hitter: number[] = [];
     for (let i = 0; i < n; i++) {
       const cands: Array<{ j: number; d: number; rel: number; mutual: number }> = [];
