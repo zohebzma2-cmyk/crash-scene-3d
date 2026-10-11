@@ -1,7 +1,7 @@
 // suggestFixes: when the picture can't be drawn, the closest details that do draw (DESIGN.md section 18).
 import { describe, expect, it } from "vitest";
 import type { RoadNetwork, Scene } from "../src";
-import { ACTION_LABELS, MAX_FIXES, ZONE_WORDS, boundWord, simulate, streetsAtPin, suggestFixes, toLocal, whySentence } from "../src";
+import { ACTION_LABELS, MAX_FIXES, PIN_FIX_MAX_M, ZONE_WORDS, boundWord, simulate, streetsAtPin, suggestFixes, toLocal, whySentence } from "../src";
 import { sampleScene } from "./fixtures";
 import { NETWORKS, loadRoads, loadScene, randomScene, rng } from "./suggest-sweep";
 
@@ -22,6 +22,9 @@ function impossible(): Scene {
   };
 }
 
+/** What a button may say: one or more changes, two hit sides swapped, or the pin moved (then any changes). */
+const LABEL = /^(Change [A-D]'s (hit side|direction|action|lane|speed) to .+|Swap who hit whom: [A-D]'s hit side to .+ and [A-D]'s hit side to .+|Move the pin about \d+ ft (onto|to where) .+)$/;
+
 /** Every fix draws as entered, the list is short, sorted and the same every time. */
 function expectSound(scene: Scene, roads: RoadNetwork | null, again = true) {
   const s = suggestFixes(scene, roads);
@@ -34,10 +37,19 @@ function expectSound(scene: Scene, roads: RoadNetwork | null, again = true) {
     const r = simulate(f.scene, roads);
     expect(r.ok, `${f.label}: ${r.ok ? "" : JSON.stringify(r.errors)}`).toBe(true);
     if (r.ok) expect(r.result.warnings.some((w) => w.code === "zone-used"), f.label).toBe(false);
-    expect(f.label).toMatch(/^Change [A-D]'s (hit side|direction|action|lane) to .+/);
+    expect(f.label).toMatch(LABEL);
+    expect(f.size).toBe(f.changes.length);
     // The patch is exactly the listed changes: each changed vehicle is the original plus its changes' patches, nothing else.
     const changed = scene.vehicles.filter((v, i) => JSON.stringify(v) !== JSON.stringify(f.scene.vehicles[i])).map((v) => v.id);
-    expect(new Set(changed)).toEqual(new Set(f.changes.map((c) => c.vehicleId)));
+    expect(new Set(changed)).toEqual(new Set(f.changes.flatMap((c) => (c.vehicleId ? [c.vehicleId] : []))));
+    // The pin moves only with a pin change, onto the road data already loaded (PIN_FIX_MAX_M from its centre), like a drag.
+    const pin = f.changes.find((c) => c.field === "pin");
+    if (pin) {
+      expect(f.scene.location).toEqual({ ...scene.location, lat: pin.location!.lat, lon: pin.location!.lon, label: "", nearLabel: scene.location.label || scene.location.nearLabel, source: "pin" });
+      expect(roads).not.toBeNull();
+      const p = toLocal(roads!.frame, f.scene.location);
+      expect(Math.hypot(p.x, p.y)).toBeLessThanOrEqual(PIN_FIX_MAX_M);
+    } else expect(f.scene.location).toEqual(scene.location);
     scene.vehicles.forEach((v, i) => {
       const patch = Object.assign({}, ...f.changes.filter((c) => c.vehicleId === v.id).map((c) => c.patch)) as Partial<typeof v>;
       expect(f.scene.vehicles[i]).toEqual({ ...v, ...patch });
@@ -45,7 +57,16 @@ function expectSound(scene: Scene, roads: RoadNetwork | null, again = true) {
     // The words on the button match the value set.
     for (const c of f.changes) {
       const after = f.scene.vehicles.find((v) => v.id === c.vehicleId)!;
+      if (c.field === "pin") { expect(f.label).toContain(`Move the pin ${c.to}`); continue; }
       expect(f.label).toContain(`${c.vehicleId}'s ${c.field === "zone" ? "hit side" : c.field} to ${c.to}`);
+      if (c.field === "speed") {
+        // Only a "not sure" speed changes, to a speed inside its range (the limit ± 5 mph).
+        const before = scene.vehicles.find((v) => v.id === c.vehicleId)!.speed;
+        expect(before.kind).toBe("unsure");
+        const limit = before.kind === "unsure" ? before.limitMph ?? 25 : NaN;
+        expect(after.speed.kind).toBe("known");
+        if (after.speed.kind === "known") expect(Math.abs(after.speed.mph - limit)).toBeLessThanOrEqual(5);
+      }
       if (c.field === "zone") expect(c.to.toLowerCase()).toBe(ZONE_WORDS[after.zone]);
       if (c.field === "action") expect(c.to.startsWith(ACTION_LABELS[after.action])).toBe(true);
       if (c.field === "action" && scene.vehicles.find((v) => v.id === c.vehicleId)!.action === "parked" && after.action !== "parked") expect(c.to).toMatch(/ at (\d+(\.\d)? mph|a speed the picture picks)$/);

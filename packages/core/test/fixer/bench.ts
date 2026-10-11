@@ -7,14 +7,17 @@
 // even when the physics changes later. `loadBench()` reads that file back. Synthetic data only.
 import { readFileSync } from "node:fs";
 import fc from "fast-check";
-import type { RoadNetwork, Scene, SceneVehicle } from "../../src";
-import { SceneSchema, simulate, toLatLon } from "../../src";
+import type { LatLon, RoadNetwork, Scene, SceneVehicle, Vec2 } from "../../src";
+import { SceneSchema, simulate, toLatLon, toLocal } from "../../src";
 import { sceneCaseArb } from "../property/arbitraries";
 import { NETWORKS, loadRoads, loadScene, randomScene, rng } from "../suggest-sweep";
 
 export type NetName = "t-bone-intersection" | "highway-rear-end" | "parking-lot-backing" | "none";
-/** A named example network, no roads ("none"), or a small synthetic network stored inline. */
-export type NetRef = NetName | RoadNetwork;
+/**
+ * A named example network, no roads ("none"), a small synthetic network stored inline, or an example network as the app
+ * would have loaded it around another pin (`around`: the same roads, with the frame's origin at that point).
+ */
+export type NetRef = NetName | RoadNetwork | { readonly example: Exclude<NetName, "none">; readonly around: LatLon };
 
 export interface BenchCase {
   readonly id: string;
@@ -26,9 +29,28 @@ export interface BenchCase {
 
 const EXAMPLE_NETS = Object.fromEntries(NETWORKS.map(([name, file]) => [name, loadRoads(file)])) as Record<Exclude<NetName, "none">, RoadNetwork>;
 
+const recentredCache = new Map<string, RoadNetwork>();
+/** The same roads with the frame's origin moved to `around` (the app loads roads centred on the pin). */
+function recentred(example: Exclude<NetName, "none">, around: LatLon): RoadNetwork {
+  const key = `${example}@${around.lat},${around.lon}`;
+  const hit = recentredCache.get(key);
+  if (hit) return hit;
+  const src = EXAMPLE_NETS[example], frame = { origin: { lat: around.lat, lon: around.lon } };
+  const move = (p: Vec2): Vec2 => toLocal(frame, toLatLon(src.frame, p));
+  const out: RoadNetwork = {
+    ...src, frame, terrain: null,
+    ways: src.ways.map((w) => ({ ...w, centerline: w.centerline.map(move) })),
+    buildings: src.buildings.map((b) => ({ ...b, footprint: b.footprint.map(move) })),
+    parking: src.parking.map((l) => ({ ...l, outline: l.outline.map(move) })),
+  };
+  recentredCache.set(key, out);
+  return out;
+}
+
 export function roadsOf(net: NetRef): RoadNetwork | null {
   if (net === "none") return null;
-  return typeof net === "string" ? EXAMPLE_NETS[net] : net;
+  if (typeof net === "string") return EXAMPLE_NETS[net];
+  return "example" in net ? recentred(net.example, net.around) : net;
 }
 
 /** Quotas of refused scenes by vehicle count, per generator. */
@@ -93,16 +115,21 @@ export function generateBench(): BenchCase[] {
     take("prop", net, scene);
   }
 
-  // 3. No road near the pin: the example scenes with the pin moved 50 to 200 m into a spot with no road or parking lot within reach.
+  // 3. No road near the pin: the example scenes with the pin moved 50 to 200 m into a spot with no road or parking lot within
+  //    reach, on the example's roads as the app would load them around that pin (the frame's origin at the pin), with the
+  //    compass directions step 2 offers there.
   const rnd = rng(7);
   for (let i = 0; i < 3000 && (want("no-road", 2) || want("no-road", 3) || want("no-road", 4)); i++) {
     const [example] = NETWORKS[i % NETWORKS.length]!;
     const roads = EXAMPLE_NETS[example];
     const base = randomScene(loadScene(example), roads, rnd);
     const at = toLatLon(roads.frame, { x: (rnd() * 2 - 1) * 200, y: (rnd() * 2 - 1) * 200 });
-    const scene: Scene = { ...base, location: { ...base.location, lat: Math.round(at.lat * 1e7) / 1e7, lon: Math.round(at.lon * 1e7) / 1e7 } };
-    const r = simulate(normalise(scene), roads);
-    if (!r.ok && r.errors[0]?.code === "no-road") take("no-road", example, scene);
+    // With no street at the pin, step 2 offers north, east, south and west only: no road ids or names.
+    const vehicles = base.vehicles.map((v) => ({ ...v, travel: { bearingDeg: [0, 90, 180, 270][Math.floor(rnd() * 4)]!, roadId: null, roadName: null, lane: null } }));
+    const scene: Scene = { ...base, vehicles, location: { ...base.location, lat: Math.round(at.lat * 1e7) / 1e7, lon: Math.round(at.lon * 1e7) / 1e7 } };
+    const net: NetRef = { example, around: { lat: scene.location.lat, lon: scene.location.lon } };
+    const r = simulate(normalise(scene), roadsOf(net));
+    if (!r.ok && r.errors[0]?.code === "no-road") take("no-road", net, scene);
   }
   return out;
 }

@@ -287,8 +287,23 @@ function buildGuideFresh(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2):
 
 interface Pose2 { readonly centre: Vec2; readonly heading: number; readonly travel: number }
 
+/** Poses already worked out per guide (guides are cached and never change, so the same inputs always give the same pose). */
+const poseCache = new WeakMap<Guide, Map<string, Pose2>>();
+
 /** Pose with `zone`'s anchor (optionally slid along the struck side by `slide` m) on point q, aligned with the guide. */
 function poseAtAnchor(g: Guide, dims: VehicleDims, zone: Zone, q: Vec2, slide: number): Pose2 {
+  let table = poseCache.get(g);
+  if (!table) { table = new Map(); poseCache.set(g, table); }
+  const key = `${dims.lengthM},${dims.widthM},${zone},${q.x},${q.y},${slide}`;
+  const hit = table.get(key);
+  if (hit) return hit;
+  const pose = poseAtAnchorFresh(g, dims, zone, q, slide);
+  if (table.size >= GUIDE_CACHE_MAX) table.clear();
+  table.set(key, pose);
+  return pose;
+}
+
+function poseAtAnchorFresh(g: Guide, dims: VehicleDims, zone: Zone, q: Vec2, slide: number): Pose2 {
   const an = zoneAnchorLocal(zone, dims.lengthM, dims.widthM);
   let a = an.a, b = an.b;
   if (slide !== 0) { if (isSideZone(zone)) a += slide; else if (zone === "front" || zone === "rear") b += slide; }
@@ -519,6 +534,8 @@ export interface PlaceOptions {
   readonly checkClosing?: boolean;
   /** Use the entered zones exactly and refuse when they can't touch (the checks use this to judge a hit). Default false: the nearest zone that works is used and reported in `zonesUsed`. */
   readonly exactZones?: boolean;
+  /** At most this many other-zone placements are tried by the fallback (default MAX_ZONE_TRIALS). The one-tap fixer asks for fewer. */
+  readonly maxZoneTrials?: number;
 }
 
 /** Is there a road (or a parking lot) within ROAD_REACH_M of the pin? Remembered per network and pin (the answer never changes). */
@@ -822,7 +839,7 @@ export function placeDetailed(scene: Scene, rawRoads: RoadNetwork | null, pin: V
   }
   // One vehicle changing before two (the claimant is usually wrong about one side), the zone that faces where the other comes from first; then scene order, so the choice is the same every time.
   trials.sort((x, y) => x.zones.length - y.zones.length || x.cost - y.cost);
-  for (const t of trials.slice(0, MAX_ZONE_TRIALS)) {
+  for (const t of trials.slice(0, Math.min(MAX_ZONE_TRIALS, opts.maxZoneTrials ?? MAX_ZONE_TRIALS))) {
     const swap = new Map(t.zones);
     const trialScene: Scene = { ...scene, vehicles: scene.vehicles.map((v) => (swap.has(v.id) ? { ...v, zone: swap.get(v.id)! } : v)) };
     const r = placeCore(trialScene, cleaned, pin, { ...opts, checkClosing: true }, true);
@@ -838,6 +855,49 @@ export function placeDetailed(scene: Scene, rawRoads: RoadNetwork | null, pin: V
     };
   }
   return asked();
+}
+
+/** One hit side another vehicle could reach, and how squarely that vehicle comes at it (radians off the side's centre). */
+export interface FacingZone { readonly zone: Zone; readonly off: number; readonly by: VehicleId }
+
+/**
+ * For the one-tap fixer: for each vehicle (scene order), the hit sides some other vehicle could reach given how each was
+ * going, most squarely met first. It is the test the placement uses to match three or four vehicles (the other's approach,
+ * relative to this vehicle at the pin, within the side's tolerance at the low, middle or high speeds; for three or four,
+ * paths that meet), so a side not listed can't be hit there. Null when a vehicle has no usable path. Cheap: no placing.
+ */
+export function zonesFacing(scene: Scene, rawRoads: RoadNetwork | null, pin: Vec2): Array<readonly FacingZone[]> | null {
+  const roads = rawRoads ? cleanNet(rawRoads) : null;
+  const guides: Guide[] = [];
+  for (const v of scene.vehicles) {
+    const g = buildGuide(v, roads, pin);
+    if (isMessage(g)) return null;
+    guides.push(g);
+  }
+  const n = guides.length;
+  const pinTravel = guides.map((g) => pointAt(g.poly, project(g.poly, pin).s).bearing);
+  const meets = (i: number, j: number): boolean =>
+    n === 2 || polyCrossings(guides[i]!.poly, guides[j]!.poly).length > 0 || dist(project(guides[i]!.poly, pin).point, project(guides[j]!.poly, pin).point) <= 1;
+  const vel = CASES.map((key) => velocities(scene.vehicles.map((veh, k) => ({ veh, travel: pinTravel[k]! })), key));
+  return scene.vehicles.map((_, i) => {
+    const heading = pinTravel[i]! + guides[i]!.facingOffset;
+    const best = new Map<Zone, FacingZone>();
+    for (let j = 0; j < n; j++) {
+      if (j === i || !meets(i, j)) continue;
+      for (const v of vel) {
+        const w = sub(v[j]!, v[i]!);
+        if (norm(w) < 0.3) continue;
+        const rel = bearingOf(mul(w, -1)) - heading;
+        for (const z of ALL_ZONES) {
+          const off = angleBetween(rel, ZONE_ANGLE_RAD[z]);
+          if (off >= zoneToleranceRad(z) - 1e-9) continue;
+          const prev = best.get(z);
+          if (!prev || off < prev.off - 1e-12) best.set(z, { zone: z, off, by: scene.vehicles[j]!.id });
+        }
+      }
+    }
+    return [...best.values()].sort((a, b) => a.off - b.off || ALL_ZONES.indexOf(a.zone) - ALL_ZONES.indexOf(b.zone));
+  });
 }
 
 /** Snap each vehicle to a lane and place it at impact (see the plan's lane-snapping section). Roads null = flat template. */

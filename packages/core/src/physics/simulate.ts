@@ -58,18 +58,27 @@ export function impactInput(
 // ---------------------------------------------------------------- the world around the vehicles
 
 /** Does a vehicle rectangle overlap any building? Buildings are pre-filtered by bounding box. */
-function wallTester(roads: RoadNetwork | null): (p: Pose, lengthM: number, widthM: number) => boolean {
+interface WallTester {
+  (p: Pose, lengthM: number, widthM: number): boolean;
+  /** The same test, for poses that all lie inside this box (expanded by the vehicle's reach): only the buildings near it are tried. */
+  near(minX: number, maxX: number, minY: number, maxY: number): (p: Pose, lengthM: number, widthM: number) => boolean;
+}
+function wallTester(roads: RoadNetwork | null): WallTester {
   const walls = (roads?.buildings ?? []).map((b) => {
     const ring = openRing(b.footprint);
     const xs = ring.map((q) => q.x), ys = ring.map((q) => q.y);
     return { ring, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
   });
-  return (p, L, W) => {
+  const test = (list: typeof walls) => (p: Pose, L: number, W: number): boolean => {
     const r = Math.hypot(L, W) / 2;
-    return walls.some((w) =>
+    return list.some((w) =>
       p.xM >= w.minX - r && p.xM <= w.maxX + r && p.yM >= w.minY - r && p.yM <= w.maxY + r &&
       boxOverlapsRing(p.xM, p.yM, p.headingRad, L, W, w.ring, OVERLAP_TOLERANCE_M));
   };
+  const all = test(walls) as WallTester;
+  // A wall whose box misses the poses' box grown by r (the vehicle's half-diagonal) fails the first test for every one of them.
+  all.near = (minX, maxX, minY, maxY) => test(walls.filter((w) => w.maxX >= minX && w.minX <= maxX && w.maxY >= minY && w.minY <= maxY));
+  return all;
 }
 
 /** Is any corner of the vehicle off the road (road width plus 30 cm) and outside every parking lot? */
@@ -186,19 +195,54 @@ export function simulate(scene: Scene, roads: RoadNetwork | null): SimulationOut
   try {
     const invalid = validateScene(scene);
     if (invalid.length) return { ok: false, errors: invalid };
-    return simulateChecked(scene, roads);
+    return simulateChecked(scene, roads, false) as SimulationOutcome;
   } catch {
     return { ok: false, errors: [cannotWorkOut()] };
   }
 }
 
-function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null): SimulationOutcome {
+/**
+ * Counts the work a drawsAsEntered call does, in units of one vehicle (or one pair of vehicles) checked at one sample of the
+ * approach, plus a fixed amount per placement. The one-tap fixer caps its search by this count: it tracks the time taken
+ * closely, yet is the same on every machine, so the fixes found never depend on how fast the device is.
+ */
+export interface WorkMeter { units: number }
+/** Work units charged for one placement (about the cost of checking a two-vehicle approach at 150 samples). */
+export const PLACEMENT_UNITS = 600;
+
+/** Whether a scene draws exactly as entered, without the picture (see drawsAsEntered). */
+export type DrawsOutcome = { readonly ok: true } | { readonly ok: false; readonly errors: readonly PlainMessage[] };
+
+/**
+ * Does the scene draw exactly as entered? The same answer as `simulate(scene, roads).ok` with no "zone-used" warning (no hit
+ * side swapped in), and the same errors whenever simulate() refuses, at a fraction of the cost: the entered hit sides are
+ * placed as they are (no zone fallback), the "not sure" speeds are scanned outward from the middle and stop at the first that
+ * works (the one the picture would use), each speed stops at its first problem, and only that speed's slide is run (for the
+ * crash-too-long check). No warnings, no tracks. For the one-tap fixer, which tries many small changes.
+ */
+export function drawsAsEntered(scene: Scene, roads: RoadNetwork | null, meter?: WorkMeter): DrawsOutcome {
+  try {
+    const invalid = validateScene(scene);
+    if (invalid.length) return { ok: false, errors: invalid };
+    return simulateChecked(scene, roads, true, meter);
+  } catch {
+    return { ok: false, errors: [cannotWorkOut()] };
+  }
+}
+
+/**
+ * The model. With `drawsOnly`, it stops as soon as it knows whether the scene draws as entered and returns a DrawsOutcome
+ * (see drawsAsEntered); otherwise the full SimulationOutcome.
+ */
+function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: boolean, meter?: WorkMeter): SimulationOutcome | DrawsOutcome {
   const roads = rawRoads ? cleanNet(rawRoads) : null;
   const frame = roads?.frame ?? { origin: { lat: scene.location.lat, lon: scene.location.lon } };
   const pin = toLocal(frame, { lat: scene.location.lat, lon: scene.location.lon });
   const badPin = validatePin(pin);
   if (badPin.length) return { ok: false, errors: badPin };
-  const placed = placeDetailed(scene, roads, pin, { checkClosing: false });
+  // Entered zones exactly, closing left to the scan: what placeDetailed gives simulate() whenever it uses no other zone.
+  if (meter) meter.units += PLACEMENT_UNITS * scene.vehicles.length;
+  const placed = placeDetailed(scene, roads, pin, drawsOnly ? { checkClosing: false, exactZones: true } : { checkClosing: false });
   if (!placed.ok) return { ok: false, errors: placed.errors };
   const { bodies, contacts, impactPointM, zonesUsed } = placed.value;
   const mu = FRICTION[scene.road.condition];
@@ -255,50 +299,63 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null): Simulation
     return out;
   };
 
-  const evaluate = (k: number): Evaluated => {
+  /** One scanned speed: what stops the crash working there. With `firstOnly`, stop at the first problem (all drawsOnly needs). */
+  const halfDiag = bodies.map((b) => Math.hypot(b.dims.lengthM, b.dims.widthM) / 2);
+  const evaluate = (k: number, firstOnly = false): Evaluated => {
     const ent = enteredAt(k);
     const f = closingFailure(motion, contacts, ent);
     if (f) return { ent, reasons: [{ kind: "closing", f }] };
     const ap = approachesAt(ent);
     const pre = bodies.map((b, bi) => preTrack(b, ap[bi]!));
+    const perSample = bodies.length + (bodies.length * (bodies.length - 1)) / 2;
+    // Each vehicle's approach is tested only against the buildings near it (the same answer, sooner).
+    const nearHits = pre.map((track, bi) => {
+      const r = halfDiag[bi]! + 1e-6;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const q of track) { if (q.xM < minX) minX = q.xM; if (q.xM > maxX) maxX = q.xM; if (q.yM < minY) minY = q.yM; if (q.yM > maxY) maxY = q.yM; }
+      return hits.near(minX - r, maxX + r, minY - r, maxY + r);
+    });
+    if (meter) meter.units += bodies.length * i0;
     const reasons: Reason[] = [];
     const passed = new Set<string>(), onBuilding = new Set<string>();
     for (let i = 0; i <= i0; i++) {
+      if (meter) meter.units += perSample;
       if (i < i0) {
         for (let a = 0; a < bodies.length; a++) {
           for (let b = a + 1; b < bodies.length; b++) {
             if (passed.has(`${a}-${b}`)) continue;
             const pa = pre[a]![i]!, pb = pre[b]![i]!;
+            // Centres further apart than the two half-diagonals: the boxes can't touch (the same answer as the full test, sooner).
+            if (Math.hypot(pa.xM - pb.xM, pa.yM - pb.yM) > halfDiag[a]! + halfDiag[b]! + OVERLAP_TOLERANCE_M) continue;
             if (satDepth(boxCorners(pa.xM, pa.yM, pa.headingRad, bodies[a]!.dims.lengthM, bodies[a]!.dims.widthM),
               boxCorners(pb.xM, pb.yM, pb.headingRad, bodies[b]!.dims.lengthM, bodies[b]!.dims.widthM)).depth <= OVERLAP_TOLERANCE_M) continue;
             passed.add(`${a}-${b}`);
             reasons.push({ kind: "pass", a: bodies[a]!.id, b: bodies[b]!.id });
+            if (firstOnly) return { ent, reasons };
           }
         }
       }
-      bodies.forEach((b, bi) => {
-        if (onBuilding.has(b.id) || !hits(pre[bi]![i]!, b.dims.lengthM, b.dims.widthM)) return;
+      for (let bi = 0; bi < bodies.length; bi++) {
+        const b = bodies[bi]!;
+        if (onBuilding.has(b.id) || !nearHits[bi]!(pre[bi]![i]!, b.dims.lengthM, b.dims.widthM)) continue;
         onBuilding.add(b.id);
         reasons.push({ kind: "building", id: b.id });
-      });
+        if (firstOnly) return { ent, reasons };
+      }
     }
     return { ent, reasons };
   };
-
-  const scanned = Array.from({ length: nK + 1 }, (_, k) => evaluate(k));
-  const good = scanned.map((e, k) => (e.reasons.length === 0 ? k : -1)).filter((k) => k >= 0);
-  if (good.length === 0) {
-    const msgs = scanned[midK]!.reasons.map((r) => reasonMessage(r, allIds));
+  /** No speed works: the refusal, from what stops the middle speed. */
+  const refusal = (mid: Evaluated): SimulationOutcome => {
+    const msgs = mid.reasons.map((r) => reasonMessage(r, allIds));
     if (unsureIdx.length === 0) return { ok: false, errors: msgs };
     const first = msgs[0]!;
     return { ok: false, errors: [{ code: "no-workable-speed", text: `At no speed in the range entered would the crash work. ${first.text}`, vehicleIds: first.vehicleIds }, ...msgs.slice(1)] };
-  }
-  // What the numbers shown cover: the contiguous run of working speeds that holds the picture speed.
-  const { picK, lowK, highK, excluded } = selectRange(good, midK);
+  };
 
-  // ---- full runs (impact and slide) for the picture and the two ends of the workable range
+  // ---- full runs (impact and slide) for one scanned speed
   const runAt = (k: number): BodyRun[] => {
-    const { before, specs, approach } = impactInput(bodies, contacts, scanned[k]!.ent, mu);
+    const { before, specs, approach } = impactInput(bodies, contacts, enteredAt(k), mu);
     const state = resolveContacts(before, specs, RESTITUTION, IMPACT_PASSES, CONTACT_FRICTION);
     const cuts = bodies.map((b, i) => {
       const radiusOfGyration = Math.sqrt(b.dims.inertiaKgM2 / b.dims.massKg);
@@ -315,13 +372,37 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null): Simulation
       spinAfter: state[i]!.spinRadPs,
     }));
   };
+  /** Every track is the approach, the slide of the vehicle that slides longest, and two samples at rest. */
+  const trackSamples = (run: readonly BodyRun[]): number => i0 + Math.max(...run.map((r) => r.post.length - 1)) + 3;
+
+  if (drawsOnly) {
+    // The picture's speed is the middle one if it works, else the nearest that does (the lower on a tie): scan outward and stop there.
+    const mid = evaluate(midK);
+    let pic = mid.reasons.length === 0 ? midK : -1;
+    for (let d = 1; pic < 0 && d <= nK; d++) {
+      for (const k of [midK - d, midK + d]) {
+        if (k >= 0 && k <= nK && evaluate(k, true).reasons.length === 0) { pic = k; break; }
+      }
+    }
+    if (pic < 0) return refusal(mid);
+    const run = runAt(pic);
+    if (meter) meter.units += run.reduce((sum, r) => sum + r.post.length, 0);
+    if (trackTooLong(trackSamples(run))) return { ok: false, errors: [tooLongMessage(allIds)] };
+    return { ok: true };
+  }
+
+  const scanned = Array.from({ length: nK + 1 }, (_, k) => evaluate(k));
+  const good = scanned.map((e, k) => (e.reasons.length === 0 ? k : -1)).filter((k) => k >= 0);
+  if (good.length === 0) return refusal(scanned[midK]!);
+  // What the numbers shown cover: the contiguous run of working speeds that holds the picture speed.
+  const { picK, lowK, highK, excluded } = selectRange(good, midK);
+
   const picRun = runAt(picK);
   const runsFor = [lowK === picK ? picRun : runAt(lowK), picRun, highK === picK ? picRun : runAt(highK)];
   const restOf = (run: BodyRun[], bi: number): Vec2 => run[bi]!.post[run[bi]!.post.length - 1]!.positionM;
 
   // ---- the picture's tracks
-  const postSteps = Math.max(...picRun.map((r) => r.post.length - 1));
-  const total = i0 + postSteps + 3; // two samples at rest after the last vehicle stops
+  const total = trackSamples(picRun); // two samples at rest after the last vehicle stops
   if (trackTooLong(total)) return { ok: false, errors: [tooLongMessage(allIds)] };
   const startTimeS = -APPROACH_S;
   const apPic = approachesAt(scanned[picK]!.ent);

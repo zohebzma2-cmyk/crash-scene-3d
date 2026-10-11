@@ -68,10 +68,18 @@ export function pointAt(poly: Poly, s: number): PolyPoint {
 
 export interface Projection { readonly s: number; readonly dist: number; readonly point: Vec2 }
 
-/** Closest point of the polyline to p, as arc length, distance and point. */
+/**
+ * Closest point of the polyline to p, as arc length, distance and point. A segment whose bounding box is already further
+ * from p than the best so far (by more than 1e-9 m) can't be nearer, so it is skipped: the same result, faster.
+ */
 export function project(poly: Poly, p: Vec2): Projection {
   let best: Projection = { s: 0, dist: Infinity, point: poly.pts[0]! };
+  const boxes = poly.pts.length > 8 ? segBoxes(poly) : null;
   for (let i = 0; i + 1 < poly.pts.length; i++) {
+    if (boxes) {
+      const dx = Math.max(boxes[4 * i]! - p.x, 0, p.x - boxes[4 * i + 1]!), dy = Math.max(boxes[4 * i + 2]! - p.y, 0, p.y - boxes[4 * i + 3]!);
+      if (Math.hypot(dx, dy) - 1e-9 > best.dist) continue;
+    }
     const a = poly.pts[i]!, b = poly.pts[i + 1]!, ab = sub(b, a);
     const l2 = dot(ab, ab);
     const t = l2 < 1e-18 ? 0 : Math.max(0, Math.min(1, dot(sub(p, a), ab) / l2));
@@ -192,10 +200,13 @@ export function openRing(ring: readonly Vec2[]): Vec2[] {
   return r;
 }
 
-export function pointInRing(p: Vec2, ringIn: readonly Vec2[]): boolean {
-  const ring = openRing(ringIn);
+/** How many points of a ring count: all of them, or all but a repeated closing point (what openRing keeps, without the copy). */
+const openLength = (ring: readonly Vec2[]): number => (ring.length > 1 && dist(ring[0]!, ring[ring.length - 1]!) < 1e-9 ? ring.length - 1 : ring.length);
+
+export function pointInRing(p: Vec2, ring: readonly Vec2[]): boolean {
+  const n = openLength(ring);
   let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+  for (let i = 0, j = n - 1; i < n; j = i++) {
     const a = ring[i]!, b = ring[j]!;
     if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
   }
@@ -244,14 +255,14 @@ export function centroid(pts: readonly Vec2[]): Vec2 {
 
 /** Does a (possibly concave) ring overlap a vehicle box by more than tolM? The box is shrunk by tolM on every side first. */
 export function boxOverlapsRing(cx: number, cy: number, headingRad: number, lengthM: number, widthM: number, ringIn: readonly Vec2[], tolM: number): boolean {
-  const ring = openRing(ringIn);
-  if (ring.length < 3) return false;
+  const ring = ringIn, n = openLength(ringIn);
+  if (n < 3) return false;
   const box = boxCorners(cx, cy, headingRad, Math.max(0.01, lengthM - 2 * tolM), Math.max(0.01, widthM - 2 * tolM));
   for (const c of box) if (pointInRing(c, ring)) return true;
   if (pointInRing({ x: cx, y: cy }, ring)) return true;
-  for (const v of ring) if (pointInRing(v, box)) return true;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
+  for (let i = 0; i < n; i++) if (pointInRing(ring[i]!, box)) return true;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]!, b = ring[(i + 1) % n]!;
     for (let j = 0; j < 4; j++) if (segmentCross(a, b, box[j]!, box[(j + 1) % 4]!)) return true;
   }
   return false;

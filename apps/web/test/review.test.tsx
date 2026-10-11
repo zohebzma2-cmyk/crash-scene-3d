@@ -229,7 +229,7 @@ describe("step 3: review", () => {
     const fixScene = (zone: "rear" | "front-right" | "right" | "left", scene: Parameters<typeof real>[0]) => ({ ...scene, vehicles: scene.vehicles.map((v, i) => (i === 1 ? { ...v, zone } : v)) });
     services.physics.suggestFixes = (scene) => ({
       why: "Vehicle A and vehicle B would already have been moving apart before they touched.",
-      fixes: (["front-right", "right", "left", "rear"] as const).map((z, i) => ({ id: `B.zone=${z}`, label: `Change B's hit side to ${z}`, cost: i, changes: [], scene: fixScene(z, scene) })).slice(0, 3),
+      fixes: (["front-right", "right", "left", "rear"] as const).map((z, i) => ({ id: `B.zone=${z}`, label: `Change B's hit side to ${z}`, cost: i, size: 1, kind: "zone:struck", notes: false, changes: [], scene: fixScene(z, scene) })).slice(0, 3),
       focus: { step: "vehicles", vehicleId: "B", field: "zone" }, trials: 4,
     });
     app = await renderApp(services, example);
