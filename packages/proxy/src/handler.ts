@@ -1,6 +1,6 @@
 // createProxy: routes, validation, response shaping. Upstream mechanics live in upstream.ts.
 import {
-  PROXY_ROUTES, typeFromVpic,
+  PROXY_ROUTES, normName, typeFromVpic,
   type CrossStreetsResult, type PlaceResult, type ProviderConfig, type ProxyCapabilities, type ProxyError, type VehicleModelResult,
 } from "@csd/core";
 import {
@@ -37,7 +37,17 @@ const SUGGEST_OVERFETCH = 2;
 /** Where the second dropdown looks for crossings, and how many candidate streets "A and B" tries. */
 const CROSS_STREETS_RADIUS_M = 2000;
 const MAX_STREET_CANDIDATES = 2;
+/**
+ * The vPIC vehicle types the picker covers: cars, MPVs (SUVs and vans), trucks (pickups and heavy trucks) and
+ * motorcycles. Bus, trailer, low-speed and incomplete vehicles have no class of ours, so their makes aren't listed;
+ * the claimant can still type one.
+ */
 const VPIC_KINDS = ["car", "mpv", "truck", "motorcycle"] as const;
+type VpicKind = (typeof VPIC_KINDS)[number];
+/** Store key of the makes index: normalized make name -> the vPIC kinds it is listed under. */
+const MAKE_KINDS_KEY = "vehicles/make-kinds";
+/** vPIC spells makes in capitals; these don't title-case on their own. */
+const MAKE_CASE: Readonly<Record<string, string>> = { KIA: "Kia", RAM: "Ram", MCLAREN: "McLaren", "MERCEDES-AMG": "Mercedes-AMG", DELOREAN: "DeLorean" };
 
 function errorResponse(status: number, error: ProxyError): Response {
   const headers: Record<string, string> = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" };
@@ -409,22 +419,47 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
   }
 
   const titleCase = (s: string) =>
-    s.length <= 3 ? s.toUpperCase() : s.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bBmw\b/, "BMW").replace(/\bGmc\b/, "GMC");
+    MAKE_CASE[s.toUpperCase()] ?? (s.length <= 3 ? s.toUpperCase() : s.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bBmw\b/, "BMW").replace(/\bGmc\b/, "GMC"));
 
   async function makes(ctx: Ctx, url: URL): Promise<Response> {
     const p = parseQuery(url, noParams);
     if (!p.ok) return badRequest(p.fields);
     const entry = await composite(ctx, "vehicles/makes", config.cacheTtlS.vehicles, async () => {
       const names = new Map<string, string>();
+      const kinds: Record<string, VpicKind[]> = {};
       for (const kind of VPIC_KINDS) { // one at a time: each call takes its own global slot
         for (const row of await vpic(ctx, `GetMakesForVehicleType/${kind}`)) {
           const n = typeof row.MakeName === "string" ? row.MakeName.trim() : "";
-          if (n) names.set(n.toUpperCase(), titleCase(n));
+          if (!n) continue;
+          names.set(n.toUpperCase(), titleCase(n));
+          const k = normName(n);
+          const list = (kinds[k] ??= []);
+          if (!list.includes(kind)) list.push(kind);
         }
       }
+      // Which vehicle kinds each make is listed under, so a models lookup asks vPIC only about those.
+      await deps.store.set(MAKE_KINDS_KEY, json(kinds).bytes, "application/json; charset=utf-8", config.cacheTtlS.vehicles);
       return json([...names.values()].sort((x, y) => x.localeCompare(y)));
     });
     return dataResponse(entry, config.cacheTtlS.vehicles);
+  }
+
+  /**
+   * The vehicle kinds vPIC lists this make under, from the makes index when it is in the store (even past its
+   * time: makes barely change). All four when there is no index or the make isn't in it (typed by hand).
+   */
+  async function kindsFor(make: string): Promise<readonly VpicKind[]> {
+    try {
+      const stored = await deps.store.get(MAKE_KINDS_KEY);
+      if (!stored) return VPIC_KINDS;
+      const index = JSON.parse(decode(stored.value)) as Record<string, unknown>;
+      const listed = index[normName(make)];
+      if (!Array.isArray(listed)) return VPIC_KINDS;
+      const kinds = VPIC_KINDS.filter((k) => listed.includes(k));
+      return kinds.length > 0 ? kinds : VPIC_KINDS;
+    } catch {
+      return VPIC_KINDS;
+    }
   }
 
   async function models(ctx: Ctx, url: URL): Promise<Response> {
@@ -433,7 +468,7 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     const { make, year } = p.data;
     const entry = await composite(ctx, keyOf("vehicles/models", { make: norm(make), year }), config.cacheTtlS.vehicles, async () => {
       const out = new Map<string, VehicleModelResult>();
-      for (const kind of VPIC_KINDS) {
+      for (const kind of await kindsFor(make)) {
         const rows = await vpic(ctx, `GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}/vehicletype/${kind}`);
         for (const row of rows) {
           const name = typeof row.Model_Name === "string" ? row.Model_Name.trim() : "";

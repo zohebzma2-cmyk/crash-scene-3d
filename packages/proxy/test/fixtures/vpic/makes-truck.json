@@ -1,0 +1,1249 @@
+{
+"Count": 207,
+"Message": "Response returned successfully",
+"SearchCriteria": "Vehicle Type: truck",
+"Results": [
+{
+"MakeId": 441,
+"MakeName": "TESLA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 448,
+"MakeName": "TOYOTA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 449,
+"MakeName": "MERCEDES-BENZ",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 450,
+"MakeName": "FREIGHTLINER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 460,
+"MakeName": "FORD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 464,
+"MakeName": "LINCOLN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 465,
+"MakeName": "MERCURY",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 467,
+"MakeName": "CHEVROLET",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 469,
+"MakeName": "CADILLAC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 472,
+"MakeName": "GMC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 473,
+"MakeName": "MAZDA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 474,
+"MakeName": "HONDA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 475,
+"MakeName": "ACURA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 476,
+"MakeName": "DODGE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 477,
+"MakeName": "CHRYSLER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 478,
+"MakeName": "NISSAN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 480,
+"MakeName": "INFINITI",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 481,
+"MakeName": "MITSUBISHI",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 482,
+"MakeName": "VOLKSWAGEN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 483,
+"MakeName": "JEEP",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 485,
+"MakeName": "VOLVO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 487,
+"MakeName": "VOLVO TRUCK",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 490,
+"MakeName": "MACK",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 491,
+"MakeName": "NAVISTAR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 492,
+"MakeName": "FIAT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 495,
+"MakeName": "PETERBILT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 496,
+"MakeName": "RAM",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 497,
+"MakeName": "LANCIA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 498,
+"MakeName": "HYUNDAI",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 505,
+"MakeName": "BLUE BIRD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 509,
+"MakeName": "SUZUKI",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 511,
+"MakeName": "E-ONE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 514,
+"MakeName": "HINO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 517,
+"MakeName": "OSHKOSH",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 518,
+"MakeName": "UD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 522,
+"MakeName": "CATERPILLAR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 523,
+"MakeName": "SUBARU",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 524,
+"MakeName": "IC BUS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 525,
+"MakeName": "WORKHORSE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 526,
+"MakeName": "INTERNATIONAL",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 528,
+"MakeName": "MITSUBISHI FUSO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 532,
+"MakeName": "KENWORTH",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 535,
+"MakeName": "THOMAS BUILT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 542,
+"MakeName": "ISUZU",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 560,
+"MakeName": "PIERCE MANUFACTURING",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 580,
+"MakeName": "SPRINTER (DODGE OR FREIGHTLINER)",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 811,
+"MakeName": "CAPACITY TRUCKS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 904,
+"MakeName": "KALMAR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 951,
+"MakeName": "HUMMER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1037,
+"MakeName": "ELECTRIC VEHICLES INTERNATIONAL",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1297,
+"MakeName": "AUTOCAR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1331,
+"MakeName": "AUTOCAR INDUSTRIES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1470,
+"MakeName": "ALLIANZ SWEEPER COMPANY",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1513,
+"MakeName": "GREENKRAFT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1533,
+"MakeName": "AZURE DYNAMICS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1583,
+"MakeName": "BRAIN UNLIMITED",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1657,
+"MakeName": "BADGER EQUIPMENT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1979,
+"MakeName": "AMERICAN LAFRANCE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1987,
+"MakeName": "MOBILE ARMOURED VEHICLE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 1991,
+"MakeName": "BYD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2026,
+"MakeName": "DIAMOND HEAVY VEHICLE SOLUTIONS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2089,
+"MakeName": "KIMBLE CHASSIS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2146,
+"MakeName": "MAHINDRA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2409,
+"MakeName": "PLYMOUTH",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2542,
+"MakeName": "NATIONAL OILWELL VARCO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2558,
+"MakeName": "PROTECTED VEHICLES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2570,
+"MakeName": "PATRIOT ENERGY SERVICES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2671,
+"MakeName": "JASPER'S HOT RODS LLC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2692,
+"MakeName": "KIMBLE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2693,
+"MakeName": "CCC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2745,
+"MakeName": "PHOENIX MOTORCARS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2818,
+"MakeName": "RIG WORKS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 2830,
+"MakeName": "RAINIER TRUCK AND CHASSIS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3209,
+"MakeName": "SERVICE KING MANUFACTURING",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3335,
+"MakeName": "TEREX ADVANCE MIXER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3382,
+"MakeName": "TICO MANUFACTURING DIVISION",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3492,
+"MakeName": "TIGER TRUCK",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3540,
+"MakeName": "WARHAWK PERFORMANCE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3583,
+"MakeName": "UKEYCHEYMA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3616,
+"MakeName": "WAUSAU EQUIPMENT COMPANY",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3674,
+"MakeName": "TRANSPOWER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3757,
+"MakeName": "SMITH ELECTRIC VEHICLES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3772,
+"MakeName": "JLG",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3804,
+"MakeName": "WHEATRIDGE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 3952,
+"MakeName": "BOULDER ELECTRIC VEHICLE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4017,
+"MakeName": "CROWN ENERGY TECHNOLOGIES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4410,
+"MakeName": "SOLECTRIA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4454,
+"MakeName": "CRANE CARRIER COMPANY (CCC)",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4512,
+"MakeName": "WESTERN STAR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4675,
+"MakeName": "ELITE MOTOR SALES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4709,
+"MakeName": "AMD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4919,
+"MakeName": "DESOTO MOTORS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 4948,
+"MakeName": "GREENPOWER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5050,
+"MakeName": "OTTAWA BRIMONT CORPORATION",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5056,
+"MakeName": "MARMON MOTOR CO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5087,
+"MakeName": "KUBVAN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5327,
+"MakeName": "ZELIGSON",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5349,
+"MakeName": "GLOBAL FABRICATORS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5363,
+"MakeName": "KOVATCH MOBILE EQUIPMENT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5366,
+"MakeName": "SUPERIOR COACHES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5396,
+"MakeName": "WHITE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5426,
+"MakeName": "WHITEGMC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5669,
+"MakeName": "SPARTAN MOTORS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5714,
+"MakeName": "HMC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5771,
+"MakeName": "PRECEDENT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5777,
+"MakeName": "COLLINS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5780,
+"MakeName": "UTILIMASTER MOTOR CORPORATION",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5801,
+"MakeName": "GRUMMAN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5817,
+"MakeName": "ORANGE EV LLC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5850,
+"MakeName": "MINI BIG TRUCKS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5882,
+"MakeName": "OUTABOUT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5899,
+"MakeName": "SCAMMELL",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5929,
+"MakeName": "STOUTBILT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5953,
+"MakeName": "TRIDENT MOTOR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5965,
+"MakeName": "VIRONEX",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 5993,
+"MakeName": "ATLANTA FABRICATING & EQUIPMENT CO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 6022,
+"MakeName": "FEDERAL MOTORS INC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 6347,
+"MakeName": "CALAVERAS MFG. INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 6493,
+"MakeName": "ALKANE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 6770,
+"MakeName": "MANA",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 7017,
+"MakeName": "USA MOTOR CORPORATION",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 7026,
+"MakeName": "LODAL",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 7288,
+"MakeName": "SIMON-DUPLEX",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 7459,
+"MakeName": "DIAMOND REO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 7684,
+"MakeName": "ELGIN SWEEPER CO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 7976,
+"MakeName": "TRUCK EQUIPMENT CORPORATION(TEC)",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8141,
+"MakeName": "MCNEILUS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8142,
+"MakeName": "JERR-DAN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8143,
+"MakeName": "LONDON",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8144,
+"MakeName": "FRONTLINE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8145,
+"MakeName": "SMIT",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8219,
+"MakeName": "INDIANA PHOENIX INC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8365,
+"MakeName": "CHANJE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8660,
+"MakeName": "CROSS LANDER OF NORTH AMERICA INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8726,
+"MakeName": "CARE INDUSTRIES LTD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 8853,
+"MakeName": "AMERICAN TRUCK COMPANY",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9271,
+"MakeName": "STERLING TRUCK",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9357,
+"MakeName": "MAXIM INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9509,
+"MakeName": "SNOWBLAST-SICARD, INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9610,
+"MakeName": "S.T.I",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9634,
+"MakeName": "SAW",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9698,
+"MakeName": "DENNIS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9699,
+"MakeName": "PENSKE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9700,
+"MakeName": "EFFICIENT DRIVETRAINS, INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9760,
+"MakeName": "HUMVEE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 9768,
+"MakeName": "ENVIROTECH DRIVE SYSTEMS INCORPORATED",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10094,
+"MakeName": "OSPREY CUSTOM 4X4",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10206,
+"MakeName": "AZURE DYNAMIC INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10211,
+"MakeName": "SUTPHEN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10266,
+"MakeName": "XOS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10285,
+"MakeName": "DAIMLER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10331,
+"MakeName": "GLOBAL ENVIRONMENTAL PRODUCTS INC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10565,
+"MakeName": "SPARTAN FIRE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10697,
+"MakeName": "NIKOLA ",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10768,
+"MakeName": "LORDSTOWN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10837,
+"MakeName": "KSM INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10887,
+"MakeName": "RIVIAN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10927,
+"MakeName": "SEAGRAVE ",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 10928,
+"MakeName": "FWD",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11016,
+"MakeName": "ND",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11211,
+"MakeName": "ACELA, INC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11344,
+"MakeName": "KME",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11403,
+"MakeName": "ELMS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11407,
+"MakeName": "QUICKLOADZ",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11512,
+"MakeName": "IEV",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11551,
+"MakeName": "CENNTRO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11601,
+"MakeName": "LION ELECTRIC MANUFACTURING USA INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11633,
+"MakeName": "TENCO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11696,
+"MakeName": "ROSENBAUER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11713,
+"MakeName": "ZZKNOWN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11811,
+"MakeName": "ENVIROTECH DRIVE SYSTEMS INCORPORATED (EVT)",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 11949,
+"MakeName": "BRIGHTDROP",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12007,
+"MakeName": "BLUE ARC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12049,
+"MakeName": "DESERT POWER WAGON",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12068,
+"MakeName": "IEV CORPORATION / IEV",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12125,
+"MakeName": "BTL",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12144,
+"MakeName": "CANOO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12150,
+"MakeName": "TERBERG BENSCHOP B.V.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12152,
+"MakeName": "EV PORTABLE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12154,
+"MakeName": "MULLEN AUTOMOTIVE INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12180,
+"MakeName": "KEYU",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12181,
+"MakeName": "JINMAYI",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12292,
+"MakeName": "VIA MOTORS, INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12360,
+"MakeName": "INEOS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12413,
+"MakeName": "LONESTAR SPECIALTY VEHICLES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12530,
+"MakeName": "NAFFCO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12552,
+"MakeName": "RIDE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12804,
+"MakeName": "KUNKE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12823,
+"MakeName": "T SERIES LLC",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 12982,
+"MakeName": "DENNIS EAGLE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13065,
+"MakeName": "HUMMINGBIRDEV",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13118,
+"MakeName": "BORAH",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13150,
+"MakeName": "TELO",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13151,
+"MakeName": "WINDROSE TECHNOLOGY",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13156,
+"MakeName": "VOLTZ",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13157,
+"MakeName": "SANY",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13325,
+"MakeName": "TERBERG TAYLOR",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13341,
+"MakeName": "SOUTHFIELD CLASSICS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13392,
+"MakeName": "ZM TRUCKS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13393,
+"MakeName": "VECTOR MIXER",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13402,
+"MakeName": "SHAOLIN BUS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13501,
+"MakeName": "BISON MOTORS",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13724,
+"MakeName": "TERN",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13771,
+"MakeName": "SLATE",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 13807,
+"MakeName": "M-B COMPANIES, INC.",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 14027,
+"MakeName": "GREEN MACHINES",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+},
+{
+"MakeId": 14176,
+"MakeName": "GRIDHORSEEV",
+"VehicleTypeId": 3,
+"VehicleTypeName": "Truck"
+}
+]
+}
