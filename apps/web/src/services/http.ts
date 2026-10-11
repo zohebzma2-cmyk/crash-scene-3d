@@ -59,6 +59,65 @@ export async function getJson<T>(fetchFn: FetchLike, url: string, timeoutMs = AP
   }
 }
 
+/** A "busy" answer is tried again after its Retry-After, until this much waiting in total; only then is it shown. */
+export const BUSY_TOTAL_WAIT_MS = 2500;
+/** The shortest wait before a retry, and the one used when the proxy sends no Retry-After. */
+const BUSY_MIN_WAIT_MS = 250;
+const BUSY_DEFAULT_WAIT_MS = 1000;
+
+export interface RetryOptions {
+  readonly signal?: AbortSignal;
+  /** Called before each retry (the UI may say "Busy, trying again…"). */
+  readonly onBusy?: () => void;
+  /** Total wait across retries (default BUSY_TOTAL_WAIT_MS). */
+  readonly maxWaitMs?: number;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly timeoutMs?: number;
+}
+
+const abortError = () => new DOMException("aborted", "AbortError");
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Wait `ms`, or reject with an AbortError as soon as `signal` fires. */
+export function abortableSleep(ms: number, signal?: AbortSignal, sleep: (ms: number) => Promise<void> = defaultSleep): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  if (!signal) return sleep(ms);
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => reject(abortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    sleep(ms).then(() => { signal.removeEventListener("abort", onAbort); resolve(); }, reject);
+  });
+}
+
+/**
+ * Run `attempt`; a "busy" (429) failure is tried again after its Retry-After (at least 0.25 s, 1 s when none
+ * is given), as many times as fit in `maxWaitMs` of waiting. The last busy error is thrown only after that.
+ */
+export async function retryBusy<T>(attempt: () => Promise<T>, opts: RetryOptions = {}): Promise<T> {
+  const budget = opts.maxWaitMs ?? BUSY_TOTAL_WAIT_MS;
+  let waited = 0;
+  for (;;) {
+    try {
+      return await attempt();
+    } catch (e) {
+      if (!(e instanceof ServiceError) || e.code !== "busy") throw e;
+      const wait = Math.max(BUSY_MIN_WAIT_MS, e.retryAfterS !== undefined ? e.retryAfterS * 1000 : BUSY_DEFAULT_WAIT_MS);
+      // The proxy's Retry-After is rounded up to whole seconds: if it doesn't fit, wait what is left instead.
+      const left = budget - waited;
+      if (left < BUSY_MIN_WAIT_MS) throw e;
+      const ms = Math.min(wait, left);
+      opts.onBusy?.();
+      await abortableSleep(ms, opts.signal, opts.sleep);
+      waited += ms;
+    }
+  }
+}
+
+/** getJson with retryBusy: what every /api JSON call should use unless it has its own retry. */
+export function getJsonRetrying<T>(fetchFn: FetchLike, url: string, opts: RetryOptions = {}): Promise<T> {
+  return retryBusy(() => getJson<T>(fetchFn, url, opts.timeoutMs ?? API_TIMEOUT_MS, opts.signal), opts);
+}
+
 /** GET bytes (terrain tiles) from our own /api. */
 export async function getBytes(fetchFn: FetchLike, url: string, timeoutMs = API_TIMEOUT_MS): Promise<Uint8Array> {
   if (!url.startsWith("/api/")) throw new ServiceError(GENERIC_MESSAGE, "bad-request");
@@ -66,6 +125,10 @@ export async function getBytes(fetchFn: FetchLike, url: string, timeoutMs = API_
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetchFn(url, { signal: ctrl.signal, credentials: "omit" });
+    if (res.status === 429) {
+      const header = Number(res.headers.get("retry-after"));
+      throw new ServiceError(GENERIC_MESSAGE, "busy", res.headers.has("retry-after") && Number.isFinite(header) && header >= 0 ? header : undefined);
+    }
     if (!res.ok) throw new ServiceError(GENERIC_MESSAGE, "upstream");
     return new Uint8Array(await res.arrayBuffer());
   } catch (e) {

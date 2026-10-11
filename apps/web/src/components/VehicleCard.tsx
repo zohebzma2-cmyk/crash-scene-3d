@@ -62,26 +62,28 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
   const current = lookup && lookup.key === key ? lookup : null;
 
   // vPIC lookup for this year and make, after a short pause in typing. Changing the make clears the
-  // model (in the reducer), and this reloads the model list for the new make.
+  // model (in the reducer), and this reloads the model list for the new make. The service asks once per
+  // make and year (a make it doesn't know yet waits a little longer); typing on drops the wait (the signal).
   useEffect(() => {
     if (!askable || v.year == null) return;
     const asked = key;
     const make = v.make;
     const year = v.year;
+    const typedOn = new AbortController();
     const timer = window.setTimeout(() => {
-      vehicles.models(make, year).then(
+      vehicles.models(make, year, { signal: typedOn.signal }).then(
         (models) => {
           if (lookupKey(latest.current) !== asked) return;
           setLookup(models.length ? { key: asked, state: "ok", models } : { key: asked, state: "warn", text: `No ${make} models found for ${year}. Pick the type below.`, models: [] });
           applyModel(models, latest.current.model, asked);
         },
         (e: unknown) => {
-          if (lookupKey(latest.current) !== asked) return;
+          if (typedOn.signal.aborted || lookupKey(latest.current) !== asked) return;
           setLookup({ key: asked, state: "warn", text: `${e instanceof ServiceError ? e.message : "Couldn't reach the vehicle list."} Pick the type below.`, models: [] });
         },
       );
     }, LOOKUP_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); typedOn.abort(); };
     // `applyModel` only reads refs and dispatch; the key stands for year + make.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, askable, vehicles]);
