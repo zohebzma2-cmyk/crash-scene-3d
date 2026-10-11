@@ -9,6 +9,8 @@ import {
   fakeStreetsAtPin, fakeToLatLon, fakeToLocal,
 } from "../src/services/fakes";
 import type { ExportInput, Services, StreetInTown, TownPlace } from "../src/services/types";
+import { createFixer } from "../src/fixer/client";
+import { createFixMemory } from "../src/fixer/memory";
 
 export const tbone: Scene = (() => {
   const p = parseScene(tboneScene);
@@ -46,6 +48,8 @@ export function makeServices(over: Omit<Partial<Services>, "roads"> & { roads?: 
   const checkScene = vi.fn(fakeCheckScene);
   const roads: Services["roads"] = over.roads === "none" ? { load: vi.fn(async () => ({ ...tboneNet(), ways: [], buildings: [], parking: [] })) } : (over.roads ?? { load });
   const services: Services = {
+    fixer: createFixer({ makeWorker: null, run: (scene, roads, o) => services.physics.suggestFixes(scene, roads, o) }),
+    fixMemory: createFixMemory(),
     mode: "fixtures",
     geo: {
       search, suggest: vi.fn(async (_q: string, _o?: unknown) => [] as PlaceResult[]), crossStreets: vi.fn(async (street: string) => ({ street, crossings: [] as CrossStreet[] })),

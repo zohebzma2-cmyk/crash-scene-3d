@@ -17,6 +17,8 @@ import { createPdfPreviewService } from "./pdfPreview";
 import { createRoadsService } from "./roads";
 import { loadTerrain } from "./terrain";
 import type { Services } from "./types";
+import { createFixer, type WorkerLike } from "../fixer/client";
+import { createFixMemory } from "../fixer/memory";
 import { createVehiclesService } from "./vehicles";
 
 export * from "./types";
@@ -35,21 +37,28 @@ export function createServices(opts: CreateServicesOptions): Services {
   const merge = withFallback(mergeSearchResults, fakeMergeSearchResults, fx) as typeof mergeSearchResults;
   const parse = withFallback(parseOverpass, fakeParseOverpass, fx);
   const roadsDeps = { parseOverpass: parse, terrain: loadTerrain };
+  const physics: Services["physics"] = {
+    toLocal: withFallback(toLocal, fakeToLocal, fx),
+    toLatLon: withFallback(toLatLon, fakeToLatLon, fx),
+    streetsAtPin: withFallback(streetsAtPin, fakeStreetsAtPin, fx),
+    placeVehicles: withFallback(placeVehicles, fakePlaceVehicles, fx),
+    simulate: withFallback(simulate, fakeSimulate, fx),
+    poseAt: withFallback(poseAt, fakePoseAt, fx),
+    checkScene: withFallback(checkScene, fakeCheckScene, fx),
+    suggestFixes: withFallback(suggestFixes, fakeSuggestFixes, fx),
+  };
+  // A module worker built by Vite into its own file on this origin (CSP worker-src 'self'); none where the browser has no Worker.
+  const makeWorker = typeof Worker === "function"
+    ? () => new Worker(new URL("../fixer/fixer.worker.ts", import.meta.url), { type: "module", name: "fixer" }) as unknown as WorkerLike
+    : null;
   return {
     mode: fx ? "fixtures" : "live",
     geo: fx ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
     roads: fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps),
     vehicles: fx ? createFixtureVehicles() : createVehiclesService(fetchFn),
-    physics: {
-      toLocal: withFallback(toLocal, fakeToLocal, fx),
-      toLatLon: withFallback(toLatLon, fakeToLatLon, fx),
-      streetsAtPin: withFallback(streetsAtPin, fakeStreetsAtPin, fx),
-      placeVehicles: withFallback(placeVehicles, fakePlaceVehicles, fx),
-      simulate: withFallback(simulate, fakeSimulate, fx),
-      poseAt: withFallback(poseAt, fakePoseAt, fx),
-      checkScene: withFallback(checkScene, fakeCheckScene, fx),
-      suggestFixes: withFallback(suggestFixes, fakeSuggestFixes, fx),
-    },
+    physics,
+    fixer: createFixer({ makeWorker, run: (scene, roads, o) => physics.suggestFixes(scene, roads, o) }),
+    fixMemory: createFixMemory(),
     exports: createExportsService({
       buildExports: withFallback(buildExports, (req) => fakeBuildExports(req), fx),
       canvas: createBrowserCanvasFactory(),

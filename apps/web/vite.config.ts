@@ -36,6 +36,9 @@ export default defineConfig(({ mode }) => ({
   },
   server: { fs: { allow: ["../.."] } },
   build: { sourcemap: mode === "development" || process.env.VITE_FIXTURES === "1", target: "es2022" },
+  // The one-tap fixer's Web Worker (src/fixer/fixer.worker.ts) is built as its own ES module file on this origin, so the
+  // CSP's worker-src 'self' and script-src 'self' cover it (no blob: or inline worker).
+  worker: { format: "es" },
   // Same strict CSP as netlify.toml, so preview and e2e run under production rules.
   // (Dev mode needs Vite's inline HMR preamble, so CSP is enforced on preview/production only.)
   preview: { headers: {

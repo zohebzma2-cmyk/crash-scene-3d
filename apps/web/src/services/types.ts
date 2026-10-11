@@ -5,8 +5,10 @@
 import type {
   CrossStreetsResult,
   ExportBundle, ExportRequest, LatLon, LocalFrame, PlaceResult, PlainMessage, PlacementOutcome, Pose,
-  FixSuggestions, RoadNetwork, Scene, SimulationOutcome, SimulationResult, StreetsAtPin, VehicleModelResult, VehicleResult, Vec2,
+  FixOptions, FixSuggestions, RoadNetwork, Scene, SimulationOutcome, SimulationResult, StreetsAtPin, VehicleModelResult, VehicleResult, Vec2,
 } from "@csd/core";
+import type { FixerService } from "../fixer/client";
+import type { FixMemory } from "../fixer/memory";
 
 export type ServiceErrorCode = "busy" | "timeout" | "upstream" | "bad-request" | "not-found" | "network" | "bad-response";
 
@@ -105,8 +107,8 @@ export interface PhysicsService {
   simulate(scene: Scene, roads: RoadNetwork | null): SimulationOutcome;
   poseAt(sim: SimulationResult, vehicle: VehicleResult, tS: number): Pose;
   checkScene(scene: Scene, roads: RoadNetwork | null): readonly PlainMessage[];
-  /** When the picture can't be drawn: why, and up to three small changes that do draw (DESIGN.md section 18). */
-  suggestFixes(scene: Scene, roads: RoadNetwork | null): FixSuggestions;
+  /** When the picture can't be drawn: why, and up to three small changes that do draw (DESIGN.md section 18). On the main thread: the app calls it through `fixer`. */
+  suggestFixes(scene: Scene, roads: RoadNetwork | null, opts?: FixOptions): FixSuggestions;
 }
 
 /** What the Save step supplies; the service adds the brand fonts and the clock. */
@@ -139,6 +141,10 @@ export interface Services {
   readonly roads: RoadsService;
   readonly vehicles: VehiclesService;
   readonly physics: PhysicsService;
+  /** The one-tap fixer's search, in a Web Worker when the browser has one. */
+  readonly fixer: FixerService;
+  /** Which kinds of fix the claimant on this device picked before (localStorage only). */
+  readonly fixMemory: FixMemory;
   readonly exports: ExportsService;
   readonly pdf: PdfPreviewService;
   readonly examples: ExamplesService;

@@ -200,7 +200,7 @@ test.describe("full flow on the default claim", () => {
     const n = await fixes.count();
     expect(n).toBeGreaterThanOrEqual(1);
     expect(n).toBeLessThanOrEqual(3);
-    for (const label of await fixes.allInnerTexts()) expect(label).toMatch(/^Change [A-D]'s (hit side|direction|action|lane) to /);
+    for (const label of await fixes.allInnerTexts()) expect(label).toMatch(/^(Change [A-D]'s (hit side|direction|action|lane|speed) to |Swap who hit whom: |Move the pin about )/);
     await expect(refusal.getByRole("button", { name: "Edit the details myself" })).toBeVisible();
     // No horizontal scroll at this width.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
