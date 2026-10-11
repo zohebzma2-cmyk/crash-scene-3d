@@ -8,7 +8,7 @@ import type { Mesh } from "three";
 import type { VehicleModelAsset, VehicleModelQuery } from "../services/vehicle-models";
 import { askable, modelKey } from "../services/vehicle-models";
 import { parseGlb } from "./glb-loader";
-import { disposeModel, normalise, planTint, type Footprint } from "./glb-model";
+import { disposeModel, fitToSceneLighting, normalise, planTint, type Footprint } from "./glb-model";
 import { SKIN_M, vehicleModel } from "./vehicle-models";
 import type { CatalogModel } from "./vehicle-view";
 
@@ -56,6 +56,7 @@ export function useCatalogModels(scene: Scene, sim: SimulationResult, load: Mode
         .then((asset) => (asset ? parseGlb(asset.bytes, signal).then((root): CatalogModel => {
           const object = normalise(root, w.foot);
           object.traverse((o) => { if ((o as Mesh).isMesh) (o as Mesh).castShadow = true; });
+          fitToSceneLighting(object);
           return { object, plan: planTint(object), watermarked: asset.watermarked };
         }) : null))
         .then((m) => {

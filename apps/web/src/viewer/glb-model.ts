@@ -336,6 +336,33 @@ export function applyTint(plan: TintPlan, paint: Color): boolean {
   return false;
 }
 
+/* ------------------------------ lighting fit ------------------------------ */
+
+/** Metalness our materials use: the scene is lit by a sky and a sun only, with no environment map to reflect. */
+const SCENE_METALNESS = 0.15;
+
+/**
+ * Make a catalog model read under our lights. glTF's default metallicFactor is 1, and the catalog's sample omits it,
+ * so its one material loads fully metallic: with no environment map to reflect, a metal renders almost black. A
+ * material with no metalness texture that comes in mostly metallic gets the metalness of our own vehicles.
+ * Returns how many materials were changed.
+ */
+export function fitToSceneLighting(root: Object3D): number {
+  let n = 0;
+  const seen = new Set<Material>();
+  root.traverse((o) => {
+    const mesh = o as Mesh;
+    if (!mesh.isMesh) return;
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (seen.has(m)) continue;
+      seen.add(m);
+      const std = m as Material & { metalness?: number; metalnessMap?: Texture | null };
+      if (typeof std.metalness === "number" && std.metalness > 0.5 && !std.metalnessMap) { std.metalness = SCENE_METALNESS; n++; }
+    }
+  });
+  return n;
+}
+
 /* ------------------------------ teardown ------------------------------ */
 
 /** Free every geometry, material and texture under `root` (a loaded catalog model). */

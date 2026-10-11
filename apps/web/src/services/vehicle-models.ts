@@ -93,9 +93,17 @@ export function createFixtureVehicleModels(urls: Readonly<Record<string, () => P
       const name = files[`${q.make.trim().toLowerCase()}|${q.model.trim().toLowerCase()}`];
       const entry = name ? Object.entries(urls).find(([path]) => path.endsWith(`/${name}`)) : undefined;
       if (!entry) return null;
-      const res = await fetchFn(await entry[1](), signal ? { signal } : undefined);
-      if (!res.ok) return null;
-      const bytes = await res.arrayBuffer();
+      const url = await entry[1]();
+      let bytes: ArrayBuffer;
+      if (url.startsWith("data:")) {
+        // Vite inlines a small asset as a data: URL, and connect-src 'self' doesn't allow fetching one: decode it here.
+        const bin = atob(url.slice(url.indexOf(",") + 1));
+        bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0)).buffer;
+      } else {
+        const res = await fetchFn(url, signal ? { signal } : undefined);
+        if (!res.ok) return null;
+        bytes = await res.arrayBuffer();
+      }
       return isGlb(bytes) ? { bytes, watermarked: true } : null;
     },
   };

@@ -1,7 +1,7 @@
 // Catalog models: fitting to the footprint, which material is paint, the paint in a baked texture, tint, dispose.
 import { describe, expect, it, vi } from "vitest";
 import { Box3, BoxGeometry, Color, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Vector3, type Texture } from "three";
-import { analysePaint, applyTint, disposeModel, hsv, materialAreas, normalise, planNormalisation, planTint, texturePixels, PAINT_CHUNK, PAINT_DECL } from "../../src/viewer/glb-model";
+import { analysePaint, applyTint, disposeModel, fitToSceneLighting, hsv, materialAreas, normalise, planNormalisation, planTint, texturePixels, PAINT_CHUNK, PAINT_DECL } from "../../src/viewer/glb-model";
 
 const FOOT = { lengthM: 4.76, widthM: 1.81, heightM: 1.45 };
 
@@ -166,6 +166,20 @@ describe("the paint baked into a texture (the catalog's case)", () => {
     const root = new Group();
     root.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ map: { isTexture: true, image: null } as unknown as Texture })));
     expect(planTint(root)).toEqual({ kind: "none", reason: "unreadable-texture" });
+  });
+});
+
+describe("lighting", () => {
+  it("a material loaded fully metallic (glTF's default, the catalog's case) gets our vehicles' metalness; a metalness map is left alone", () => {
+    const root = new Group();
+    const plain = new MeshStandardMaterial({ metalness: 1 });
+    const mapped = new MeshStandardMaterial({ metalness: 1, metalnessMap: bakedTexture([10, 10, 10]) });
+    const matte = new MeshStandardMaterial({ metalness: 0.1 });
+    root.add(new Mesh(new BoxGeometry(1, 1, 1), plain), new Mesh(new BoxGeometry(1, 1, 1), mapped), new Mesh(new BoxGeometry(1, 1, 1), matte));
+    expect(fitToSceneLighting(root)).toBe(1);
+    expect(plain.metalness).toBeLessThan(0.5);
+    expect(mapped.metalness).toBe(1);
+    expect(matte.metalness).toBe(0.1);
   });
 });
 
