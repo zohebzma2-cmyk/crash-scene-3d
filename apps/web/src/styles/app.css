@@ -8,6 +8,8 @@
 .refusal-why { font-weight: var(--weight-semibold); }
 .warnings .refusal-fixes { display: flex; flex-direction: column; gap: var(--space-2); padding-left: var(--space-0); list-style: none; }
 .refusal-fix { width: 100%; height: auto; min-height: var(--size-button-h); justify-content: flex-start; text-align: start; white-space: normal; }
+.refusal-memory { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.refusal-memory-note { margin: var(--space-0); font-size: var(--text-xs); color: var(--color-text-secondary); }
 .streets-here { font-size: var(--text-sm); color: var(--color-text-secondary); }
 .open-errors { margin: var(--space-2) var(--space-0) var(--space-0); padding-left: var(--space-6); list-style: disc; font-size: var(--text-sm); color: var(--color-danger-text); }
 .open-scene { display: flex; flex-direction: column; }

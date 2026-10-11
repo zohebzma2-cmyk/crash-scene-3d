@@ -51,11 +51,21 @@ export interface PolyPoint { readonly p: Vec2; /** Compass bearing of travel her
 
 /** Point and travel bearing at arc length s; beyond either end the first/last segment is extended straight. */
 export function pointAt(poly: Poly, s: number): PolyPoint {
+  return pointAtFrom(poly, s, 0).at;
+}
+
+/**
+ * pointAt, walking the segments from `from` instead of the first one when that gives the same segment (every segment
+ * before it ends before s): for a run of increasing arc lengths, pass back the returned `i`. The same result as pointAt.
+ */
+export function pointAtFrom(poly: Poly, s: number, from: number): { at: PolyPoint; i: number } {
   const n = poly.pts.length;
-  if (n === 1) return { p: poly.pts[0]!, bearing: 0 };
-  let i = 0;
+  if (n === 1) return { at: { p: poly.pts[0]!, bearing: 0 }, i: 0 };
+  let i = from > 0 && from <= n - 2 && poly.cum[from]! < s ? from : 0;
   if (s >= poly.length) i = n - 2;
   else if (s > 0) { while (i < n - 2 && poly.cum[i + 1]! < s) i++; }
+  else i = 0;
+  const walked = i;
   // Skip zero-length segments.
   let k = i;
   while (k > 0 && poly.cum[k + 1]! - poly.cum[k]! < 1e-9) k--;
@@ -63,15 +73,30 @@ export function pointAt(poly: Poly, s: number): PolyPoint {
   const a = poly.pts[k]!, b = poly.pts[k + 1]!;
   const segLen = poly.cum[k + 1]! - poly.cum[k]!;
   const t = segLen < 1e-9 ? 0 : (s - poly.cum[k]!) / segLen;
-  return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, bearing: bearingOf(sub(b, a)) };
+  return { at: { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, bearing: bearingOf(sub(b, a)) }, i: walked };
 }
 
 export interface Projection { readonly s: number; readonly dist: number; readonly point: Vec2 }
 
-/** Closest point of the polyline to p, as arc length, distance and point. */
+/**
+ * Closest point of the polyline to p, as arc length, distance and point. A segment whose bounding box is already further
+ * from p than the best so far (by more than 1e-9 m) can't be nearer, so it is skipped: the same result, faster.
+ */
 export function project(poly: Poly, p: Vec2): Projection {
   let best: Projection = { s: 0, dist: Infinity, point: poly.pts[0]! };
+  const boxes = poly.pts.length > 8 ? segBoxes(poly) : null;
+  const chunks = poly.pts.length > 2 * CHUNK ? chunkBoxes(poly) : null;
   for (let i = 0; i + 1 < poly.pts.length; i++) {
+    if (chunks && i % CHUNK === 0) {
+      // A whole run of segments further away than the best so far is skipped at once.
+      const c = i / CHUNK;
+      const dx = Math.max(chunks[4 * c]! - p.x, 0, p.x - chunks[4 * c + 1]!), dy = Math.max(chunks[4 * c + 2]! - p.y, 0, p.y - chunks[4 * c + 3]!);
+      if (Math.hypot(dx, dy) - 1e-9 > best.dist) { i += CHUNK - 1; continue; }
+    }
+    if (boxes) {
+      const dx = Math.max(boxes[4 * i]! - p.x, 0, p.x - boxes[4 * i + 1]!), dy = Math.max(boxes[4 * i + 2]! - p.y, 0, p.y - boxes[4 * i + 3]!);
+      if (Math.hypot(dx, dy) - 1e-9 > best.dist) continue;
+    }
     const a = poly.pts[i]!, b = poly.pts[i + 1]!, ab = sub(b, a);
     const l2 = dot(ab, ab);
     const t = l2 < 1e-18 ? 0 : Math.max(0, Math.min(1, dot(sub(p, a), ab) / l2));
@@ -95,11 +120,77 @@ export function segmentCross(p: Vec2, p2: Vec2, q: Vec2, q2: Vec2): { t: number;
 
 export interface Crossing { readonly point: Vec2; /** Arc length along the first polyline. */ readonly sA: number; readonly sB: number }
 
-/** Every crossing of two polylines. */
+/**
+ * Margin for the bounding-box screen in polyCrossings, m. segmentCross accepts t and u up to 1e-9 past either end, which
+ * is under 1e-6 m for any segment shorter than 1,000 km, so boxes grown by this never drop a crossing it would find.
+ */
+const BOX_MARGIN_M = 1e-6;
+
+/** Segments per chunk for the two-level bounding boxes (chunkBoxes). */
+const CHUNK = 16;
+const chunkBoxCache = new WeakMap<Poly, Float64Array>();
+/** Bounding boxes of each run of CHUNK segments (the union of their segment boxes), cached per polyline. */
+function chunkBoxes(poly: Poly): Float64Array {
+  const hit = chunkBoxCache.get(poly);
+  if (hit) return hit;
+  const seg = segBoxes(poly), nSeg = Math.max(0, poly.pts.length - 1), nChunk = Math.ceil(nSeg / CHUNK);
+  const out = new Float64Array(4 * nChunk);
+  for (let c = 0; c < nChunk; c++) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = c * CHUNK; i < Math.min(nSeg, (c + 1) * CHUNK); i++) {
+      x0 = Math.min(x0, seg[4 * i]!); x1 = Math.max(x1, seg[4 * i + 1]!); y0 = Math.min(y0, seg[4 * i + 2]!); y1 = Math.max(y1, seg[4 * i + 3]!);
+    }
+    out[4 * c] = x0; out[4 * c + 1] = x1; out[4 * c + 2] = y0; out[4 * c + 3] = y1;
+  }
+  chunkBoxCache.set(poly, out);
+  return out;
+}
+
+/** Bounding boxes of a polyline's segments, [minX, maxX, minY, maxY] per segment, cached per polyline. */
+const segBoxCache = new WeakMap<Poly, Float64Array>();
+function segBoxes(poly: Poly): Float64Array {
+  const hit = segBoxCache.get(poly);
+  if (hit) return hit;
+  const n = Math.max(0, poly.pts.length - 1);
+  const out = new Float64Array(4 * n);
+  for (let i = 0; i < n; i++) {
+    const p = poly.pts[i]!, q = poly.pts[i + 1]!;
+    out[4 * i] = Math.min(p.x, q.x) - BOX_MARGIN_M; out[4 * i + 1] = Math.max(p.x, q.x) + BOX_MARGIN_M;
+    out[4 * i + 2] = Math.min(p.y, q.y) - BOX_MARGIN_M; out[4 * i + 3] = Math.max(p.y, q.y) + BOX_MARGIN_M;
+  }
+  segBoxCache.set(poly, out);
+  return out;
+}
+
+/** Crossings already worked out, per pair of polylines (polylines are never changed after makePoly). */
+const crossingCache = new WeakMap<Poly, WeakMap<Poly, readonly Crossing[]>>();
+
+/**
+ * Every crossing of two polylines, in the order of a's segments, then b's. Segment pairs whose boxes miss are skipped, and a
+ * pair of polylines seen before is answered from a cache: the same result, faster. The caller gets its own array.
+ */
 export function polyCrossings(a: Poly, b: Poly): Crossing[] {
+  let inner = crossingCache.get(a);
+  const hit = inner?.get(b);
+  if (hit) return [...hit];
+  const out = crossingsOf(a, b);
+  if (!inner) { inner = new WeakMap(); crossingCache.set(a, inner); }
+  inner.set(b, out);
+  return [...out];
+}
+
+function crossingsOf(a: Poly, b: Poly): Crossing[] {
   const out: Crossing[] = [];
+  const ba = segBoxes(a), bb = segBoxes(b), cb = chunkBoxes(b);
   for (let i = 0; i + 1 < a.pts.length; i++) {
+    const ax0 = ba[4 * i]!, ax1 = ba[4 * i + 1]!, ay0 = ba[4 * i + 2]!, ay1 = ba[4 * i + 3]!;
     for (let j = 0; j + 1 < b.pts.length; j++) {
+      if (j % CHUNK === 0) {
+        // A run of b's segments whose box misses this segment of a is skipped at once (same order of crossings).
+        const c = j / CHUNK;
+        if (cb[4 * c]! > ax1 || cb[4 * c + 1]! < ax0 || cb[4 * c + 2]! > ay1 || cb[4 * c + 3]! < ay0) { j += CHUNK - 1; continue; }
+      }
+      if (bb[4 * j]! > ax1 || bb[4 * j + 1]! < ax0 || bb[4 * j + 2]! > ay1 || bb[4 * j + 3]! < ay0) continue;
       const p = a.pts[i]!, p2 = a.pts[i + 1]!, q = b.pts[j]!, q2 = b.pts[j + 1]!;
       const hit = segmentCross(p, p2, q, q2);
       if (!hit) continue;
@@ -151,10 +242,13 @@ export function openRing(ring: readonly Vec2[]): Vec2[] {
   return r;
 }
 
-export function pointInRing(p: Vec2, ringIn: readonly Vec2[]): boolean {
-  const ring = openRing(ringIn);
+/** How many points of a ring count: all of them, or all but a repeated closing point (what openRing keeps, without the copy). */
+const openLength = (ring: readonly Vec2[]): number => (ring.length > 1 && dist(ring[0]!, ring[ring.length - 1]!) < 1e-9 ? ring.length - 1 : ring.length);
+
+export function pointInRing(p: Vec2, ring: readonly Vec2[]): boolean {
+  const n = openLength(ring);
   let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+  for (let i = 0, j = n - 1; i < n; j = i++) {
     const a = ring[i]!, b = ring[j]!;
     if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
   }
@@ -201,16 +295,38 @@ export function centroid(pts: readonly Vec2[]): Vec2 {
   return { x: x / pts.length, y: y / pts.length };
 }
 
-/** Does a (possibly concave) ring overlap a vehicle box by more than tolM? The box is shrunk by tolM on every side first. */
+/** Bounding boxes of rings, [minX, maxX, minY, maxY], cached per ring (rings are never changed). */
+const ringBoxCache = new WeakMap<readonly Vec2[], readonly [number, number, number, number]>();
+function ringBox(ring: readonly Vec2[], n: number): readonly [number, number, number, number] {
+  const hit = ringBoxCache.get(ring);
+  if (hit) return hit;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < n; i++) { const p = ring[i]!; if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+  const box = [minX, maxX, minY, maxY] as const;
+  ringBoxCache.set(ring, box);
+  return box;
+}
+
+/**
+ * Does a (possibly concave) ring overlap a vehicle box by more than tolM? The box is shrunk by tolM on every side first.
+ * A box whose bounding box misses the ring's (by more than 1e-6 m, far above segmentCross's end tolerance) can't touch
+ * it, so that case answers at once: the same result, sooner.
+ */
 export function boxOverlapsRing(cx: number, cy: number, headingRad: number, lengthM: number, widthM: number, ringIn: readonly Vec2[], tolM: number): boolean {
-  const ring = openRing(ringIn);
-  if (ring.length < 3) return false;
-  const box = boxCorners(cx, cy, headingRad, Math.max(0.01, lengthM - 2 * tolM), Math.max(0.01, widthM - 2 * tolM));
+  const ring = ringIn, n = openLength(ringIn);
+  if (n < 3) return false;
+  const L = Math.max(0.01, lengthM - 2 * tolM), W = Math.max(0.01, widthM - 2 * tolM);
+  // The shrunken box's bounding box, worked out directly (the same as its corners' to rounding, far inside the margin).
+  const sn = Math.abs(Math.sin(headingRad)), cs = Math.abs(Math.cos(headingRad));
+  const ex = sn * L / 2 + cs * W / 2, ey = cs * L / 2 + sn * W / 2;
+  const rb = ringBox(ring, n);
+  if (cx - ex > rb[1] + 1e-6 || cx + ex < rb[0] - 1e-6 || cy - ey > rb[3] + 1e-6 || cy + ey < rb[2] - 1e-6) return false;
+  const box = boxCorners(cx, cy, headingRad, L, W);
   for (const c of box) if (pointInRing(c, ring)) return true;
   if (pointInRing({ x: cx, y: cy }, ring)) return true;
-  for (const v of ring) if (pointInRing(v, box)) return true;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
+  for (let i = 0; i < n; i++) if (pointInRing(ring[i]!, box)) return true;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]!, b = ring[(i + 1) % n]!;
     for (let j = 0; j < 4; j++) if (segmentCross(a, b, box[j]!, box[(j + 1) % 4]!)) return true;
   }
   return false;

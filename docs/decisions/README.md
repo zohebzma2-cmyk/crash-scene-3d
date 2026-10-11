@@ -10,3 +10,4 @@ One short record per judgment call made in this build. Each says what was decide
 - [0006](0006-one-zip-download.md) One ZIP download, with a second tap as fallback.
 - [0007](0007-review-depth-by-risk.md) Full Opus review only for physics and security-sensitive code; visual changes by screenshot.
 - [0008](0008-feature-freeze.md) Feature freeze after impact and aftermath; new ideas go to README "Next version".
+- [0009](0009-fixer-learning.md) The one-tap fixer learns on the device only (kinds of fix picked, local, clearable) plus a regression corpus in the repo; cross-user learning only as a future opt-in.

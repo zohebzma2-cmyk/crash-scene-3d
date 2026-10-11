@@ -85,7 +85,7 @@ export type Action =
   | { type: "add-vehicle" }
   | { type: "remove-vehicle"; id: VehicleId }
   | { type: "reconcile-travel"; choices: readonly TravelChoice[] }
-  /** A one-tap fix from the Review step: the same vehicles with a hit side, direction or action changed. */
+  /** A one-tap fix from the Review step: the same vehicles with a hit side, direction, action or speed changed, or the pin moved. */
   | { type: "apply-fix"; scene: Scene }
   | { type: "replace"; doc: Doc }
   | { type: "reset" };
@@ -179,9 +179,15 @@ export function reducer(doc: Doc, a: Action): Doc {
       return changed ? { ...doc, scene: { ...s, vehicles } } : doc;
     }
     case "apply-fix": {
-      // Only the vehicles' details change; the same letters, so every card keeps its key.
+      // The vehicles' details change (the same letters, so every card keeps its key), and for a "move the pin" fix the pin.
       if (a.scene.vehicles.length !== s.vehicles.length || a.scene.vehicles.some((v, i) => v.id !== s.vehicles[i]?.id)) return doc;
-      return { ...doc, scene: { ...s, vehicles: a.scene.vehicles }, directionSet: doc.directionSet.map(() => true) };
+      const moved = a.scene.location.lat !== s.location.lat || a.scene.location.lon !== s.location.lon;
+      // A moved pin keeps the roads already loaded (the fix stays within them), and the road ids are not tidied after it:
+      // the fix was checked exactly as it is, so it must draw exactly as it is.
+      return {
+        ...doc, scene: { ...s, vehicles: a.scene.vehicles, location: moved ? a.scene.location : s.location },
+        directionSet: doc.directionSet.map(() => true), reconcile: moved ? false : doc.reconcile,
+      };
     }
     case "replace": return a.doc;
     case "reset": return initialDoc();

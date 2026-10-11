@@ -20,3 +20,5 @@ The claimant marks where each vehicle was hit. Sometimes the entered zones, dire
 - Search is capped by counts, not a clock: 30 trial simulations for two vehicles, 20 for three or four. Worst case about 1.8 s on the main thread; a Web Worker and a wider fallback for 3-4 vehicles are on "Next version".
 
 Sources: 8fccb99, 3839c17, 7bf9b1d, 4bf520b, b7fc78e, 35842fb, 182deaa, DESIGN.md section 18, README "Next version".
+
+Update 2026-10-10 (round A): the fixer now also offers who hit whom, a speed inside a "not sure" range and moving the pin onto the nearest road, judged off the main thread in a Web Worker; see DESIGN.md section 18, docs/FIXER-BENCHMARK.md and 0009.

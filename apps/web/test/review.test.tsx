@@ -5,6 +5,8 @@ import { resetApproachPlayed } from "../src/review/ReviewStep";
 import { Timeline, readout, togglePlay, useTimeline } from "../src/review/Timeline";
 import { all, click, flush, get, key, maybe, mockMatchMedia, mount, renderApp, text } from "./helpers";
 import { makeServices, tbone } from "./fakes";
+import { FIX_MEMORY_KEY } from "../src/fixer/memory";
+import { CLEARED_TEXT, REMEMBERED_TEXT } from "../src/review/RefusalFixes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | { unmount: () => void } | null = null;
 beforeEach(() => {
@@ -229,7 +231,7 @@ describe("step 3: review", () => {
     const fixScene = (zone: "rear" | "front-right" | "right" | "left", scene: Parameters<typeof real>[0]) => ({ ...scene, vehicles: scene.vehicles.map((v, i) => (i === 1 ? { ...v, zone } : v)) });
     services.physics.suggestFixes = (scene) => ({
       why: "Vehicle A and vehicle B would already have been moving apart before they touched.",
-      fixes: (["front-right", "right", "left", "rear"] as const).map((z, i) => ({ id: `B.zone=${z}`, label: `Change B's hit side to ${z}`, cost: i, changes: [], scene: fixScene(z, scene) })).slice(0, 3),
+      fixes: (["front-right", "right", "left", "rear"] as const).map((z, i) => ({ id: `B.zone=${z}`, label: `Change B's hit side to ${z}`, cost: i, size: 1, kind: "zone:struck", notes: false, changes: [], scene: fixScene(z, scene) })).slice(0, 3),
       focus: { step: "vehicles", vehicleId: "B", field: "zone" }, trials: 4,
     });
     app = await renderApp(services, example);
@@ -252,6 +254,48 @@ describe("step 3: review", () => {
     expect(document.querySelector(".viewer")).not.toBeNull();
     expect(window.location.hash).toBe("#review");
     expect(document.activeElement?.id).toBe("h-review");
+  });
+
+  it("remembers only the kind of fix picked, ranks it first next time, and clears it on request (local only)", async () => {
+    const { services } = makeServices();
+    const real = services.physics.simulate;
+    services.physics.simulate = (scene, roads) => (scene.vehicles[1]?.zone === "front"
+      ? { ok: false, errors: [{ code: "moving-apart", vehicleIds: ["A", "B"], text: "Vehicle A and vehicle B would already have been moving apart before they touched." }] }
+      : real(scene, roads));
+    const prefs: Array<Readonly<Record<string, number>> | undefined> = [];
+    services.physics.suggestFixes = (scene, _roads, opts) => {
+      prefs.push(opts?.prefer);
+      return {
+        why: "Vehicle A and vehicle B would already have been moving apart before they touched.",
+        fixes: [{ id: "B.zone=rear", label: "Change B's hit side to Rear", cost: 1, size: 1, kind: "zone:striking", notes: false, changes: [], scene: { ...scene, vehicles: scene.vehicles.map((v, i) => (i === 1 ? { ...v, zone: "rear" as const } : v)) } }],
+        focus: { step: "vehicles", vehicleId: "B", field: "zone" }, trials: 2,
+      };
+    };
+    window.localStorage.removeItem(FIX_MEMORY_KEY);
+    app = await renderApp(services, example);
+    await flush(900);
+    await flush(50);
+    let refusal = document.querySelector("[data-testid=refusal]")!;
+    // jsdom has no Web Worker: the search ran on the main thread, after the refusal painted.
+    expect(refusal.getAttribute("data-fixer")).toBe("main");
+    expect(prefs[0]).toEqual({});
+    expect(maybe("button", "Clear remembered fixes")).toBeNull();
+    click(get("button", "Change B's hit side to Rear", refusal));
+    await flush(900);
+    expect(JSON.parse(window.localStorage.getItem(FIX_MEMORY_KEY)!)).toEqual({ v: 1, kinds: { "zone:striking": 1 } });
+    // The next refusal passes the remembered kind to the search and offers to forget it.
+    app.unmount();
+    app = await renderApp(services, example);
+    await flush(900);
+    await flush(50);
+    refusal = document.querySelector("[data-testid=refusal]")!;
+    expect(prefs[prefs.length - 1]).toEqual({ "zone:striking": 1 });
+    expect(text(refusal)).toContain(REMEMBERED_TEXT);
+    click(get("button", "Clear remembered fixes", refusal));
+    await flush(50);
+    expect(window.localStorage.getItem(FIX_MEMORY_KEY)).toBeNull();
+    expect(maybe("button", "Clear remembered fixes")).toBeNull();
+    expect(text(refusal.querySelector(".refusal-memory [role=status]")!)).toBe(CLEARED_TEXT);
   });
 
   it("'Edit the details myself' goes to the vehicles step at the detail to change", async () => {
