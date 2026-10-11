@@ -38,6 +38,8 @@ describe("Review loading states", () => {
     expect(notice.getAttribute("role")).toBe("alert");
     expect(text(notice)).toContain("We couldn't load the map data, so the picture has no roads.");
     expect(maybe(".viewer-slot")).not.toBeNull();
+    // The picture is drawn (the diagram, in jsdom), so no loading box stays up beside the notice.
+    expect(maybe("[data-testid=viewer-loading]")).toBeNull();
     click(get("button", "Retry", notice));
     await flush(50);
     expect(load).toHaveBeenCalledTimes(2);

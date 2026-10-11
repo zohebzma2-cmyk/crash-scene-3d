@@ -89,8 +89,8 @@ export function loadProgress(stages: readonly Stage[]): number {
   return sum / stages.length;
 }
 
-/** Every stage done or skipped: the picture is up. */
-export const loadComplete = (stages: readonly Stage[]): boolean => stages.every(finished);
+/** Every stage done or skipped: the picture is up. Failed map data counts as done: the picture is drawn without roads (see `loadNotice`). */
+export const loadComplete = (stages: readonly Stage[]): boolean => stages.every((s) => finished(s) || (s.id === "map" && s.status === "failed"));
 
 /**
  * What stops the picture from being built: a failed 3D chunk or a failed 3D view. The map data failing is

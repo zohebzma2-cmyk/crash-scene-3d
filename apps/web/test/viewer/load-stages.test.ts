@@ -61,6 +61,9 @@ describe("load stages", () => {
     expect(loadNotice(s)).toMatchObject({ id: "map", message: FAILURE_TEXT.map });
     expect(loadFailure(s)).toBeNull();
     expect(statuses({ map: "failed", terrain: null, models: "ready", scene: "ready" }).terrain).toBe("skipped");
+    // Once the picture is drawn, the loading box goes; the notice stays.
+    expect(loadComplete(s)).toBe(true);
+    expect(loadComplete(loadStages({ map: "failed", terrain: null, models: "ready", scene: "building" }))).toBe(false);
   });
 
   it("a failed 3D chunk or 3D view is a failure, with its own words", () => {

@@ -101,4 +101,6 @@ test("@xb the map data failing is a notice with Retry, and the picture is still 
   await expect(notice.getByRole("button", { name: "Retry" })).toBeVisible();
   await waitForViewer(page);
   await expect(notice).toBeVisible();
+  // The picture is up, so the loading box is gone; only the notice stays.
+  await expect(loading(page)).toHaveCount(0);
 });
