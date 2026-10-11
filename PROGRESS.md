@@ -49,6 +49,7 @@
 
    After those come the DESIGN §7 decisions (C1 start framing, C3 driver views). Then remove the sweep's opt-in gate so check.sh runs it.
 3. **Round B:** the vehicle picker (vPIC type-ahead with aliases): **done on branch `roundB/picker` (2026-10-11), not merged or deployed** (status below), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
+   - **Photos, 3D models and logos: done on branch `roundB/images` (2026-10-11), not merged or deployed.** Routes `/api/vehicles/image`, `/api/vehicles/model`, `/api/logos/make` (packages/proxy/src/media.ts); MakeLogo and VehiclePhoto on the vehicle card; photos in the PDF table and on the stills. Decision 0011 lists what can only be checked after a deploy with the real keys (`CARIMAGES_API_KEY`, `CARIMAGES_API_SECRET`, `LOGO_DEV_SECRET_KEY`; `LOGO_DEV_TOKEN` is not used). Ask the owner before any deploy.
 4. **The fixer review follow-ups and the rest of README "Next version".**
 
 ## roundB/picker (2026-10-11, not merged)
@@ -73,8 +74,14 @@
 - **The privacy pre-commit hook exists but isn't on.** Turning it on (`git config core.hooksPath .githooks`) is the owner's call.
 
 ## Where things are
-- **Decisions:** docs/decisions (0001–0009).
+- **Decisions:** docs/decisions (0001–0011).
 - **Benchmarks:** docs/FIXER-BENCHMARK.md.
 - **Diagnosis:** docs/VISIBILITY-SWEEP.md.
 - **Red team:** docs/RED-TEAM.md.
 - **Deploy:** docs/DEPLOY.md.
+
+## Round B: vehicle colours and catalog 3D models (branch `roundB/colors`, 2026-10-11, not merged or deployed)
+- **Done:** optional `color {name, hex}` on each scene vehicle (schema v3, additive; absent = Not sure, fingerprints of older scenes unchanged); ColorPicker on the vehicle card (12 factory colours, Custom, Not sure); one helper `vehicleColor()` drives the 3D body, the mini map disc, the web diagram, the diagram PNG, the PDF diagram, the 3D stills and the PDF table ("2021 Honda Accord · Red" plus a swatch). Letters and outlines stay in the token colour; ink on paint is chosen for contrast. `PaintChip` ("Picked: Red") is the hook for roundB/images' VehiclePhoto.
+- **Catalog GLBs:** `/api/vehicles/model` (roundB/images' route; `MODEL_ROUTE` in `apps/web/src/services/vehicle-models.ts` until it moves to `PROXY_ROUTES`), swapped in over our model when loaded, fitted to the footprint, tinted (named material / largest material / shader recolour of a paint baked in the texture / none for a dark paint), freed on change and unmount. Fixtures: `apps/web/fixtures/models/*.glb` from `node scripts/make-fixture-glb.mjs`.
+- **Checks:** typecheck, lint, 1,660 unit tests, design tokens; e2e `colors`, `csp-steps`, `download` green on all four projects; `viewer-clear` green except the phone "Wide @ End: B Stopped label over B" flake, which also fails on b7edec1 (5 of 60 runs there).
+- **Open for the owner:** dents are not drawn on catalog models; watermarked previews appear in the 3D stills; a dark catalog paint can't be retinted; README "Next version" round B line still says not started (update when the round B branches meet).

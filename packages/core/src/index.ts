@@ -5,3 +5,4 @@ export * from "./vehicle-names";
 export * from "./physics";
 export * from "./format";
 export * from "./roadart";
+export * from "./vehicle-color";

@@ -4,12 +4,13 @@
 // terrain, 3D view, drawing). If the 3D code can't load, or WebGL can't start or is lost, the diagram stays as
 // the picture (and counts as ready), with what went wrong and a Retry button. three.js is loaded lazily so the
 // other steps stay light.
-import { Component, forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { Component, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ViewerHandle } from "../viewer/types";
 import { hasWebGL, loadViewer, retryViewer, useViewerModule } from "../viewer/load-viewer";
 import type { SceneFailure } from "../viewer/load-stages";
 import { ViewerSlot, type ViewerSlotProps } from "./ViewerSlot";
 import { ViewerStatus } from "./ViewerStatus";
+import { useOptionalServices } from "../services/context";
 import "../viewer/viewer.css";
 
 /** Longest a save waits for the 3D view to draw its first frame before giving up on the pictures. */
@@ -81,6 +82,10 @@ export const SceneView = forwardRef<ViewerHandle | null, SceneViewProps>(functio
     handleKey: (e) => inner.current?.handleKey?.(e) ?? false,
   }), [webgl]);
 
+  // Catalog 3D models (round B), when the app has the service: the viewer swaps them in once loaded, after its
+  // own models have drawn the first frame (they never hold up "Drawing the scene").
+  const models = useOptionalServices()?.vehicleModels;
+  const loadModel = useMemo(() => (models ? models.load.bind(models) : undefined), [models]);
   const Viewer = chunk.module?.Viewer ?? null;
   const showDiagram = !webgl || scene !== "ready";
   return (
@@ -90,7 +95,7 @@ export const SceneView = forwardRef<ViewerHandle | null, SceneViewProps>(functio
         <ViewerBoundary key={attempt} onError={onBoundary}>
           <Viewer
             ref={inner} {...props} building={scene !== "ready"} onReady={handleReady} onContextLost={onLost}
-            showMeasureValues={!phone} {...(onSelectVehicle ? { onSelectVehicle } : {})}
+            showMeasureValues={!phone} {...(onSelectVehicle ? { onSelectVehicle } : {})} {...(loadModel ? { loadModel } : {})}
           />
         </ViewerBoundary>
       ) : null}

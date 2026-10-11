@@ -29,8 +29,12 @@
 .d-path { stroke: var(--vehicle); fill: none; opacity: var(--opacity-path); }
 .d-impact { stroke: var(--color-scene-impact); }
 .d-impact-dot { fill: var(--color-scene-impact); }
-.d-veh-body { fill: var(--vehicle); }
-.d-veh-body-stroke { stroke: var(--vehicle); }
+.d-veh-body { fill: var(--vehicle-paint, var(--vehicle)); }
+.d-veh-body-stroke { stroke: var(--vehicle-paint, var(--vehicle)); }
+/* A picked paint fills the body (round B); the outline stays in the vehicle token colour so identity never depends on paint,
+   and the window lines take the ink chosen for contrast on that paint (lib/paint.ts). */
+.d-veh.is-painted .d-veh-body { stroke: var(--vehicle); stroke-width: var(--size-stroke-tag); vector-effect: non-scaling-stroke; paint-order: stroke; }
+.d-veh.is-painted .d-veh-line { stroke: var(--paint-ink); }
 .d-veh-line { stroke: var(--color-surface); opacity: var(--opacity-glass-fill); }
 .d-ghost-body { fill: none; stroke: var(--vehicle); stroke-width: var(--size-stroke-ghost); vector-effect: non-scaling-stroke; stroke-dasharray: var(--space-1) var(--space-1); }
 .d-ghost .d-veh-line { display: none; }

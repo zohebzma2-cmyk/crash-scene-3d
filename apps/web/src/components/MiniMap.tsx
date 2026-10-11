@@ -17,6 +17,7 @@ import { useRoads } from "../state/Roads";
 import { MapTiles } from "./MapTiles";
 import { NorthArrow } from "./NorthArrow";
 import { ucFirst } from "../lib/text";
+import { paintStyle } from "../lib/paint";
 
 const FALLBACK_MARKER_PX = 44;
 const FALLBACK_PIN_PX = 32;
@@ -42,7 +43,7 @@ function VehicleMarker({ map, lat, lon, vehicle, heading }: { map: L.Map; lat: n
   }, [map, host]);
   useEffect(() => { ref.current?.setLatLng([lat, lon]); }, [lat, lon]);
   return createPortal(
-    <div className={`veh-marker v-${vehicle.id.toLowerCase()}`}>
+    <div className={`veh-marker v-${vehicle.id.toLowerCase()}`} style={paintStyle(vehicle)} data-paint={vehicle.color?.hex ?? ""}>
       <span className="veh-icon" style={{ rotate: `${heading}deg` }}><Icon name={PRESETS[vehicle.type].icon} /></span>
       <b>{vehicle.id}</b>
     </div>,

@@ -1,11 +1,12 @@
 // The vehicles in the scene: solid models at the current time, and the dashed rest-pose outlines.
 // Geometry comes from vehicle-models (cached); materials are bound to tokens and disposed on unmount.
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import { Line } from "@react-three/drei";
 import { MeshStandardMaterial, type Color, type Group, type Material } from "three";
-import type { Pose, RoadNetwork, VehicleResult } from "@csd/core";
+import { vehicleColor, type Paintable, type Pose, type RoadNetwork, type VehicleResult } from "@csd/core";
 import { headingToYaw, heightAt, toThree } from "./math";
-import { vehicleToken, type SceneColors } from "./tokens";
+import { vehicleToken, type SceneColors, type SceneToken } from "./tokens";
+import { applyTint, type TintPlan } from "./glb-model";
 import { vehicleModel, type VehicleParts } from "./vehicle-models";
 import { LIFT } from "./scene-geometry";
 
@@ -24,10 +25,24 @@ export class VehicleMaterials {
     this.taillight = new MeshStandardMaterial({ color: colors["--color-scene-taillight"], emissive: colors["--color-scene-taillight"], emissiveIntensity: 0.5, roughness: 0.3 });
   }
 
+  /** The body material of vehicle `id` (created once; its colour is set by `paintBody`, after the commit). */
   bodyFor(id: string): MeshStandardMaterial {
     let m = this.body.get(id);
     if (!m) { m = new MeshStandardMaterial({ color: this.colors[vehicleToken(id)], roughness: 0.45, metalness: 0.15 }); this.body.set(id, m); }
     return m;
+  }
+
+  /** The colour key `vehicleColor(v)` gives: a token name for "Not sure", or the picked "#rrggbb". */
+  static fillOf(v: Paintable): string {
+    return vehicleColor(v, vehicleToken);
+  }
+
+  /** Set a body material to `fill` (a token name or a hex): only when it changes, never per frame. */
+  paintBody(m: MeshStandardMaterial, fill: string): void {
+    if (m.userData.fill === fill) return;
+    if (fill.startsWith("--")) m.color.copy(this.colors[fill as SceneToken]);
+    else m.color.set(fill);                          // sRGB hex to the working colour space
+    m.userData.fill = fill;
   }
 
   dispose(): void {
@@ -44,8 +59,19 @@ export function useVehicleMaterials(colors: SceneColors): VehicleMaterials {
   return mats;
 }
 
+/** A catalog model fitted to this vehicle's footprint (glb-model.ts), with how to tint it. */
+export interface CatalogModel {
+  readonly object: Group;
+  readonly plan: TintPlan;
+  readonly watermarked: boolean;
+}
+
 export interface VehicleMeshProps {
   readonly v: VehicleResult;
+  /** The scene's vehicle (its paint); absent = the token colour. */
+  readonly paint?: Paintable;
+  /** The catalog model, once loaded: drawn instead of the low-poly parts, in the same posed group (no flash, same pose). */
+  readonly catalog?: CatalogModel | null;
   readonly pose: Pose;
   readonly mats: VehicleMaterials;
   readonly terrain: RoadNetwork["terrain"] | null;
@@ -58,7 +84,7 @@ export interface VehicleMeshProps {
   readonly damage?: (parts: VehicleParts) => VehicleParts;
 }
 
-export function VehicleMesh({ v, pose, mats, terrain, register, damage }: VehicleMeshProps) {
+export function VehicleMesh({ v, paint, catalog, pose, mats, terrain, register, damage }: VehicleMeshProps) {
   const model = vehicleModel(v.type, v.lengthM, v.widthM);
   const parts = useMemo(() => (damage ? damage(model.parts) : model.parts), [damage, model]);
   useEffect(() => () => {
@@ -66,13 +92,25 @@ export function VehicleMesh({ v, pose, mats, terrain, register, damage }: Vehicl
     for (const k of ["body", "glass", "headlight", "taillight", "tire"] as const) if (parts[k] !== model.parts[k]) parts[k].dispose();
   }, [parts, model]);
   const ground = heightAt(terrain ?? null, { x: pose.xM, y: pose.yM });
+  const body = mats.bodyFor(v.id);
+  const fill = VehicleMaterials.fillOf(paint ?? { id: v.id });
+  // Our body and the catalog model take vehicleColor(v) after the commit and before the next frame (a layout effect):
+  // render stays pure, and no frame shows a catalog model in its own paint.
+  useLayoutEffect(() => {
+    mats.paintBody(body, fill);
+    if (catalog) applyTint(catalog.plan, body.color);
+  }, [mats, body, fill, catalog]);
   return (
     <group ref={(g) => register?.(v.id, g)} position={toThree({ x: pose.xM, y: pose.yM }, ground)} rotation={[0, headingToYaw(pose.headingRad), 0]}>
-      <mesh geometry={parts.body} material={mats.bodyFor(v.id)} castShadow />
-      <mesh geometry={parts.glass} material={mats.glass} />
-      <mesh geometry={parts.tire} material={mats.tire} castShadow />
-      <mesh geometry={parts.headlight} material={mats.headlight} />
-      <mesh geometry={parts.taillight} material={mats.taillight} />
+      {catalog ? <primitive object={catalog.object} /> : (
+        <>
+          <mesh geometry={parts.body} material={body} castShadow />
+          <mesh geometry={parts.glass} material={mats.glass} />
+          <mesh geometry={parts.tire} material={mats.tire} castShadow />
+          <mesh geometry={parts.headlight} material={mats.headlight} />
+          <mesh geometry={parts.taillight} material={mats.taillight} />
+        </>
+      )}
     </group>
   );
 }

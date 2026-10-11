@@ -9,6 +9,10 @@ import type {
 } from "@csd/core";
 import type { FixerService } from "../fixer/client";
 import type { FixMemory } from "../fixer/memory";
+import type { MediaService } from "./media";
+
+export type { MediaAnswer, MediaService, VehicleRef } from "./media";
+import type { VehicleModelsService } from "./vehicle-models";
 
 export type ServiceErrorCode = "busy" | "timeout" | "upstream" | "bad-request" | "not-found" | "network" | "bad-response";
 
@@ -161,6 +165,8 @@ export interface Services {
   readonly geo: GeoService;
   readonly roads: RoadsService;
   readonly vehicles: VehiclesService;
+  /** Vehicle photos, 3D models and maker logos, from our own /api (fixtures: synthetic files, see media-fixtures.ts). */
+  readonly media: MediaService;
   readonly physics: PhysicsService;
   /** The one-tap fixer's search, in a Web Worker when the browser has one. */
   readonly fixer: FixerService;
@@ -169,4 +175,6 @@ export interface Services {
   readonly exports: ExportsService;
   readonly pdf: PdfPreviewService;
   readonly examples: ExamplesService;
+  /** Catalog 3D models (round B). Optional: without it the viewer always draws our own low-poly models. */
+  readonly vehicleModels?: VehicleModelsService;
 }
