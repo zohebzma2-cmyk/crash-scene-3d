@@ -3,13 +3,14 @@
 //
 //   npm run fixer:bench                  measure suggestFixes on packages/core/test/data/fixer-bench.jsonl, print a table
 //   npm run fixer:bench -- --json out    also write the per-scene results as JSON
-//   npm run fixer:bench -- --v1          measure the frozen copy of the fixer before round A (test/fixer/suggest-v1.ts)
+//   npm run fixer:bench -- --v1          measure the fixer before round A (commit 8dde902, physics and all; see fixer-v1.mjs)
 //   npm run fixer:bench -- --generate    rebuild the benchmark file from its seeded generators (changes the "before" set!)
 //
 // Loads the TypeScript sources through Vite's module runner, so no build step and no extra dependency.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { runnerImport } from "vite";
+import { ensureV1 } from "./fixer-v1.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
@@ -26,12 +27,12 @@ if (args.includes("--generate")) {
 
 const { module: run } = await runnerImport(`${root}packages/core/test/fixer/bench-run.ts`);
 const v1 = args.includes("--v1");
-const fixer = v1 ? (await runnerImport(`${root}packages/core/test/fixer/suggest-v1.ts`)).module.suggestFixes : undefined;
+const fixer = v1 ? (await runnerImport(ensureV1())).module.suggestFixes : undefined;
 const cases = bench.loadBench();
 const results = [];
 const t0 = performance.now();
 for (const c of cases) results.push(run.measureCase(c, 2, fixer));
-console.log(run.summarize(results, `${v1 ? "Before (suggest-v1)" : "suggestFixes"} on ${cases.length} refused scenes (Node ${process.version})`));
+console.log(run.summarize(results, `${v1 ? "Before (8dde902)" : "suggestFixes"} on ${cases.length} refused scenes (Node ${process.version})`));
 console.log(`\n(total ${((performance.now() - t0) / 1000).toFixed(1)} s)`);
 const out = args[args.indexOf("--json") + 1];
 if (args.includes("--json") && out) writeFileSync(out, JSON.stringify(results, null, 1));
