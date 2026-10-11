@@ -301,6 +301,13 @@ function Ready({ onReady }: { onReady?: () => void }) {
   return null;
 }
 
+/** Test builds only: keeps the live scene, camera and canvas size where the e2e hook can read them (never written through). */
+function ProbeSource({ into }: { into: React.RefObject<{ scene: unknown; camera: unknown; size: { width: number; height: number } } | null> }) {
+  const { scene, camera, size } = useThree();
+  useEffect(() => { into.current = { scene, camera, size: { width: size.width, height: size.height } }; }, [into, scene, camera, size.width, size.height]);
+  return null;
+}
+
 /** Hands the live renderer and scene to the still-image capture. */
 function Capture({ build, register }: { build: () => Omit<CaptureContext, "live" | "scene">; register: (fn: ViewerHandle["captureStill"]) => void }) {
   const { gl, scene } = useThree();
@@ -325,6 +332,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const controls = useRef<OrbitControlsImpl | null>(null);
   const userMoved = useRef(false);
   const captureFn = useRef<ViewerHandle["captureStill"] | null>(null);
+  const probe = useRef<{ scene: unknown; camera: unknown; size: { width: number; height: number } } | null>(null);   // test builds: read by the e2e hook
   const groups = useRef(new Map<string, Group>());
   const fxApi = useRef<EffectsApi | null>(null);        // FX
   const measureRef = useRef<Group | null>(null);         // FX: measurements stay mounted so the Aftermath still can show them
@@ -373,6 +381,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
       captureStill: (t: number, view: CameraView, size: { width: number; height: number }) => captureFn.current!(t, view, size),
       hide: (id: string, hidden: boolean) => { const g = groups.current.get(id); if (g) g.visible = !hidden; },
       camera: () => { const c = controls.current?.object; return c ? { orthographic: isOrtho(c), zoom: c.zoom, position: c.position.toArray(), target: controls.current!.target.toArray() } : null; },
+      // Read-only: the live scene graph, camera and vehicle groups, for the visibility sweep (e2e/visibility-sweep.spec.ts).
+      three: () => (probe.current ? { ...probe.current, groups: Object.fromEntries(groups.current) } : null),
     };
     (window as unknown as { __csdViewer?: typeof hook }).__csdViewer = hook;
     return () => { delete (window as unknown as { __csdViewer?: typeof hook }).__csdViewer; };
@@ -532,6 +542,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
         <LabelProjector vehicles={vehicleAnchors} measures={measureAnchors} ring={ringAt} showVehicleLabels={props.showLabels} sizes={sizes} obstacles={obstacles} layer={labelLayerRef} onLayout={onLayout} />
         <CompassSync target={compassRef} />
         <Capture build={buildCapture} register={registerCapture} />
+        {import.meta.env.DEV || import.meta.env.VITE_FIXTURES === "1" ? <ProbeSource into={probe} /> : null}
         <Ready onReady={props.onReady} />
       </Canvas>
 
