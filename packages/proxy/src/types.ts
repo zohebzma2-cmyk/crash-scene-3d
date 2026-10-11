@@ -28,6 +28,13 @@ export interface KvStore {
   /** Atomically take the next request slot: true if `key` was free at `nowMs`, and books it until nowMs + intervalMs. */
   takeSlot(key: string, nowMs: number, intervalMs: number): Promise<boolean>;
   /**
+   * Atomically reserve the next slot of `key` in a queue of one every intervalMs: the slot starts at
+   * max(nowMs, the end of the last reservation) and books it until start + intervalMs. Returns that
+   * start (ms; the caller waits until then), or null, booking nothing, when it is more than maxWaitMs away.
+   * One read and one conditional write: a waiter never polls, and callers are served first come, first served.
+   */
+  reserveSlot(key: string, nowMs: number, intervalMs: number, maxWaitMs: number): Promise<number | null>;
+  /**
    * Take one token from the bucket `key` (full at first; refills at limit.refillPerS up to
    * limit.capacity). Returns 0 when a token was taken, else the milliseconds until one will be available.
    */

@@ -8,7 +8,7 @@ import {
   fakeCheckScene, fakeSuggestFixes, fakeMergeSearchResults, fakeParseOverpass, fakePlaceVehicles, fakePoseAt, fakeSimulate,
   fakeStreetsAtPin, fakeToLatLon, fakeToLocal,
 } from "../src/services/fakes";
-import type { ExportInput, Services } from "../src/services/types";
+import type { ExportInput, Services, StreetInTown, TownPlace } from "../src/services/types";
 
 export const tbone: Scene = (() => {
   const p = parseScene(tboneScene);
@@ -47,7 +47,10 @@ export function makeServices(over: Omit<Partial<Services>, "roads"> & { roads?: 
   const roads: Services["roads"] = over.roads === "none" ? { load: vi.fn(async () => ({ ...tboneNet(), ways: [], buildings: [], parking: [] })) } : (over.roads ?? { load });
   const services: Services = {
     mode: "fixtures",
-    geo: { search, suggest: vi.fn(async (_q: string, _o?: unknown) => [] as PlaceResult[]), crossStreets: vi.fn(async (street: string) => ({ street, crossings: [] as CrossStreet[] })) },
+    geo: {
+      search, suggest: vi.fn(async (_q: string, _o?: unknown) => [] as PlaceResult[]), crossStreets: vi.fn(async (street: string) => ({ street, crossings: [] as CrossStreet[] })),
+      town: vi.fn(async (_t: string, _o?: unknown): Promise<TownPlace | null> => null), streetIn: vi.fn(async (_s: string, _t: string, _o?: unknown): Promise<StreetInTown | null> => null),
+    },
     vehicles: { makes, models },
     physics: { toLocal: fakeToLocal, toLatLon: fakeToLatLon, streetsAtPin: fakeStreetsAtPin, placeVehicles: fakePlaceVehicles, simulate: fakeSimulate, poseAt: fakePoseAt, checkScene, suggestFixes: fakeSuggestFixes },
     exports: { build },

@@ -5,6 +5,17 @@ import type { EntryMeta, ProxyDeps, StoredEntry } from "./types";
 
 /** Longest we hold a request waiting for a slot or token before answering "busy". */
 export const MAX_SLOT_WAIT_MS = 1200;
+/**
+ * Overpass only: how long a request waits for the caller's own 1 req/s slot instead of being refused.
+ * Picking a street asks for the roads around it (/api/geo/overpass) and its cross streets
+ * (/api/geo/cross-streets) within a third of a second; the second one used to get an instant 429.
+ * The request reserves the caller's next free slot (KvStore.reserveSlot) and sleeps until it: no
+ * polling, and with 2 s and 1 req/s at most two requests per caller wait; more are refused at once.
+ * Waiting keeps every caller at 1 request a second to Overpass, and the global slot still holds
+ * all callers together to 1 a second. Nominatim's per-user slot still refuses at once (the app
+ * spaces its on-submit searches a second apart itself).
+ */
+export const USER_QUEUE_MS: Readonly<Partial<Record<Service, number>>> = { overpass: 2000 };
 const SLOT_POLL_MS = 100;
 /** An attempt that would get less time than this is not worth starting. */
 const MIN_ATTEMPT_MS = 300;
@@ -119,7 +130,17 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
     return;
   }
   if (!ctx.userSlots.has(base)) {
-    if (!(await store.takeSlot(`user:${ctx.userKey}:${base}`, now(), limits.perUserMinIntervalMs))) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+    const userKey = `user:${ctx.userKey}:${base}`;
+    const queueMs = USER_QUEUE_MS[base];
+    if (queueMs === undefined) {
+      if (!(await store.takeSlot(userKey, now(), limits.perUserMinIntervalMs))) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+    } else {
+      // Reserve the caller's next slot (one read, one write) and sleep until it, instead of polling: at most
+      // queueMs / interval requests wait per caller, the rest are refused at once, first come first served.
+      const start = await store.reserveSlot(userKey, now(), limits.perUserMinIntervalMs, Math.max(0, Math.min(queueMs, ctx.deadline - now())));
+      if (start === null) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+      if (start > now()) await sleep(start - now());
+    }
     ctx.userSlots.add(base);
   }
   const waitUntil = Math.min(now() + MAX_SLOT_WAIT_MS, ctx.deadline);

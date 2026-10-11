@@ -9,6 +9,7 @@ import { fakeToLatLon, fakeToLocal } from "./fakes";
 import { exampleName, loadAllExamples } from "./examples";
 import type { GeoService, RoadsService, VehiclesService } from "./types";
 import type { RoadsDeps } from "./roads";
+import { townLookups } from "./towns";
 import { ServiceError } from "./types";
 
 export interface FixtureEnv {
@@ -113,18 +114,23 @@ export function createFixtureGeo(split: (q: string) => { a: string; b: string; n
     return p;
   };
   const allNets = async () => (await Promise.all([...(await allScenes()).keys()].map(netFor))).filter((x): x is { net: RoadNetwork; scene: Scene } => x != null);
-  return {
-    async suggest(query, opts = {}) {
+  const suggest: GeoService["suggest"] = async (query, opts = {}) => {
       const q = query.trim();
       if (q.length < mapConfig.suggestMinChars) return [];
       const out: PlaceResult[] = [];
+      // "Main Street, Nashua NH": the street part is matched against the streets of that town only.
+      const comma = q.indexOf(",");
+      const streetPart = comma >= 0 ? q.slice(0, comma) : q;
+      const townPart = comma >= 0 ? q.slice(comma + 1) : "";
+      const sameText = (a: string, b: string) => words(a).join(" ") === words(b).join(" ");
       for (const { net, scene } of await allNets()) {
         const ts = townState(scene.location.label);
-        // A town on its own ("Nashua, NH", as the claim gives it) is a place too: the example's own spot stands for it.
-        if (ts.toLowerCase() === q.toLowerCase() && !out.some((p) => p.label === ts)) out.push({ label: ts, main: ts.split(",")[0] ?? ts, sub: ts, lat: scene.location.lat, lon: scene.location.lon, kind: "road", category: "place" });
+        // A town on its own ("Nashua, NH" or "Nashua NH") is a place too: the example's own spot stands for it.
+        if (sameText(ts, q) && !out.some((p) => p.label === ts)) out.push({ label: ts, main: ts.split(",")[0] ?? ts, sub: ts, lat: scene.location.lat, lon: scene.location.lon, kind: "road", category: "place" });
+        if (townPart && !sameText(ts, townPart)) continue;
         const seen = new Set<string>();
         for (const w of net.ways) {
-          if (!w.name || seen.has(w.name) || !matches(w.name, q)) continue;
+          if (!w.name || seen.has(w.name) || !matches(w.name, streetPart)) continue;
           seen.add(w.name);
           const near = nearestOnPolyline(w.centerline, { x: 0, y: 0 });
           const at = near ? fakeToLatLon(net.frame, near.point) : scene.location;
@@ -134,7 +140,10 @@ export function createFixtureGeo(split: (q: string) => { a: string; b: string; n
       const bias = opts.bias;
       if (bias) out.sort((a, b) => dist(fakeToLocal({ origin: bias }, a), { x: 0, y: 0 }) - dist(fakeToLocal({ origin: bias }, b), { x: 0, y: 0 }));
       return out.slice(0, mapConfig.suggestLimit);
-    },
+  };
+  return {
+    suggest,
+    ...townLookups(suggest),
     async crossStreets(street, near): Promise<CrossStreetsResult> {
       const result = new Map<string, { name: string; points: LatLon[]; place: string }>();
       for (const { net, scene } of await allNets()) {

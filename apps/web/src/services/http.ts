@@ -47,7 +47,10 @@ export async function getJson<T>(fetchFn: FetchLike, url: string, timeoutMs = AP
     try { body = await res.json(); } catch { /* not JSON */ }
     const pe = asProxyError(body);
     const code: ServiceErrorCode = pe?.code ?? (res.status === 429 ? "busy" : "upstream");
-    throw new ServiceError(pe?.message ?? GENERIC_MESSAGE, code, pe?.retryAfterS);
+    // The body's retryAfterS, else the Retry-After header (seconds).
+    const header = Number(res.headers.get("retry-after"));
+    const retryAfterS = pe?.retryAfterS ?? (Number.isFinite(header) && header >= 0 && res.headers.has("retry-after") ? header : undefined);
+    throw new ServiceError(pe?.message ?? GENERIC_MESSAGE, code, retryAfterS);
   }
   try {
     return (await res.json()) as T;

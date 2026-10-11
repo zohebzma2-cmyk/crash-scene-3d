@@ -236,6 +236,22 @@ export function kvOnBlobs(parts: BlobsParts): KvStore {
       }
       return false;
     },
+    async reserveSlot(key, nowMs, intervalMs, maxWaitMs) {
+      // Same blob as takeSlot (it holds the end of the last booking), so both share one queue.
+      const store = await storeFor(key, nowMs);
+      const name = blobKey(`slot:${key}`);
+      for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
+        const cur = await store.getWithMetadata(name, { type: "text" });
+        const booked = Number(cur?.data ?? 0);
+        const start = Math.max(nowMs, Number.isFinite(booked) ? booked : 0);
+        if (start - nowMs > maxWaitMs) return null;
+        const res = await writeIfUnchanged(store, name, String(start + intervalMs), cur, allowUnconditional);
+        if (res.modified) return start;
+        if (res.noEtag) reportNoEtag();
+        // Someone else booked in between (or no ETag came back): read again; in the end answer busy rather than write blind.
+      }
+      return null;
+    },
     async takeToken(key, nowMs, limit) {
       const store = await storeFor(key, nowMs);
       const name = blobKey(`bucket:${key}`);
@@ -276,6 +292,7 @@ export function blobsStore(): KvStore {
     set: (key, value, contentType, ttlS, meta) => real().set(key, value, contentType, ttlS, meta),
     delete: (key) => real().delete(key),
     takeSlot: (key, nowMs, intervalMs) => real().takeSlot(key, nowMs, intervalMs),
+    reserveSlot: (key, nowMs, intervalMs, maxWaitMs) => real().reserveSlot(key, nowMs, intervalMs, maxWaitMs),
     takeToken: (key, nowMs, limit) => real().takeToken(key, nowMs, limit),
   };
 }

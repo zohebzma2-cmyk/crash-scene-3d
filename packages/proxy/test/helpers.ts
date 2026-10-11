@@ -33,6 +33,7 @@ export function setup(upstream: Upstream) {
     set: (k, v, c, t, m) => { setKeys.push(k); return inner.set(k, v, c, t, m); },
     delete: (k) => inner.delete(k),
     takeSlot: (k, n, i) => { slotCalls.push(k); return inner.takeSlot(k, n, i); },
+    reserveSlot: (k, n, i, w) => { slotCalls.push(k); return inner.reserveSlot(k, n, i, w); },
     takeToken: (k, n, l) => { tokenCalls.push(k); return inner.takeToken(k, n, l); },
   };
   const proxy = createProxy(config, { fetch, store, now: () => Date.now(), userKey: (req) => req.headers.get("x-user") ?? "user-1" });

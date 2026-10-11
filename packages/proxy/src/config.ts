@@ -48,9 +48,11 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     // 1440 px map view needs ~35 tiles at once and Leaflet doesn't retry a refused tile. Tiles and
     // terrain each get their own global bucket. Tiles are cached at least `cacheTtlS.tile`.
     tileBurst: { perUser: { capacity: 64, refillPerS: 16 }, global: { capacity: 256, refillPerS: 64 } },
-    // Type-ahead is a token bucket, not 1 req/s: per user 5 at once refilling 2/s, all users 20 at once
-    // refilling 10/s. Cache hits take no token.
-    suggestBurst: { perUser: { capacity: 5, refillPerS: 2 }, global: { capacity: 20, refillPerS: 10 } },
+    // Type-ahead is a token bucket, not 1 req/s: per user 12 at once refilling 3/s, all users 20 at once
+    // refilling 10/s. Cache hits take no token. A slowly typed search spends about 5 to 7 within a few
+    // seconds (the claim's town once, one per typing pause, one or two for a town typed after a comma),
+    // which the old 5 at 2/s could not cover with room to spare.
+    suggestBurst: { perUser: { capacity: 12, refillPerS: 3 }, global: { capacity: 20, refillPerS: 10 } },
     cacheTtlS: { search: DAY_S, overpass: 7 * DAY_S, tile: 7 * DAY_S, terrain: 30 * DAY_S, vehicles: 30 * DAY_S },
   };
 }

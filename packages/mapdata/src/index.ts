@@ -9,3 +9,4 @@ export { parseOverpass, clipPolyline, OSM_ATTRIBUTION } from "./parse";
 export { decodeTerrarium, terrainGrid, terrainTilesFor, TERRAIN_ATTRIBUTION, TERRAIN_ZOOM } from "./terrain";
 export { nameMatches, nameMatchScore, normalizeStreetName } from "./names";
 export { enuAbout, metersPerDegree, type Enu } from "./enu";
+export { isStateText, stateAbbreviation, stateOfText } from "./states";

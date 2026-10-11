@@ -20,8 +20,12 @@ const tipsHidden = { cookies: [], origins: [{ origin: new URL(baseURL).origin, l
 // Headless Chromium has no GPU: SwiftShader gives the 3D viewer a real WebGL context.
 const launchOptions = { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] };
 
+// e2e/live/* runs against a real deployment with playwright.live.config.ts (npm run e2e:live), never here.
+const LIVE = /[\\/]live[\\/]/;
+
 export default defineConfig({
   testDir: "e2e",
+  testIgnore: LIVE,
   timeout: 90_000,
   expect: { timeout: 15_000 },
   // SwiftShader WebGL is CPU-heavy; a few workers keep frame times sane.
@@ -35,7 +39,7 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: /phone\.spec\.ts/,
+      testIgnore: [/phone\.spec\.ts/, LIVE],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, launchOptions },
     },
     {
@@ -44,7 +48,7 @@ export default defineConfig({
     },
     {
       name: "webkit-desktop",
-      testIgnore: /phone\.spec\.ts/,
+      testIgnore: [/phone\.spec\.ts/, LIVE],
       ...(full ? {} : { grep: /@xb/ }),
       use: { ...devices["Desktop Safari"], viewport: { width: 1440, height: 900 }, launchOptions: {} },
     },
