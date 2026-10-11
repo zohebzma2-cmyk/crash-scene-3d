@@ -13,6 +13,8 @@ export interface LastExport {
 export interface FieldError {
   readonly text: string;
   readonly vehicleId: string;
+  /** Nothing typed yet (an empty field): a missing detail, not a wrong one. */
+  readonly missing?: boolean;
 }
 
 interface UiValue {

@@ -105,7 +105,7 @@ describe("directions are the claimant's to pick", () => {
     click(get("radio", "Backing up", document.getElementById("vehicle-A")!));
     click(get("button", /See the recreation/));
     await flush();
-    expect(text(get("alert"))).toContain("Pick which way your car (A) was facing.");
+    expect(text(get("alert"))).toContain("Pick which way your car was facing.");
     expect(text(get("alert"))).toContain("Pick which way vehicle B was facing.");
   });
 
@@ -121,9 +121,13 @@ describe("directions are the claimant's to pick", () => {
     click(get("button", /See the recreation/));
     await flush();
     expect(hash()).toBe("#vehicles");
-    expect(text(get("alert"))).toContain("Pick which way your car (A) was going.");
+    // An unpicked direction is a missing detail, never "don't fit together" (owner's polish list 5b).
+    expect(text(get("alert"))).toContain("Some details are missing");
+    expect(text(get("alert"))).not.toContain("don't fit together");
+    expect(text(get("alert"))).toContain("Pick which way your car was going.");
     expect(text(get("alert"))).toContain("Pick which way vehicle B was going.");
     expect(maybe("button", "See it anyway")).toBeNull();
+    expect(document.querySelector("[data-testid=gate-fixes]")).toBeNull();
     // picking one each clears it
     click(get("radio", "Northbound on Main Street", document.getElementById("vehicle-A")!));
     click(get("radio", "Westbound on Park Street", document.getElementById("vehicle-B")!));

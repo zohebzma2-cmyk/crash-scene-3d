@@ -65,5 +65,8 @@
 .warnings-title { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-bold); }
 .warnings ul { display: flex; flex-direction: column; gap: var(--space-2); padding-left: var(--space-8); list-style: disc; font-size: var(--text-sm); }
 .warnings-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* The gate's grouped warnings (missing / need changing / don't fit together) and its one-tap fixes (DESIGN.md section 18). */
+.warnings-body, .gate-fixes { display: flex; flex-direction: column; gap: var(--space-3); }
+.gate-fixes .refusal-status { margin: var(--space-0); }
 .warnings .link-btn { color: inherit; align-self: flex-start; }
 

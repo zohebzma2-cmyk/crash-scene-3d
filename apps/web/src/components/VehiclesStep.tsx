@@ -71,7 +71,7 @@ export function VehiclesStep() {
           {scene.vehicles.length < LIMITS.maxVehicles ? (
             <button className="btn btn-quiet add-vehicle" type="button" id="add-vehicle" onClick={add}><Icon name="plus" className="icon-sm" /><span>Add another vehicle</span></button>
           ) : null}
-          <GatePanel />
+          <GatePanel fixes />
           <div className="actions">
             <button type="button" className="btn btn-quiet" onClick={() => flow.go("location")}><Icon name="arrow-left" className="icon-sm" />Back</button>
             <button type="button" className="btn btn-primary" id="to-review" onClick={() => flow.go("review")}>See the recreation <Icon name="arrow-right" className="icon-sm" /></button>
