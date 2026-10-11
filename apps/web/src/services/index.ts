@@ -70,6 +70,8 @@ export function createServices(opts: CreateServicesOptions): Services {
       buildExports: withFallback(buildExports, (req) => fakeBuildExports(req), fx),
       canvas: createBrowserCanvasFactory(),
       loadFonts: () => loadBrandFonts(),
+      // Only photos this session already showed on a card: saving never spends a provider call.
+      media: { vehiclePhoto: (v) => media.photoPng(v, { cachedOnly: true }) },
     }),
     pdf: createPdfPreviewService(),
     examples: createExamplesService(),

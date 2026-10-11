@@ -10,7 +10,7 @@ import type { ReportModel } from "./model";
 import { northArrow, northArrowSize } from "./north";
 import { WORDMARK, drawMarkCanvas, lockup } from "./logo";
 import { decodePng } from "./png-decode";
-import { color, px } from "./style";
+import { color, px, vehicleColor } from "./style";
 import { SHADOWS } from "./tokens";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -375,6 +375,56 @@ export interface StillLayout {
   readonly band: number;
   /** Where the picture itself sits inside the frame above the band (letterboxed). */
   readonly picture: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+  /** The vehicles' photo cards along the bottom of the frame (empty without photos). */
+  readonly photoCards: readonly Rect[];
+}
+
+/** Photo box on a still's vehicle card: 3:2, the providers' shape. */
+const PHOTO_BOX = { w: px("space-16") * 3, h: px("space-16") * 2 };
+
+/** Draw RGBA pixels over what is already on the canvas (putImageData alone would replace, not blend). */
+function blendPixels(ctx: Ctx, rgba: Uint8ClampedArray, x: number, y: number, w: number, h: number) {
+  const under = ctx.getImageData(x, y, w, h);
+  const d = under.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = (rgba[i + 3] ?? 0) / 255;
+    for (let k = 0; k < 3; k++) d[i + k] = (rgba[i + k] ?? 0) * a + (d[i + k] ?? 0) * (1 - a);
+    d[i + 3] = Math.max(d[i + 3] ?? 0, rgba[i + 3] ?? 0);
+  }
+  ctx.putImageData(under, x, y);
+}
+
+/**
+ * One card per vehicle with a photo, left to right along the bottom of the frame: the vehicle's letter
+ * in its color and the stock photo. Cards that would run past the logo side are left out.
+ */
+async function drawPhotoCards(pen: CanvasPen, model: ReportModel, photos: ReadonlyMap<string, Uint8Array>, frameW: number, frameH: number): Promise<Rect[]> {
+  const cards: Rect[] = [];
+  const pad = SPACE(3);
+  const dot = px("size-avatar");
+  const letterSize = px("text-lg");
+  let x = SPACE(8);
+  for (const v of model.vehicles) {
+    const bytes = photos.get(v.id);
+    if (!bytes) continue;
+    let img: Awaited<ReturnType<typeof decodePng>>;
+    try { img = await decodePng(bytes); } catch { continue; }
+    const r: Rect = { x, y: frameH - SPACE(8) - (pad * 2 + PHOTO_BOX.h), w: pad * 3 + dot + PHOTO_BOX.w, h: pad * 2 + PHOTO_BOX.h };
+    if (r.x + r.w > frameW - SPACE(8)) break;
+    pen.card(r);
+    const cc: Pt = [r.x + pad + dot / 2, r.y + pad + dot / 2];
+    pen.circle(cc, dot / 2, vehicleColor(v.id));
+    pen.text({ k: "text", at: [cc[0], cc[1] + letterSize * 0.35], text: v.id, font: "sansBold", size: letterSize, color: color("color-text-on-brand"), anchor: "middle" });
+    const k = Math.min(PHOTO_BOX.w / img.width, PHOTO_BOX.h / img.height);
+    const pw = Math.max(1, Math.round(img.width * k));
+    const ph = Math.max(1, Math.round(img.height * k));
+    const x0 = Math.round(r.x + pad * 2 + dot + (PHOTO_BOX.w - pw) / 2);
+    const y0 = Math.round(r.y + pad + (PHOTO_BOX.h - ph) / 2);
+    blendPixels(pen.ctx, scaleTo(img.rgba, img.width, img.height, pw, ph), x0, y0, pw, ph);
+    cards.push(r);
+    x += r.w + SPACE(4);
+  }
+  return cards;
 }
 
 /**
@@ -383,7 +433,9 @@ export interface StillLayout {
  * frame and letterboxed with the scene's ground color, so the picture is always
  * 1920 x 1080 no matter the shape it was captured in.
  */
-export async function renderStillPng(still: Uint8Array, caption: string, model: ReportModel, factory: CanvasFactory, fam: Families): Promise<{ png: Uint8Array; layout: StillLayout }> {
+export async function renderStillPng(
+  still: Uint8Array, caption: string, model: ReportModel, factory: CanvasFactory, fam: Families, photos: ReadonlyMap<string, Uint8Array> = new Map(),
+): Promise<{ png: Uint8Array; layout: StillLayout }> {
   const img = await decodePng(still);
   const frameW = STILL_MIN_WIDTH;
   const frameH = px("size-png-3d-h") - footerBandHeight();
@@ -413,12 +465,15 @@ export async function renderStillPng(still: Uint8Array, caption: string, model: 
   pen.card(r);
   pen.text({ k: "text", at: [r.x + padX, r.y + padY + size * LEADING * 0.5 + size * 0.35], text: caption, font: "sansBold", size, color: color("color-text") });
   logoCard(pen, frameW - SPACE(8), SPACE(8)).draw();
+  const photoCards = photos.size ? await drawPhotoCards(pen, model, photos, frameW, frameH) : [];
   drawBand(pen, 0, frameH, frameW, band);
-  return { png: await factory.toPng(cv), layout: { width: frameW, height: frameH + band.h, bandTop: frameH, band: band.h, picture: { x: px0, y: py0, w: pw, h: ph } } };
+  return { png: await factory.toPng(cv), layout: { width: frameW, height: frameH + band.h, bandTop: frameH, band: band.h, picture: { x: px0, y: py0, w: pw, h: ph }, photoCards } };
 }
 
-export async function buildStillPng(still: Uint8Array, caption: string, model: ReportModel, factory: CanvasFactory, fam: Families): Promise<Uint8Array> {
-  return (await renderStillPng(still, caption, model, factory, fam)).png;
+export async function buildStillPng(
+  still: Uint8Array, caption: string, model: ReportModel, factory: CanvasFactory, fam: Families, photos?: ReadonlyMap<string, Uint8Array>,
+): Promise<Uint8Array> {
+  return (await renderStillPng(still, caption, model, factory, fam, photos)).png;
 }
 
 /** Just the footer band at a given width (for checking the layout at widths a still never has). */

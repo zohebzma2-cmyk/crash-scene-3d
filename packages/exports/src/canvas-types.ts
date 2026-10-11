@@ -1,4 +1,12 @@
-import type { ExportRequest } from "@csd/core";
+import type { ExportRequest, SceneVehicle } from "@csd/core";
+
+/**
+ * Stock photos of the vehicles, injected like the canvas (the app gives the photos it already showed, as
+ * PNG). Optional, and every answer may be null: the PDF and the stills look as before without a photo.
+ */
+export interface VehicleMediaProvider {
+  vehiclePhoto(vehicle: SceneVehicle): Promise<Uint8Array | null>;
+}
 
 /** Minimal 2D canvas we draw on (OffscreenCanvas in the browser, a node canvas later). */
 export interface CanvasLike {
