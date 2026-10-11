@@ -70,3 +70,55 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 .viewer3d-compass-dial .icon { width: var(--size-icon); height: var(--size-icon); }
 /* The N rides the top of the dial and is turned back so it stays upright. */
 .viewer3d-compass-n { position: absolute; top: calc(var(--space-1) * 0.75); left: 50%; translate: -50% var(--space-0); font-size: var(--text-xs); font-weight: var(--weight-bold); line-height: 1; transform: rotate(calc(var(--compass-deg) * -1)); }
+
+/* ---------- Loading, failure and notice (review/ViewerStatus) ---------- */
+/* The 3D view draws its first frame hidden, on top of the diagram, and only then takes over. */
+.viewer3d.is-building { visibility: hidden; }
+
+.viewer-status {
+  position: absolute; left: 50%; top: 50%; z-index: var(--z-controls); translate: -50% -50%;
+  box-sizing: border-box; width: min(calc(100% - var(--space-8)), var(--size-panel-w));
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
+  background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+}
+.viewer-status-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: var(--space-0); }
+.viewer-status-title strong { font-size: var(--text-base); font-weight: var(--weight-bold); }
+.viewer-status-now { flex-basis: 100%; color: var(--color-text-secondary); }
+.viewer-status-bar { height: var(--space-1); border-radius: var(--radius-full); background: var(--color-surface-3); overflow: hidden; }
+.viewer-status-bar > span {
+  display: block; height: 100%; background: var(--color-brand); transform-origin: left center;
+  transition: transform var(--duration-slow) var(--ease-standard);
+}
+.viewer-status-list { display: grid; gap: var(--space-2); margin: var(--space-0); padding: var(--space-0); list-style: none; }
+.viewer-status-row { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); }
+.viewer-status-row[data-status="done"], .viewer-status-row[data-status="active"] { color: var(--color-text); }
+.viewer-status-row[data-status="done"] .icon { color: var(--color-brand); }
+.viewer-status-row .num { margin-left: auto; font-family: var(--font-mono); }
+.viewer-status-row > :nth-child(3):not(.num) { margin-left: auto; }
+.viewer-status-dot {
+  box-sizing: border-box; flex: none; width: var(--size-icon-sm); height: var(--size-icon-sm);
+  border-radius: var(--radius-full); border: var(--size-focus-ring) solid var(--color-surface-3);
+}
+
+/* Something failed: the diagram stays underneath, with what went wrong and Retry. */
+.viewer-status.is-error { background: var(--color-warning-tint); color: var(--color-warning-tint-text); align-items: flex-start; }
+.viewer-status.is-error .viewer-status-title { flex-wrap: nowrap; align-items: flex-start; font-weight: var(--weight-semibold); }
+.viewer-status.is-error .viewer-status-title .icon { flex: none; margin-top: calc(var(--space-1) / 2); }
+
+/* The map data failed: the picture is drawn without roads, and this says so (top left, clear of the view chips). */
+.viewer-notice {
+  position: absolute; left: var(--space-3); top: calc(var(--space-3) + var(--size-touch) + var(--space-4)); z-index: var(--z-controls);
+  box-sizing: border-box; max-width: min(calc(100% - var(--space-6)), var(--size-panel-w));
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-radius: var(--radius-md);
+  background: var(--color-warning-tint); color: var(--color-warning-tint-text); box-shadow: var(--shadow-md);
+  font-size: var(--text-sm); font-weight: var(--weight-semibold);
+}
+.viewer-notice .icon { flex: none; }
+.viewer-notice .viewer-retry { flex: none; min-height: var(--size-touch); color: var(--color-warning-tint-text); text-decoration: underline; }
+.viewer-retry:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: var(--size-focus-offset); }
+
+/* The skeleton box shown before the scene exists (the example and its roads are on their way). */
+.viewer-canvas.is-skeleton { min-height: var(--size-viewer-min-h-mobile); }

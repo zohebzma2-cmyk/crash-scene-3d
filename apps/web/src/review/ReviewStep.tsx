@@ -24,6 +24,10 @@ import { STILL_SIZE, keepStills } from "./stills";
 import { Tips } from "../tips/Tips";
 import { CompactWarnings } from "../components/Warnings";
 import { RefusalFixes } from "./RefusalFixes";
+import { ViewerStatus } from "./ViewerStatus";
+import { hasWebGL, loadViewer } from "../viewer/load-viewer";
+import { prepareRoadArt } from "../lib/roadArt";
+import { preloadStep } from "../steps";
 
 const VIEWS: ReadonlyArray<{ id: CameraView; label: string }> = [
   { id: "top", label: "Top" },
@@ -39,12 +43,34 @@ const VIEW_KEYS: Record<string, CameraView> = { "1": "top", "2": "wide", "3": "d
 let approachPlayed = false;
 export const resetApproachPlayed = (): void => { approachPlayed = false; };
 
+/**
+ * The picture's box before there is a scene to draw (an example's scene file and its roads on their way):
+ * the same place and size as the picture, with the loading status in it. The 3D code starts loading now.
+ */
+export function ReviewSkeleton({ exampleLoading = false }: { exampleLoading?: boolean }) {
+  const [webgl] = useState(hasWebGL);
+  useEffect(() => { if (webgl) void loadViewer().catch(() => undefined); }, [webgl]);
+  return (
+    <div className="viewer-layout" data-testid="review-skeleton">
+      <div className="viewer">
+        <div className="viewer-canvas is-skeleton">
+          <ViewerStatus scene="waiting" webgl={webgl} exampleLoading={exampleLoading} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ReviewStep() {
   const { doc } = useDoc();
   const flow = useFlow();
   const scene = doc.scene;
   const outcome = useSimulation(scene);
   const roads = useRoads();
+  // The road art is the heaviest step before the first 3D frame: build it while the 3D code downloads
+  // (only when there will be a 3D picture of this scene).
+  const draws = outcome?.ok === true;
+  useEffect(() => (draws && hasWebGL() ? prepareRoadArt(roads.net) : undefined), [draws, roads.net]);
 
   return (
     <section aria-labelledby="h-review">
@@ -53,7 +79,7 @@ export function ReviewStep() {
         {outcome?.ok ? <ReviewWarnings sim={outcome.result} problems={flow.problems} onEdit={() => flow.go("vehicles")} /> : null}
         {outcome?.ok ? <Tips step="review" /> : null}
       </div>
-      {outcome == null ? <p className="review-wait" role="status">Loading the road layout…</p> : null}
+      {outcome == null ? <ReviewSkeleton /> : null}
       {outcome && !outcome.ok ? <RefusalFixes scene={scene} roads={roads.net} errors={outcome.errors} /> : null}
       {outcome?.ok ? <ReviewBody scene={scene} sim={outcome.result} /> : null}
     </section>
@@ -123,7 +149,8 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
   const viewerRef = useRef<ViewerHandle | null>(null);
   /** Set once the 3D view has drawn its first frame (or the 2D fallback is shown): e2e and assistive tech can wait on it. */
   const [viewerReady, setViewerReady] = useState(false);
-  const markReady = useCallback(() => setViewerReady(true), []);
+  // Once the picture is up, the next screens' code (save, or back to edit) loads in the background.
+  const markReady = useCallback(() => { setViewerReady(true); preloadStep("export"); preloadStep("vehicles"); }, []);
   const [saving, setSaving] = useState(false);
 
   // The export stills are taken here, while the 3D view exists: the moment of impact (Wide camera) and final rest (the Aftermath view).

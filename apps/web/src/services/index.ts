@@ -2,7 +2,11 @@
 // The lead can swap any piece here; nothing else in the app imports @csd/mapdata or @csd/exports.
 import { checkScene, placeVehicles, poseAt, simulate, streetsAtPin, suggestFixes, toLatLon, toLocal } from "@csd/core";
 import { mergeSearchResults, parseOverpass, splitCrossingQuery } from "@csd/mapdata";
-import { buildExports } from "@csd/exports";
+import type { CanvasFactory } from "@csd/exports";
+import type { ExportRequest } from "@csd/core";
+
+/** pdf-lib and the exports are a lazy chunk: only a save needs them (the save step starts it early). */
+const buildExports = (req: ExportRequest, canvas: CanvasFactory) => import("@csd/exports").then((m) => m.buildExports(req, canvas));
 import { createBrowserCanvasFactory, loadBrandFonts } from "../exports/browser-canvas";
 import { createExportsService } from "./exports";
 import {

@@ -1,7 +1,7 @@
 // Road data for the pin. After the pin is set, the roads around it are loaded (Overpass through
 // the proxy), and the streets at the pin become the direction choices on the vehicles step.
 // Moving the pin a little reuses the loaded roads; moving it far loads new ones.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { RoadNetwork, StreetsAtPin } from "@csd/core";
 import { useServices } from "../services/context";
 import { ServiceError, type RoadsProgress } from "../services/types";
@@ -44,6 +44,8 @@ export function RoadsProvider({ children, debounceMs = LOAD_DEBOUNCE_MS }: { chi
   const [net, setNet] = useState<RoadNetwork | null>(null);
   const [failed, setFailed] = useState<{ lat: number; lon: number; message: string } | null>(null);
   const [progress, setProgress] = useState<RoadsProgress | null>(null);
+  /** Has this provider started a load yet? Only later loads (pin moves) are debounced. */
+  const started = useRef(false);
 
   const pin = useMemo(() => ({ lat, lon }), [lat, lon]);
   const reusable = located && net != null && metersBetween(net.frame.origin, pin) < REUSE_RADIUS_M;
@@ -52,10 +54,11 @@ export function RoadsProvider({ children, debounceMs = LOAD_DEBOUNCE_MS }: { chi
   useEffect(() => {
     if (!located || reusable || failedHere) return;
     let cancelled = false;
-    // The debounce is for pin drags. A load for this very pin that is already running (an example's roads,
-    // started at boot) is joined at once.
-    const wait = services.roads.inFlight?.(pin) ? 0 : debounceMs;
+    // The debounce is for pin moves. The first load (an example, a restored scene, the first pin) and a load
+    // for this very pin that is already running (an example's roads, started at boot) go at once.
+    const wait = !started.current || services.roads.inFlight?.(pin) ? 0 : debounceMs;
     const timer = window.setTimeout(() => {
+      started.current = true;
       services.roads.load(pin, undefined, (p) => { if (!cancelled) setProgress(p); }).then(
         (n) => { if (!cancelled) { setNet(n); setFailed(null); setProgress(null); } },
         (e: unknown) => { if (!cancelled) { setFailed({ ...pin, message: e instanceof ServiceError ? e.message : FAILED_MESSAGE }); setProgress(null); } },
@@ -63,7 +66,8 @@ export function RoadsProvider({ children, debounceMs = LOAD_DEBOUNCE_MS }: { chi
     }, wait);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [located, reusable, failedHere, pin, services, debounceMs]);
-  const retry = useCallback(() => setFailed(null), []);
+  // Retry goes at once (no debounce): the person asked for it.
+  const retry = useCallback(() => { started.current = false; setFailed(null); }, []);
 
   const current = reusable ? net : null;
   const streets = useMemo(() => {

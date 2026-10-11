@@ -27,7 +27,21 @@ describe("shared road loads", () => {
     finish(net);
     await expect(a).resolves.toBe(net);
     await expect(b).resolves.toBe(net);
+  });
+
+  it("hands a just-finished load to a late asker, without a second request, for a while", async () => {
+    let t = 0;
+    const inner: RoadsService = { load: vi.fn(async () => net) };
+    const roads = shareRoadLoads(inner, 1000, () => t);
+    await roads.load(PIN);
+    t = 900;
+    expect(roads.inFlight?.(PIN)).toBe(true);
+    await expect(roads.load(PIN)).resolves.toBe(net);
+    expect(inner.load).toHaveBeenCalledTimes(1);
+    t = 2000;
     expect(roads.inFlight?.(PIN)).toBe(false);
+    await roads.load(PIN);
+    expect(inner.load).toHaveBeenCalledTimes(2);
   });
 
   it("starts a fresh load after a failure (so Retry really retries)", async () => {

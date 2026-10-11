@@ -68,6 +68,9 @@ export function createRoadsService(fetchFn: FetchLike, deps: RoadsDeps): RoadsSe
   };
 }
 
+/** How long a finished load is handed out again for the same place. */
+export const RECENT_MS = 30_000;
+
 const loadKey = (c: LatLon, radiusM: number) => `${c.lat.toFixed(6)},${c.lon.toFixed(6)},${radiusM}`;
 
 /**
@@ -75,18 +78,29 @@ const loadKey = (c: LatLon, radiusM: number) => `${c.lat.toFixed(6)},${c.lon.toF
  * told the progress so far). This is what lets an example's roads start at boot and the Roads provider pick
  * them up without waiting for its pin-drag debounce.
  */
-export function shareRoadLoads(inner: RoadsService): RoadsService {
+export function shareRoadLoads(inner: RoadsService, keepMs = RECENT_MS, now: () => number = () => Date.now()): RoadsService {
   const running = new Map<string, { promise: Promise<RoadNetwork>; last: RoadsProgress | null; listeners: Set<(p: RoadsProgress) => void> }>();
+  // A load that just finished is handed to whoever asks next (the Roads provider can ask a moment after an
+  // early load is done): no second request for the same place.
+  const recent = new Map<string, { net: RoadNetwork; at: number }>();
+  const fresh = (key: string) => {
+    const r = recent.get(key);
+    if (r && now() - r.at <= keepMs) return r.net;
+    if (r) recent.delete(key);
+    return null;
+  };
   return {
     load(center, radiusM = ROAD_RADIUS_M, onProgress) {
       const key = loadKey(center, radiusM);
+      const done = running.has(key) ? null : fresh(key);
+      if (done) return Promise.resolve(done);
       let entry = running.get(key);
       if (!entry) {
         const e = { promise: null as unknown as Promise<RoadNetwork>, last: null as RoadsProgress | null, listeners: new Set<(p: RoadsProgress) => void>() };
         e.promise = inner.load(center, radiusM, (p) => { e.last = p; for (const l of e.listeners) l(p); });
         running.set(key, e);
         const clear = () => { if (running.get(key) === e) running.delete(key); };
-        e.promise.then(clear, clear);
+        e.promise.then((net) => { clear(); recent.clear(); recent.set(key, { net, at: now() }); }, clear);
         entry = e;
       }
       if (onProgress) {
@@ -98,6 +112,6 @@ export function shareRoadLoads(inner: RoadsService): RoadsService {
       }
       return entry.promise;
     },
-    inFlight: (center, radiusM = ROAD_RADIUS_M) => running.has(loadKey(center, radiusM)),
+    inFlight: (center, radiusM = ROAD_RADIUS_M) => running.has(loadKey(center, radiusM)) || fresh(loadKey(center, radiusM)) !== null,
   };
 }

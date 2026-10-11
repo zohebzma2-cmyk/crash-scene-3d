@@ -99,9 +99,11 @@ describe("step 4: save", () => {
     app = await renderApp(services, example);
     await flush(900);
     for (const i of all("input[name=fmt]") as HTMLInputElement[]) if (i.checked) click(i);
+    // The previews may already have been built (the roads load at once now); the save itself builds nothing.
+    const before = build.mock.calls.length;
     click(get("button", /Save to my device/));
     await flush();
-    expect(build).not.toHaveBeenCalled();
+    expect(build).toHaveBeenCalledTimes(before);
     expect(text()).toContain("Pick at least one file to save.");
   });
 

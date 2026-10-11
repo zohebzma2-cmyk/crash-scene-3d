@@ -29,6 +29,10 @@ export interface ViewerProps {
   readonly onSelectVehicle?: (id: string) => void;
   /** Called once the scene has rendered its first frame (e2e waits on this). */
   readonly onReady?: () => void;
+  /** True until the first frame: the view is drawn but kept hidden (the diagram and the loading status show instead). */
+  readonly building?: boolean;
+  /** The browser took the WebGL context away (GPU reset, too many contexts): the picture can't go on. */
+  readonly onContextLost?: () => void;
 }
 
 /** The parts of a keyboard event the camera keys need. */

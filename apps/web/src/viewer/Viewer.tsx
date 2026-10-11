@@ -24,7 +24,7 @@ import { distanceText, measureRows, shownRows } from "../lib/measure";
 import type { MeasureGroups } from "../lib/measure";
 
 const BOTH_GROUPS: MeasureGroups = { impact: true, travel: true };
-import "./viewer.css";
+// viewer.css is imported by review/SceneView (main chunk), so this chunk has no stylesheet to wait for.
 
 export function trackPose(sim: SimulationResult, v: VehicleResult, t: number): Pose {
   if (!v.track.length) return v.impactPose;
@@ -209,7 +209,7 @@ const LABEL_GAP_PX = 8;
 const LABEL_STEP_PX = 8;
 const PILL_REACH_PX = 150;
 const estimateWidth = (it: LabelItem) => (it.kind === "vehicle" ? 14 + it.text.length * 6.6 : 30 + it.text.length * 7.2);
-const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass";
+const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass, .viewer-notice";
 
 function LabelProjector({ vehicles, measures, ring, showVehicleLabels, sizes, obstacles, layer, onLayout }: {
   vehicles: readonly VehicleAnchor[]; measures: readonly MeasureAnchor[]; ring: { center: Vec2; ground: number }; showVehicleLabels: boolean;
@@ -352,6 +352,16 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const driver = props.view === "driver-a" || props.view === "driver-b";
 
   useEffect(() => () => disposeVehicleModels(), []);
+
+  // A lost WebGL context leaves a frozen picture: say so (the shell shows the diagram and Retry). Our own
+  // unmount also drops the context, so the flag is cleared first, in the mutation phase.
+  const alive = useRef(true);
+  const lostRef = useRef(props.onContextLost);
+  useEffect(() => { lostRef.current = props.onContextLost; });
+  useLayoutEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const onCreated = useCallback(({ gl }: { gl: { domElement: HTMLCanvasElement } }) => {
+    gl.domElement.addEventListener("webglcontextlost", () => { if (alive.current) lostRef.current?.(); }, { once: true });
+  }, []);
 
   const registerGroup = useCallback((id: string, g: Group | null) => { if (g) groups.current.set(id, g); else groups.current.delete(id); }, []);
   const poses = useMemo(() => props.sim.vehicles.map((v) => ({ v, pose: trackPose(props.sim, v, props.timeS) })), [props.sim, props.timeS]);
@@ -522,8 +532,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const registerCapture = useCallback((fn: ViewerHandle["captureStill"]) => { captureFn.current = fn; }, []);
 
   return (
-    <div className="viewer3d" ref={rootRef}>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }}>
+    <div className={`viewer3d${props.building ? " is-building" : ""}`} ref={rootRef}>
+      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} onCreated={onCreated}>
         <PerspectiveCamera makeDefault={!ortho} fov={45} near={0.3} far={4000} position={[0, 120, 0.01]} />
         <OrthographicCamera makeDefault={ortho} near={0.3} far={4000} zoom={8} position={[0, 400, 0.001]} />
         <hemisphereLight args={[colors["--color-scene-sky"], colors["--color-scene-lot"], 1]} />
