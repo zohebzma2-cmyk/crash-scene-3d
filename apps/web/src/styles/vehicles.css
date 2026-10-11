@@ -13,6 +13,11 @@
 .vehicle-grid { display: grid; grid-template-columns: repeat(2, minmax(var(--space-0), 1fr)); gap: var(--space-8); padding: var(--space-6); align-items: start; }
 .vehicle-grid > .group:first-child { grid-column: 1 / -1; }
 .ymm { display: grid; grid-template-columns: minmax(var(--space-0), var(--size-year-field)) repeat(2, minmax(var(--space-0), 1fr)); gap: var(--space-3); }
+/* Year, make and model are type-ahead lists (VehicleCombobox): the shared .combo-pop under each field, rows at least --size-touch tall. */
+.vcombo .combo-option { align-items: center; }
+.vcombo .combo-option.is-free .r-main { font-weight: var(--weight-regular); color: var(--color-text-secondary); }
+.vcombo .combo-note { border-top: none; }
+.vcombo .combo-list + .combo-note { border-top: var(--size-border) solid var(--color-border); }
 .lookup { font-size: var(--text-sm); color: var(--color-text-secondary); display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-6); }
 .lookup .icon { color: var(--color-success-text); }
 .lookup.is-warn { color: var(--color-warning-text); }

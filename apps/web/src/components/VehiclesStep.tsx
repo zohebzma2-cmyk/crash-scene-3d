@@ -10,7 +10,7 @@ import { useFlow } from "../state/Flow";
 import { useUi } from "../state/Ui";
 import { Tips } from "../tips/Tips";
 import { MiniMap } from "./MiniMap";
-import { VehicleCard } from "./VehicleCard";
+import { VehicleCard, type MakesState } from "./VehicleCard";
 import { GatePanel } from "./Warnings";
 
 export function VehiclesStep() {
@@ -19,12 +19,13 @@ export function VehiclesStep() {
   const { showToast } = useUi();
   const flow = useFlow();
   const phone = usePhone();
-  const [makes, setMakes] = useState<string[]>([]);
+  const [makes, setMakes] = useState<MakesState>({ status: "loading" });
   const scene = doc.scene;
 
   useEffect(() => {
     let off = false;
-    vehicles.makes().then((m) => { if (!off) setMakes(m); }, () => { /* the make box still takes typed text */ });
+    // Once per session (the service caches it); every card ranks against it. A failure leaves typing working.
+    vehicles.makes().then((names) => { if (!off) setMakes({ status: "ok", names }); }, () => { if (!off) setMakes({ status: "error" }); });
     return () => { off = true; };
   }, [vehicles]);
 
@@ -62,10 +63,9 @@ export function VehiclesStep() {
           <p className="hint">Each vehicle is drawn where it came from, pointing the way it was facing.</p>
         </div>
         <div className="split-main">
-          <datalist id="dl-makes">{makes.map((m) => <option key={m} value={m} />)}</datalist>
           <div className="vehicle-list">
             {scene.vehicles.map((v, i) => (
-              <VehicleCard key={doc.vehicleKeys[i] ?? v.id} vehicle={v} canRemove={v.id !== "A" && scene.vehicles.length > LIMITS.minVehicles} directionSet={doc.directionSet[i] === true} onRemove={() => remove(v.id)} />
+              <VehicleCard key={doc.vehicleKeys[i] ?? v.id} vehicle={v} canRemove={v.id !== "A" && scene.vehicles.length > LIMITS.minVehicles} directionSet={doc.directionSet[i] === true} onRemove={() => remove(v.id)} makes={makes} />
             ))}
           </div>
           {scene.vehicles.length < LIMITS.maxVehicles ? (

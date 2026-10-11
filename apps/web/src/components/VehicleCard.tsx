@@ -1,18 +1,21 @@
-// One vehicle: letter badge, year/make/model with a vPIC lookup, type, what it was doing,
-// direction, speed and where it was hit. Editing vehicle A never changes the claim header.
-import { useEffect, useId, useRef, useState } from "react";
-import { ACTIONS, PRESETS, VEHICLE_TYPES, vehicleName, type Action, type SceneVehicle, type VehicleModelResult, type VehicleType } from "@csd/core";
+// One vehicle: letter badge, year/make/model as type-ahead lists from NHTSA vPIC, type, what it was
+// doing, direction, speed and where it was hit. Editing vehicle A never changes the claim header.
+import { useEffect, useId, useMemo, useRef, useState, type ComponentType, type RefObject } from "react";
+import {
+  ACTIONS, FIRST_VPIC_YEAR, MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, PRESETS, VEHICLE_TYPES, modelYears, normName, rankNames, rankYears, resolveName, vehicleName,
+  type Action, type SceneVehicle, type VehicleModelResult, type VehicleType,
+} from "@csd/core";
 import { RadioGroup } from "../a11y/roving";
 import { Icon } from "../icons/Icon";
 import { roleName } from "../lib/text";
 import { useServices } from "../services/context";
-import { ServiceError } from "../services/types";
 import { useDoc } from "../state/DocProvider";
 import { useRoads } from "../state/Roads";
 import { DirectionPicker } from "./DirectionPicker";
 import { ImpactZones } from "./ImpactZones";
 import { SpeedInput } from "./SpeedInput";
 import { Tile } from "./Tile";
+import { VehicleCombobox, type ComboItem, type ComboStatus } from "./VehicleCombobox";
 
 const ACTION_TILES: Record<Action, { icon: string; label: string }> = {
   straight: { icon: "act-straight", label: "Straight" },
@@ -22,17 +25,37 @@ const ACTION_TILES: Record<Action, { icon: string; label: string }> = {
   parked: { icon: "act-parked", label: "Parked" },
 };
 
+// The maker's logo in each make row, once round B's MakeLogo component exists; nothing until then.
+const logoModules = import.meta.glob<Record<string, unknown>>("./MakeLogo.tsx", { eager: true });
+const logoModule = Object.values(logoModules)[0];
+const MakeLogo = (logoModule?.MakeLogo ?? logoModule?.default) as ComponentType<{ make: string }> | undefined;
+
 /** DESIGN.md doesn't specify a braking control; a plain checkbox, off unless the claimant says so (the physics assumes no braking). */
 export const BRAKING_LABEL = "Braking just before the crash";
-export const LOOKUP_DEBOUNCE_MS = 450;
-/** vPIC has no models before this model year. */
-export const FIRST_VPIC_YEAR = 1981;
+/** A make that matches exactly waits this long before its models are asked for, so passing through "Mini" on the way to a longer name costs nothing. */
+export const LOOKUP_DEBOUNCE_MS = 250;
+export { FIRST_VPIC_YEAR };
+export const MAKE_LIST_LIMIT = 40;
+export const MODEL_LIST_LIMIT = 60;
+export const MAKES_LOADING_TEXT = "Loading the makes…";
+export const MAKES_FAILED_TEXT = "Couldn't load the list of makes. Type the make; it still works.";
+export const MODELS_FAILED_TEXT = "Couldn't load the model list. Type the model; it still works.";
+export const MODELS_FAILED_LOOKUP = "Couldn't load the model list. Type the model if you know it. Pick the type below.";
+export const asTypedText = (text: string) => `Use ‘${text}’ as typed`;
+export const notInVpic = (make: string) => `‘${make}’ isn't in NHTSA vPIC's list. Pick the type below.`;
+
+/** The makes list for every card: loaded once per session by the Vehicles step. */
+export type MakesState = { readonly status: "loading" } | { readonly status: "ok"; readonly names: readonly string[] } | { readonly status: "error" };
 
 type Lookup =
   | { key: string; state: "ok"; models: VehicleModelResult[] }
   | { key: string; state: "warn"; text: string; models: VehicleModelResult[] };
 
-const lookupKey = (v: Pick<SceneVehicle, "year" | "make">) => `${v.year ?? ""}|${v.make.trim().toLowerCase()}`;
+const focusSoon = (ref: RefObject<HTMLInputElement | null>) => window.setTimeout(() => ref.current?.focus(), 0);
+const findModel = (models: readonly VehicleModelResult[], text: string, make: string | null) => {
+  const name = resolveName(text, models.map((m) => m.name), { aliases: MODEL_ALIASES, ...(make ? { stripPrefix: make } : {}) });
+  return name == null ? undefined : models.find((m) => m.name === name);
+};
 
 export interface VehicleCardProps {
   readonly vehicle: SceneVehicle;
@@ -40,9 +63,11 @@ export interface VehicleCardProps {
   /** Has the claimant picked the direction yet? */
   readonly directionSet: boolean;
   readonly onRemove: () => void;
+  /** vPIC's makes (cars, MPVs, trucks, motorcycles), shared by every card. */
+  readonly makes?: MakesState;
 }
 
-export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: VehicleCardProps) {
+export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, makes = { status: "loading" } }: VehicleCardProps) {
   const { doc, dispatch } = useDoc();
   const { vehicles } = useServices();
   const roads = useRoads();
@@ -51,33 +76,47 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
   const [yearText, setYearText] = useState(v.year == null ? "" : String(v.year));
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [matchNote, setMatchNote] = useState<{ key: string; model: string; text: string; warn: boolean } | null>(null);
+  /** The make text was left (picked, Tab, Enter, a tap elsewhere), not still being typed. */
+  const [makeDone, setMakeDone] = useState(v.make.trim() !== "");
   const latest = useRef(v);
   useEffect(() => { latest.current = v; });
+  const makeRef = useRef<HTMLInputElement>(null);
+  const modelRef = useRef<HTMLInputElement>(null);
 
   const patch = (p: Partial<SceneVehicle>) => dispatch({ type: "vehicle", id: v.id, patch: p });
-  const key = lookupKey(v);
-  const currentYear = new Date().getFullYear();
-  const askable = v.year != null && v.make.trim().length >= 2 && v.year >= FIRST_VPIC_YEAR && v.year <= currentYear + 1;
-  const badYear = v.year != null && v.make.trim().length >= 2 && !askable;
+  const years = useMemo(() => modelYears(), []);
+  const lastYear = years[0] ?? FIRST_VPIC_YEAR;
+  const makeNames = makes.status === "ok" ? makes.names : null;
+  const resolvedMake = makeNames ? resolveName(v.make, makeNames, { aliases: MAKE_ALIASES }) : null;
+  // Models are asked for once the make is known: one of vPIC's makes (typed exactly, by a common name like
+  // "chevy", or picked), or, when the makes list couldn't load, whatever was typed once the field is left.
+  // Never for half a make, so typing costs no requests.
+  const lookupMake = makeNames ? resolvedMake : makes.status === "error" && makeDone && v.make.trim().length >= 2 ? v.make.trim() : null;
+  const key = `${v.year ?? ""}|${lookupMake ? normName(lookupMake) : ""}`;
+  const keyRef = useRef(key);
+  useEffect(() => { keyRef.current = key; });
+  const yearOk = v.year != null && v.year >= FIRST_VPIC_YEAR && v.year <= lastYear;
+  const badYear = v.year != null && !yearOk;
+  const askable = yearOk && lookupMake != null;
   const current = lookup && lookup.key === key ? lookup : null;
 
-  // vPIC lookup for this year and make, after a short pause in typing. Changing the make clears the
-  // model (in the reducer), and this reloads the model list for the new make.
+  // vPIC models for this year and make: one request per make and year, cached for the session by the service.
   useEffect(() => {
-    if (!askable || v.year == null) return;
+    if (!askable || v.year == null || lookupMake == null) return;
     const asked = key;
-    const make = v.make;
+    const make = lookupMake;
     const year = v.year;
     const timer = window.setTimeout(() => {
       vehicles.models(make, year).then(
         (models) => {
-          if (lookupKey(latest.current) !== asked) return;
-          setLookup(models.length ? { key: asked, state: "ok", models } : { key: asked, state: "warn", text: `No ${make} models found for ${year}. Pick the type below.`, models: [] });
-          applyModel(models, latest.current.model, asked);
+          if (keyRef.current !== asked) return;
+          setLookup({ key: asked, state: "ok", models });
+          applyModel(models, latest.current.model, asked, make);
         },
-        (e: unknown) => {
-          if (lookupKey(latest.current) !== asked) return;
-          setLookup({ key: asked, state: "warn", text: `${e instanceof ServiceError ? e.message : "Couldn't reach the vehicle list."} Pick the type below.`, models: [] });
+        () => {
+          // The proxy's own retry has already run; here only a plain line, never its busy text.
+          if (keyRef.current !== asked) return;
+          setLookup({ key: asked, state: "warn", text: MODELS_FAILED_LOOKUP, models: [] });
         },
       );
     }, LOOKUP_DEBOUNCE_MS);
@@ -86,8 +125,8 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, askable, vehicles]);
 
-  function applyModel(models: readonly VehicleModelResult[], modelText: string, asked: string) {
-    const m = models.find((x) => x.name.toLowerCase() === modelText.trim().toLowerCase());
+  function applyModel(models: readonly VehicleModelResult[], modelText: string, asked: string, make: string | null) {
+    const m = findModel(models, modelText, make);
     if (!m) { setMatchNote(null); return; }
     if (m.type) {
       const label = PRESETS[m.type].label;
@@ -98,23 +137,64 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
     }
   }
 
+  // ---- the lookup line under the fields ----
   let lookupText: string;
   let warn = false;
   // Only a type that really came from vPIC is a success; instructions and hints get no check mark.
   let matched = false;
   let loading = false;
-  const note = matchNote && matchNote.key === key && matchNote.model.toLowerCase() === v.model.trim().toLowerCase() ? matchNote : null;
+  const typedModel = current?.state === "ok" ? findModel(current.models, v.model, lookupMake) : undefined;
+  const note = matchNote && matchNote.key === key && typedModel?.name === matchNote.model ? matchNote : null;
+  const typedMake = v.make.trim();
   if (badYear) { lookupText = "Check the year. Pick the type below."; warn = true; }
-  else if (askable && !current) { lookupText = `Looking up ${v.make.trim()} models for ${v.year}…`; loading = true; }
+  else if (askable && !current) { lookupText = `Looking up ${lookupMake} models for ${v.year}…`; loading = true; }
   else if (current?.state === "warn") { lookupText = current.text; warn = true; }
   else if (note) { lookupText = note.text; warn = note.warn; matched = !note.warn; }
-  else if (current?.state === "ok") lookupText = `${current.models.length} ${v.make.trim()} models for ${v.year}. Pick yours to fill in the type.`;
+  else if (current?.state === "ok") lookupText = current.models.length ? `${current.models.length} ${lookupMake} models for ${v.year}. Pick yours to fill in the type.` : `vPIC has no ${lookupMake} models for ${v.year}. Pick the type below.`;
+  else if (makeNames && makeDone && typedMake && !resolvedMake) { lookupText = notInVpic(typedMake); warn = true; }
   else if (v.typeSource === "claim") lookupText = `${PRESETS[v.type].label}, from your claim. Change it if it's wrong.`;
   else lookupText = "Enter the year, make and model to fill in the type, or pick it below.";
 
+  // ---- year ----
+  const yearItems: ComboItem[] = rankYears(yearText, years).map((y) => ({ id: `${ids}-y${y}`, value: String(y), main: String(y) }));
+  const yearStatus: ComboStatus | null = yearItems.length === 0 ? { kind: "note", text: `vPIC has model years ${FIRST_VPIC_YEAR} to ${lastYear}. Check the year.` } : null;
+
+  // ---- make ----
+  const makeItems: ComboItem[] = useMemo(() => {
+    const out: ComboItem[] = (makeNames ? rankNames(v.make, makeNames, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES, limit: MAKE_LIST_LIMIT }) : [])
+      .map((r, i) => ({ id: `${ids}-mk${i}`, value: r.name, main: r.name, lead: MakeLogo ? <MakeLogo make={r.name} /> : undefined }));
+    const typed = v.make.trim();
+    if (typed && !makeNames?.some((n) => normName(n) === normName(typed))) out.push({ id: `${ids}-mk-typed`, value: typed, main: asTypedText(typed), free: true });
+    return out;
+  }, [v.make, makeNames, ids]);
+  const makeStatus: ComboStatus | null = makes.status === "loading" ? { kind: "loading", text: MAKES_LOADING_TEXT } : makes.status === "error" ? { kind: "note", text: MAKES_FAILED_TEXT } : null;
+
+  // ---- model ----
+  const modelItems: ComboItem[] = useMemo(() => {
+    const models = current?.state === "ok" ? current.models : [];
+    const byName = new Map(models.map((m) => [m.name, m]));
+    const out: ComboItem[] = rankNames(v.model, models.map((m) => m.name), { aliases: MODEL_ALIASES, limit: MODEL_LIST_LIMIT, ...(lookupMake ? { stripPrefix: lookupMake } : {}) })
+      .map((r, i) => {
+        const t = byName.get(r.name)?.type;
+        return { id: `${ids}-md${i}`, value: r.name, main: r.name, sub: t ? PRESETS[t].label : "Pick the type yourself" };
+      });
+    const typed = v.model.trim();
+    if (typed && !models.some((m) => normName(m.name) === normName(typed))) out.push({ id: `${ids}-md-typed`, value: typed, main: asTypedText(typed), free: true });
+    return out;
+  }, [v.model, current, lookupMake, ids]);
+  let modelStatus: ComboStatus | null = null;
+  if (v.year == null) modelStatus = { kind: "note", text: "Enter the year to see the models." };
+  else if (badYear) modelStatus = { kind: "note", text: "Check the year to see the models." };
+  else if (lookupMake == null) {
+    modelStatus = makes.status === "loading" && typedMake ? { kind: "loading", text: MAKES_LOADING_TEXT }
+      : !typedMake ? { kind: "note", text: "Pick the make to see its models." }
+      : { kind: "note", text: "No model list for this make. Type the model; it still works." };
+  } else if (!current) modelStatus = { kind: "loading", text: `Loading ${lookupMake} models for ${v.year}…` };
+  else if (current.state === "warn") modelStatus = { kind: "note", text: MODELS_FAILED_TEXT };
+  else if (current.models.length === 0) modelStatus = { kind: "note", text: `vPIC has no ${lookupMake} models for ${v.year}. Type the model; it still works.` };
+
   const sameAsClaim = v.id === "A" && v.year === claim.year && v.make === claim.make && v.model === claim.model;
   const sub = [vehicleName(v), v.id === "A" ? (sameAsClaim ? "from your claim" : "changed from your claim") : null].filter(Boolean).join(" · ") || "Year, make and model if you know them";
-  const modelsListId = `${ids}-models`;
   const titleId = `${ids}-title`;
 
   return (
@@ -132,26 +212,56 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
         <div className="group">
           <p className="group-label">Vehicle</p>
           <div className="ymm">
-            <div className="field field-year">
-              <label className="field-sub" htmlFor={`${ids}-year`}>Year</label>
-              <input className="input num" id={`${ids}-year`} type="text" inputMode="numeric" maxLength={4} autoComplete="off" value={yearText} onChange={(e) => {
-                const y = e.target.value.replace(/\D/g, "").slice(0, 4);
+            <VehicleCombobox
+              id={`${ids}-year`} label="Year" className="field-year" inputClassName="num" inputMode="numeric" maxLength={4}
+              value={yearText} items={yearItems} status={yearStatus}
+              onType={(text) => {
+                const y = text.replace(/\D/g, "").slice(0, 4);
                 setYearText(y);
                 patch({ year: y.length === 4 ? Number(y) : null });
-              }} />
-            </div>
-            <div className="field">
-              <label className="field-sub" htmlFor={`${ids}-make`}>Make</label>
-              <input className="input" id={`${ids}-make`} type="text" list="dl-makes" autoComplete="off" spellCheck={false} value={v.make} onChange={(e) => patch({ make: e.target.value })} />
-            </div>
-            <div className="field">
-              <label className="field-sub" htmlFor={`${ids}-model`}>Model</label>
-              <input className="input" id={`${ids}-model`} type="text" list={modelsListId} autoComplete="off" spellCheck={false} value={v.model} onChange={(e) => {
-                patch({ model: e.target.value });
-                if (current) applyModel(current.models, e.target.value, key);
-              }} />
-              <datalist id={modelsListId}>{current?.models.map((m) => <option key={m.name} value={m.name} />)}</datalist>
-            </div>
+              }}
+              onPick={(item) => {
+                setYearText(item.value);
+                if (Number(item.value) !== latest.current.year) patch({ year: Number(item.value) });
+                focusSoon(makeRef);
+              }}
+            />
+            <VehicleCombobox
+              id={`${ids}-make`} label="Make" inputRef={makeRef}
+              value={v.make} items={makeItems} status={makeStatus}
+              onType={(text) => { patch({ make: text }); setMakeDone(false); }}
+              onPick={(item) => {
+                setMakeDone(true);
+                if (item.value !== latest.current.make) patch({ make: item.value });
+                focusSoon(modelRef);
+              }}
+              onCommit={() => {
+                const now = latest.current.make;
+                setMakeDone(now.trim() !== "");
+                const name = makeNames ? resolveName(now, makeNames, { aliases: MAKE_ALIASES }) : null;
+                if (name && name !== now) patch({ make: name });
+              }}
+            />
+            <VehicleCombobox
+              id={`${ids}-model`} label="Model" inputRef={modelRef}
+              value={v.model} items={modelItems} status={modelStatus}
+              onType={(text) => {
+                patch({ model: text });
+                if (current?.state === "ok") applyModel(current.models, text, key, lookupMake);
+              }}
+              onPick={(item) => {
+                if (item.value !== latest.current.model) patch({ model: item.value });
+                if (current?.state === "ok") applyModel(current.models, item.value, key, lookupMake);
+              }}
+              onCommit={() => {
+                const now = latest.current.model;
+                const m = current?.state === "ok" ? findModel(current.models, now, lookupMake) : undefined;
+                if (m && m.name !== now && current?.state === "ok") {
+                  patch({ model: m.name });
+                  applyModel(current.models, m.name, key, lookupMake);
+                }
+              }}
+            />
           </div>
           <p className={`lookup${warn ? " is-warn" : ""}`} aria-live="polite">
             {loading ? <span className="spinner" aria-hidden="true" /> : warn ? <Icon name="info" className="icon-sm" /> : matched ? <Icon name="check" className="icon-sm" /> : null}
