@@ -21,7 +21,7 @@ import { MPH_TO_MPS, RANGE_HALF_MPH, RANGE_STEP_MPH } from "./constants";
 import { angleBetween, dist, makePoly, norm, polyCrossings, project, toRad } from "./geo";
 import { cleanNet, streetName, streetsAtPin } from "./lanes";
 import { ZONE_ANGLE_RAD, speedCases } from "./model";
-import { type FacingZone, buildGuide, zonesFacing } from "./placement";
+import { type FacingZone, buildGuide, placeDetailed, zonesFacing } from "./placement";
 import { toLatLon, toLocal } from "./projection";
 import { type WorkMeter, drawsAsEntered, simulate } from "./simulate";
 import { checkScene } from "./check";
@@ -110,6 +110,12 @@ export interface FixOptions {
   readonly prefer?: Readonly<Record<string, number>>;
   /** Other work limits than FIX_LIMITS: for the benchmark's "no limit" ceiling and for tests. The app never sets them. */
   readonly limits?: Partial<typeof FIX_LIMITS>;
+  /**
+   * For the Vehicles step's warnings (the plain checks): also search when the scene draws but not as entered (a hit side
+   * swapped in) or when the plain checks have a note about it, and offer only fixes that draw as entered with no note left,
+   * so tapping one clears the warning. Off on the Review step's refusal.
+   */
+  readonly gate?: boolean;
 }
 
 /** Refusals no change of hit side, direction, action, speed or pin can cure: they are fixed by hand. */
@@ -147,6 +153,15 @@ export function whySentence(errors: readonly PlainMessage[]): string {
   const text = errors[0]?.text ?? "";
   const first = /^(.*?[.!?])(\s|$)/.exec(text)?.[1] ?? text;
   return first.trim();
+}
+
+/**
+ * Why the Vehicles step warns about a scene that draws: why it can't be drawn as entered (the picture would swap in another
+ * hit side), else the plain checks' notes. Empty when neither has anything to say.
+ */
+function gateReasons(scene: Scene, roads: RoadNetwork | null): readonly PlainMessage[] {
+  const d = drawsAsEntered(scene, roads);
+  return d.ok ? checkScene(scene, roads) : d.errors;
 }
 
 function focusFor(errors: readonly PlainMessage[], scene: Scene): FixFocus {
@@ -487,9 +502,14 @@ const FIT_CODES = new Set(["zones-cannot-touch", "bodies-overlap", "moving-apart
  * a hit side (a "zone-used" warning) is not kept, since the button would not say what the picture shows.
  */
 export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixOptions = {}): FixSuggestions {
+  const gate = opts.gate === true;
   const first = simulate(scene, roads);
-  if (first.ok) return { why: "", fixes: [], focus: { step: "vehicles", vehicleId: null, field: null }, trials: 1 };
-  const errors = first.errors;
+  const drawn = { why: "", fixes: [], focus: { step: "vehicles" as const, vehicleId: null, field: null }, trials: 1 };
+  if (first.ok && !gate) return drawn;
+  // The Vehicles step: a scene that draws is still worth fixing when it only draws with another hit side (why it can't be
+  // drawn as entered), or when the plain checks have a note about it (the note says which vehicles).
+  const errors = first.ok ? gateReasons(scene, roads) : first.errors;
+  if (errors.length === 0) return drawn;
   const why = whySentence(errors);
   const focus = focusFor(errors, scene);
   if (errors.some((e) => e.code in HAND_ONLY)) return { why, fixes: [], focus, trials: 1 };
@@ -515,6 +535,18 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
     const errs = d.ok ? [] : d.errors;
     verdicts.set(id, errs);
     return errs;
+  };
+  // The plain checks' notes on a change (the Vehicles step only), each worked out once; they place pairs of vehicles, so
+  // they count as work like the facing test.
+  const notesMemo = new Map<string, readonly PlainMessage[]>();
+  const notesOf = (changes: readonly FixChange[]): readonly PlainMessage[] => {
+    const id = idOf(changes);
+    const hit = notesMemo.get(id);
+    if (hit) return hit;
+    meter.units += FACING_UNITS * scene.vehicles.length;
+    const notes = checkScene(apply(scene, changes), roads);
+    notesMemo.set(id, notes);
+    return notes;
   };
 
   /**
@@ -574,7 +606,8 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
   for (let b = 0; b < baseQueue.length && b < MAX_BASES && !spent(); b++) {
     const base = baseQueue[b]!;
     const errs = judge(base.changes);
-    bases.push({ c: base, errors: errs });
+    // For the Vehicles step, a starting point that draws as entered but still has a note is searched from that note.
+    bases.push({ c: base, errors: gate && errs.length === 0 ? notesOf(base.changes) : errs });
     if (errs.some((e) => LOCAL.has(e.code))) {
       const baseScene = apply(scene, base.changes);
       for (const r of localRepairs(baseScene, worldFor(baseScene, base.changes), errs)) {
@@ -594,6 +627,17 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
     queue.push(q);
     return q;
   };
+  // The Vehicles step, for a scene that draws only with another hit side swapped in: that side (what the picture would show
+  // and the Review would say it uses) is tried first, as the cheapest change of its size. It is still judged like any other.
+  if (gate && first.ok) {
+    meter.units += FACING_UNITS * scene.vehicles.length;
+    const placed = placeDetailed(scene, roads, world.pin, { checkClosing: false });
+    const used = placed.ok ? placed.value.zonesUsed.flatMap((u) => {
+      const v = scene.vehicles.find((x) => x.id === u.id);
+      return v && u.used !== v.zone ? [zoneChange(v, u.used)] : [];
+    }) : [];
+    if (used.length) enqueue({ cost: 0.5 * used.length, changes: used }, false);
+  }
   for (const { c: base, errors: errs } of bases) {
     if (base.changes.length && errs.length === 0) enqueue(base, false);
     if (errs.length === 0 || errs.some((e) => e.code in HAND_ONLY || LOCAL.has(e.code))) continue;
@@ -624,7 +668,11 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
     if (found.length >= MAX_FIXES && q.size > found[MAX_FIXES - 1]!.size) break;
     const touches = couldTouch(q.c.changes);
     const errs = touches ? judge(q.c.changes) : null;
-    if (errs && errs.length === 0) { found.push({ c: q.c, size: q.size, id: q.id }); continue; }
+    if (errs && errs.length === 0) {
+      // On the Vehicles step a fix has to clear the warning too: one the plain checks still have a note about isn't offered.
+      if (!gate || notesOf(q.c.changes).length === 0) found.push({ c: q.c, size: q.size, id: q.id });
+      continue;
+    }
     // A direction, action, lane or pin that only works with other hit sides is tried with them.
     if (q.fit && (!errs || errs.some((e) => FIT_CODES.has(e.code)))) {
       for (const extra of fits(q.c.changes)) {
