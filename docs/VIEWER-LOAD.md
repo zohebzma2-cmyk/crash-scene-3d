@@ -209,3 +209,16 @@ Starting the 3D chunk in parallel with the main chunk would need a separate tiny
 - **The stage name:** "3D models" is now "3D view" (it is the code that draws the 3D view).
 - **Failure banner on narrow screens:** under 480 px it says a few words ("3D view didn't load.") with Retry and is docked at the picture's bottom edge, clear of the crash. The full sentence stays for screen readers.
 - **Retry clears `data-ready`** until the new 3D view has drawn.
+
+### Catalog 3D models (after merging live/integ 672d527)
+The round-B catalog models (GLBs through `/api/vehicles/model`) load with the viewer and are swapped in once they arrive. Nothing waits on them: `useCatalogModels` is async state, with no Suspense.
+
+Measured on the production build, with the model route answering at once or after 3 s (median of 3, time to the first frame):
+
+| Engine and width | At once | After 3 s |
+|---|---|---|
+| Chromium 1440 | 813 ms | 805 ms |
+| Chromium 390, Fast 3G + 4× CPU | 5,647 ms | 5,668 ms |
+| WebKit 390 | 755 ms | 754 ms |
+
+So "Drawing the scene" hands over on the app's own models, and the GLB swaps in later.
