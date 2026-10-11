@@ -6,7 +6,7 @@ On the live site's vehicles step, the owner saw "We're getting a lot of map requ
 
 ## Evidence
 
-- **Function logs** (`netlify logs --source functions --since 24h`, read-only): only `Duration: … Memory Usage: …` lines and no warnings or errors. The proxy didn't log a 429, so the logs can't name the route. Every 429 is now logged as `proxy: busy topic=<map|search|vehicles> service=<service> limiter=<user|global>`, with no user key, query or address.
+- **Function logs** (`netlify logs --source functions --since 24h`, read-only): only `Duration: … Memory Usage: …` lines and no warnings or errors. The proxy didn't log a 429, so the logs can't name the route. Every 429 that actually goes out (not a stale copy served instead) is now logged once per request as `proxy: busy topic=<map|search|vehicles> service=<service> limiter=<user|global>`, with no user key, query or address.
 - **The message itself:** "… Pick the type below." is added only by the vehicle card (`apps/web/src/components/VehicleCard.tsx:80`), and only to a failed `/api/vehicles/models` lookup. Before it comes the proxy's one `BUSY_MESSAGE`, which every route used.
 - **Reproduction:** `packages/proxy/test/vehicles-busy.test.ts` replays the app's requests on a fake clock, against the real `defaultProviderConfig()` and a fake vPIC. Committed first as `it.fails` (e2185fd), on the deployed code it gave:
 
@@ -51,9 +51,9 @@ Line numbers are at the deployed commit 2deab93.
 
 **Proxy (`packages/proxy`, `packages/core/src/contracts/proxy.ts`):**
 - **Own buckets:** vPIC has its own token buckets, `ProviderConfig.vehiclesBurst`, separate from the map's:
-  - **Per user:** 24 at once (six cold lists), refilling 1/s, one token per vPIC call. One person can never take more than half the global refill.
+  - **Per user:** 12 at once (three cold lists), refilling 1/s, one token per vPIC call. One caller's burst leaves 4 global tokens (one more list) for everyone else, and in the long run one caller gets at most half the global refill.
   - **All users:** 16 at once, refilling 2/s, one token per vPIC call.
-  - **Waiting:** a request waits up to 2.5 s for a token (`VEHICLES_TOKEN_WAIT_MS`) before it is refused.
+  - **Waiting:** a vPIC call waits at most 2.5 s in all for its user and global tokens together (`VEHICLES_TOKEN_WAIT_MS`) before it is refused. The user token is taken first, so a caller over its own limit never spends shared tokens, and it is given back if the global bucket then refuses.
   - **Cache hits** take no token.
 - **Side by side:** the four vPIC kinds are asked at once (`vpicAll`). Each call takes a user token and a global token.
 - **Per-topic wording:** busy, timeout and upstream answers are worded per topic (`BUSY_MESSAGES` / `TIMEOUT_MESSAGES` / `UPSTREAM_MESSAGES`):
@@ -67,7 +67,7 @@ Line numbers are at the deployed commit 2deab93.
   - The typed make is matched to the makes list ("chevy" is Chevrolet; case, spaces and hyphens don't matter), and the model list is asked for under the list's spelling.
   - Lists are cached for the session (memory and sessionStorage), and the model box filters them locally.
   - A make the list doesn't know waits 0.8 s more (`UNKNOWN_MAKE_WAIT_MS`), and typing on cancels the wait. A half-typed "chev" is never asked for; a real make vPIC knows but the list doesn't still is.
-- **Retry before any message:** a 429 is retried after its Retry-After until 2.5 s of waiting (`retryBusy` / `getJsonRetrying` in `http.ts`). This covers vehicles, the Nominatim search, the roads around the pin and terrain tiles. Type-ahead and cross streets keep their own one retry (DESIGN.md "Busy").
+- **Retry before any message:** a 429 is retried after its Retry-After until 2.5 s have passed since the first try (wall time, so a try the proxy already queued counts) (`retryBusy` / `getJsonRetrying` in `http.ts`). This covers vehicles, the Nominatim search, the roads around the pin and terrain tiles. Type-ahead and cross streets keep their own one retry (DESIGN.md "Busy").
 - **Card wording:** only a real failure is shown, worded for the vehicle list: "The vehicle list is busy right now. Pick the type below."
 
 ## Request counts: "2019", "chevy", "silverado" for vehicle B, then A changed the same way
@@ -77,7 +77,7 @@ Measured with the same scripted typing (160 ms between keys, a 700 ms pause afte
 | | Requests to /api/vehicles | Refused on a cold proxy (old limits) |
 |---|---|---|
 | Before | 4: makes, Honda 2021 (A's claim), **chev 2019**, **chevy 2019** | 2 (Honda 2021: 450 ms after makes; chevy: 650 ms after chev) |
-| After | 3: makes, Honda 2021, **Chevrolet 2019** (shared by B and A) | 0. Three cold lists are 12 vPIC calls; the per-user bucket holds 24 |
+| After | 3: makes, Honda 2021, **Chevrolet 2019** (shared by B and A) | 0. Three cold lists are 12 vPIC calls, which the per-user bucket holds at once |
 
 The e2e (`e2e/vehicles-typing.spec.ts`) runs the real proxy code with its real limits behind the page. It sees at most 5 requests (the extra ones are Honda 2019, when the pause after A's year passes the debounce, and Ford 2019), none twice and none refused.
 

@@ -57,10 +57,11 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     // NHTSA vPIC: its own buckets, separate from the map's (owner, 2026-10-11; docs/PROXY-BUSY.md). It used to be
     // 1 req/s per user, refused at once, and 1 req/s globally per vPIC call, while a model list is four calls: opening
     // the vehicles step (makes + vehicle A's models) or a pause inside a typed make got a 429. Both buckets count vPIC
-    // calls (a list is four). Per user: 24 at once (six cold lists; two vehicles typed by a person need about three)
-    // refilling 1/s, so one person never takes more than half the global refill. All users: 16 at once (four cold
-    // lists) refilling 2/s. Cache hits (30 days, shared through Blobs) take no token.
-    vehiclesBurst: { perUser: { capacity: 24, refillPerS: 1 }, global: { capacity: 16, refillPerS: 2 } },
+    // calls (a list is four). Per user: 12 at once (three cold lists, what two vehicles typed by a person need),
+    // which leaves four global tokens (one more list) for everyone else at once, refilling 1/s: half the global
+    // refill, so one caller's long-run share is at most half. All users: 16 at once (four cold lists) refilling 2/s.
+    // A call waits at most 2.5 s for both tokens together. Cache hits (30 days, shared through Blobs) take no token.
+    vehiclesBurst: { perUser: { capacity: 12, refillPerS: 1 }, global: { capacity: 16, refillPerS: 2 } },
     cacheTtlS: { search: DAY_S, overpass: 7 * DAY_S, tile: 7 * DAY_S, terrain: 30 * DAY_S, vehicles: 30 * DAY_S },
   };
 }

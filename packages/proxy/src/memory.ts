@@ -50,5 +50,10 @@ export function memoryStore(opts: { now?: () => number } = {}): KvStore {
       if (buckets.size > MAX_ENTRIES) for (const [k, b] of buckets) if (b.tokens >= limit.capacity || nowMs - b.at > 60_000) buckets.delete(k);
       return Promise.resolve(0);
     },
+    returnToken(key, nowMs, limit) {
+      const state = refillBucket(buckets.get(key) ?? null, nowMs, limit);
+      buckets.set(key, { tokens: Math.min(limit.capacity, state.tokens + 1), at: state.at });
+      return Promise.resolve();
+    },
   };
 }

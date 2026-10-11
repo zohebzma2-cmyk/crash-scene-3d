@@ -59,17 +59,16 @@ describe("typing vehicles like a person never hits 429 (the app's old request pa
     expect(await c.refused()).toEqual([]);
   });
 
-  it("the worst case of one person typing two vehicles (a pause inside every make is a lookup) passes", async () => {
+  it("the worst case of one person typing two vehicles with today's app (one lookup per make and year) passes", async () => {
     const t = setup(vpic);
     const c = timeline(t);
+    // The makes list and A's claim make, then B as Chevrolet 2019, A's year changed with a pause (Honda 2019),
+    // and A's make changed to Ford: five cold requests, 20 vPIC calls, in 6.5 s.
     await c.at(0, "claimant", PROXY_ROUTES.makes);
     await c.at(450, "claimant", models("Honda", 2021));
-    // B: "ch" pause "ev" pause "y"; then A changed: "fo" pause "rd". Seven requests (28 vPIC calls) in under 6 s.
-    await c.at(2000, "claimant", models("ch", 2019));
-    await c.at(2600, "claimant", models("chev", 2019));
-    await c.at(3200, "claimant", models("chevy", 2019));
-    await c.at(5000, "claimant", models("fo", 2019));
-    await c.at(5600, "claimant", models("ford", 2019));
+    await c.at(3200, "claimant", models("Chevrolet", 2019));
+    await c.at(4500, "claimant", models("Honda", 2019));
+    await c.at(6500, "claimant", models("Ford", 2019));
     expect(await c.refused()).toEqual([]);
   });
 
@@ -83,6 +82,84 @@ describe("typing vehicles like a person never hits 429 (the app's old request pa
 });
 
 describe("the vPIC limiter", () => {
+  it("one caller can't empty the global burst: X fires six cold lists at once, Y asks for one 100 ms later and gets it", async () => {
+    const { perUser, global } = config.vehiclesBurst;
+    // One caller's burst leaves at least one model list (four calls) of the global burst for everyone else.
+    expect(global.capacity - perUser.capacity).toBeGreaterThanOrEqual(4);
+    const t = setup(vpic);
+    const c = timeline(t);
+    for (let i = 0; i < 6; i++) await c.at(0, "x", models("Ford", 1990 + i));
+    await c.at(100, "y", models("Honda", 2019));
+    const y = await settle(c.sent.at(-1)!.res);
+    expect(y.status).toBe(200);
+    await settle(Promise.all(c.sent.map((s) => s.res)));
+  });
+
+  it("a call under contention waits at most 2.5 s in all, user and global bucket together", async () => {
+    const t = setup(vpic);
+    const realTake = t.store.takeToken.bind(t.store);
+    const t0 = Date.now();
+    // The user bucket has a token only after 2 s, the global one only after 4 s. Waiting on each in turn with its
+    // own 2.5 s (the old way) would answer 200 after 4 s; one shared budget answers 429 at about 2 s.
+    t.store.takeToken = (k, n, l) => {
+      const readyAt = k === "global:vehicles" ? t0 + 4000 : k === "user:me:vehicles" ? t0 + 2000 : t0;
+      return n >= readyAt ? realTake(k, n, l) : Promise.resolve(readyAt - n);
+    };
+    const res = await settle(t.get(models("Honda", 2019), "me"));
+    expect(res.status).toBe(429);
+    expect(Date.now() - t0).toBeLessThanOrEqual(2500);
+    // The four calls each took a user token and were then refused by the global bucket: all four were given back.
+    expect(t.returned.filter((k) => k === "user:me:vehicles")).toHaveLength(4);
+  });
+
+  it("a global refusal never costs the caller its own budget", async () => {
+    const t = setup(vpic);
+    const realTake = t.store.takeToken.bind(t.store);
+    t.store.takeToken = (k, n, l) => (k === "global:vehicles" ? Promise.resolve(60_000) : realTake(k, n, l));
+    for (let i = 0; i < 3; i++) expect((await settle(t.get(models("Ford", 1990 + i), "me"))).status).toBe(429);
+    // Global tokens are back; the caller's bucket is still full (12 = three lists at once).
+    t.store.takeToken = realTake;
+    vi.advanceTimersByTime(10_000); // the global bucket refills; the user bucket was already full
+    const res = await settle(Promise.all([2001, 2002, 2003].map((y) => t.get(models("Honda", y), "me"))));
+    expect(res.map((r) => r.status)).toEqual([200, 200, 200]);
+  });
+
+  it("logs one busy line per refused request, and none when a stale list is served instead", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const t = setup(vpic);
+      const flood = await settle(Promise.all(Array.from({ length: 12 }, (_, i) => t.get(models("Ford", 1990 + i), "flooder"))));
+      const refused = flood.filter((r) => r.status === 429).length;
+      expect(refused).toBeGreaterThan(0);
+      const lines = warn.mock.calls.map((a) => String(a[0])).filter((l) => l.startsWith("proxy: busy"));
+      expect(lines).toHaveLength(refused);
+      expect(lines[0]).toMatch(/^proxy: busy topic=vehicles service=vehicles limiter=(user|global)$/);
+      // A stale list served while busy logs nothing.
+      warn.mockClear();
+      expect((await settle(t.get(models("Honda", 2012), "u1"))).status).toBe(200);
+      vi.advanceTimersByTime(31 * 86_400_000);
+      await settle(Promise.all(Array.from({ length: 8 }, (_, i) => t.get(models("Toyota", 1981 + i), `d${i}`))));
+      warn.mockClear();
+      const stale = await settle(t.get(models("Honda", 2012), "u2"));
+      expect(stale.status).toBe(200);
+      expect(warn.mock.calls.filter((a) => String(a[0]).startsWith("proxy: busy"))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("dates a list made from expired parts by its oldest part (x-fetched-at)", async () => {
+    let down = false;
+    const t = setup((c) => (down ? new Response("x", { status: 503 }) : vpic(c)));
+    const first = await settle(t.get(models("Honda", 2014), "u1"));
+    const fetched = first.headers.get("x-fetched-at");
+    vi.advanceTimersByTime(31 * 86_400_000);
+    down = true;
+    const stale = await settle(t.get(models("Honda", 2014), "u2"));
+    expect(stale.headers.get("x-proxy-cache")).toBe("stale");
+    expect(stale.headers.get("x-fetched-at")).toBe(fetched);
+  });
+
   const tile = (i: number) => `${PROXY_ROUTES.tile}/15/${1000 + i}/2000.png`;
   const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
   const upstream = (c: Call) => (c.url.includes("vpic") ? vpic(c) : c.url.includes("overpass") ? jsonResponse({ elements: [] }) : new Response(PNG, { headers: { "content-type": "image/png" } }));
@@ -111,7 +188,7 @@ describe("the vPIC limiter", () => {
     // A model list is four vPIC calls: the global burst (16) plus its refill over the 2.5 s wait, and never more
     // than this person's own bucket allows.
     const { global, perUser } = config.vehiclesBurst;
-    expect(ok).toBeGreaterThanOrEqual(global.capacity / 4);
+    expect(ok).toBeGreaterThanOrEqual(Math.floor(Math.min(perUser.capacity, global.capacity) / 4));
     expect(ok).toBeLessThanOrEqual(Math.min(perUser.capacity + perUser.refillPerS * 5, global.capacity + global.refillPerS * 5) / 4);
     // vPIC itself saw no more than the global bucket allows (a request may wait 2.5 s for its user token, then 2.5 s more).
     expect(t.calls.length).toBeLessThanOrEqual(global.capacity + global.refillPerS * 5);

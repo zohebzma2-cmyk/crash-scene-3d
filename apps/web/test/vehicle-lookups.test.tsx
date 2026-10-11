@@ -199,6 +199,26 @@ describe("busy answers", () => {
 });
 
 describe("retryBusy (every /api call the app makes through getJsonRetrying)", () => {
+  it("counts wall time from the first try: when the proxy already queued each try, it stops after the budget, not 4 tries later", async () => {
+    vi.useFakeTimers({ now: 0 });
+    // Each try spends 2 s queued in the proxy, then answers busy with Retry-After 1.
+    const queued = (ms: number) => async () => { await new Promise((r) => setTimeout(r, ms)); throw new ServiceError("busy", "busy", 1); };
+    let tries = 0;
+    const slow = retryBusy(async () => { tries++; return queued(2000)(); }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await slow).toMatchObject({ code: "busy" });
+    // Try at 0 s (answer at 2 s), wait the 0.5 s left, try at 2.5 s (answer at 4.5 s), then give up.
+    expect(tries).toBe(2);
+    // A try that used the whole 2.5 s in the proxy is not retried at all.
+    tries = 0;
+    const start = Date.now();
+    const slower = retryBusy(async () => { tries++; return queued(2500)(); }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await slower).toMatchObject({ code: "busy" });
+    expect(tries).toBe(1);
+    expect(start).toBe(10_000);
+  });
+
   it("honours Retry-After and stops after 2.5 s of waiting in all", async () => {
     const waits: number[] = [];
     let tries = 0;

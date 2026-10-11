@@ -398,16 +398,18 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
    * cached on its own, so after a failure only the missing ones are fetched again; the first failure is thrown
    * once every call has settled (so the ones that worked are all cached).
    */
-  async function vpicAll(ctx: Ctx, pathOf: (kind: (typeof VPIC_KINDS)[number]) => string): Promise<{ lists: Record<string, unknown>[][]; stale: boolean }> {
+  async function vpicAll(ctx: Ctx, pathOf: (kind: (typeof VPIC_KINDS)[number]) => string): Promise<{ lists: Record<string, unknown>[][]; stale: boolean; fetchedAt?: number }> {
     const settled = await Promise.allSettled(VPIC_KINDS.map((kind) => vpic(ctx, pathOf(kind))));
     const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
     if (failed) throw failed.reason;
-    const parts = settled.map((s) => (s as PromiseFulfilledResult<{ rows: Record<string, unknown>[]; stale: boolean }>).value);
-    return { lists: parts.map((p) => p.rows), stale: parts.some((p) => p.stale) };
+    const parts = settled.map((s) => (s as PromiseFulfilledResult<{ rows: Record<string, unknown>[]; stale: boolean; fetchedAt: number }>).value);
+    const stale = parts.some((p) => p.stale);
+    // A list made from expired parts is as old as its oldest part.
+    return { lists: parts.map((p) => p.rows), stale, ...(stale ? { fetchedAt: Math.min(...parts.map((p) => p.fetchedAt)) } : {}) };
   }
 
   /** One vPIC list call, cached on its own. The key is lowercased: vPIC doesn't care about case, so neither does the cache. */
-  async function vpic(ctx: Ctx, path: string): Promise<{ rows: Record<string, unknown>[]; stale: boolean }> {
+  async function vpic(ctx: Ctx, path: string): Promise<{ rows: Record<string, unknown>[]; stale: boolean; fetchedAt: number }> {
     const entry = await fetchUpstream(ctx, {
       cacheKey: `vpic/${path.toLowerCase()}`,
       ttlS: config.cacheTtlS.vehicles,
@@ -418,7 +420,7 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
         return { bytes, contentType: ct };
       },
     });
-    return { rows: (parseJsonBody(entry.bytes) as { Results: Record<string, unknown>[] }).Results, stale: entry.stale };
+    return { rows: (parseJsonBody(entry.bytes) as { Results: Record<string, unknown>[] }).Results, stale: entry.stale, fetchedAt: entry.fetchedAt };
   }
 
   const titleCase = (s: string) =>
@@ -429,14 +431,14 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     if (!p.ok) return badRequest(p.fields);
     const entry = await composite(ctx, "vehicles/makes", config.cacheTtlS.vehicles, async () => {
       const names = new Map<string, string>();
-      const { lists, stale } = await vpicAll(ctx, (kind) => `GetMakesForVehicleType/${kind}`);
+      const { lists, stale, fetchedAt } = await vpicAll(ctx, (kind) => `GetMakesForVehicleType/${kind}`);
       for (const rows of lists) {
         for (const row of rows) {
           const n = typeof row.MakeName === "string" ? row.MakeName.trim() : "";
           if (n) names.set(n.toUpperCase(), titleCase(n));
         }
       }
-      return { ...json([...names.values()].sort((x, y) => x.localeCompare(y))), stale };
+      return { ...json([...names.values()].sort((x, y) => x.localeCompare(y))), stale, ...(fetchedAt !== undefined ? { fetchedAt } : {}) };
     });
     return dataResponse(entry, config.cacheTtlS.vehicles);
   }
@@ -447,7 +449,7 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     const { make, year } = p.data;
     const entry = await composite(ctx, keyOf("vehicles/models", { make: norm(make), year }), config.cacheTtlS.vehicles, async () => {
       const out = new Map<string, VehicleModelResult>();
-      const { lists, stale } = await vpicAll(ctx, (kind) => `GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}/vehicletype/${kind}`);
+      const { lists, stale, fetchedAt } = await vpicAll(ctx, (kind) => `GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}/vehicletype/${kind}`);
       for (const rows of lists) {
         for (const row of rows) {
           const name = typeof row.Model_Name === "string" ? row.Model_Name.trim() : "";
@@ -455,7 +457,7 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
           if (name && !out.has(name.toUpperCase())) out.set(name.toUpperCase(), { name, vpicType, type: typeFromVpic(vpicType, name) });
         }
       }
-      return { ...json([...out.values()].sort((x, y) => x.name.localeCompare(y.name))), stale };
+      return { ...json([...out.values()].sort((x, y) => x.name.localeCompare(y.name))), stale, ...(fetchedAt !== undefined ? { fetchedAt } : {}) };
     });
     return dataResponse(entry, config.cacheTtlS.vehicles);
   }
@@ -468,12 +470,13 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
   // ---- entry point ----------------------------------------------------------------------------
 
   return async (req: Request): Promise<Response> => {
+    let topic: ProxyTopic = "map";
     try {
       if (req.method !== "GET") return errorResponse(405, { code: "bad-request", message: "Only GET is supported." });
       const url = new URL(req.url);
       const path = url.pathname;
       const R = PROXY_ROUTES;
-      const topic: ProxyTopic = path === R.makes || path === R.models ? "vehicles"
+      topic = path === R.makes || path === R.models ? "vehicles"
         : path === R.search || path === R.suggest || path === R.crossing || path === R.crossStreets ? "search" : "map";
       const ctx: Ctx = {
         topic, config, deps, userKey: deps.userKey(req), userSlots: new Set(), userTokens: new Map(), inflight, health,
@@ -491,7 +494,11 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
       if (path.startsWith(`${R.terrain}/`)) return await tile(ctx, "terrain", path.slice(R.terrain.length + 1), url, req);
       return errorResponse(404, { code: "not-found", message: "That wasn't found." });
     } catch (e) {
-      if (e instanceof ProxyFailure) return errorResponse(e.status, e.error);
+      if (e instanceof ProxyFailure) {
+        // One line per refused request, naming the limit (never the user key, the query or an address).
+        if (e.status === 429) console.warn(`proxy: busy topic=${topic}${e.why ? ` service=${e.why.service} limiter=${e.why.limiter}` : ""}`);
+        return errorResponse(e.status, e.error);
+      }
       console.error("proxy: unexpected error", e instanceof Error ? e.message : "unknown");
       return errorResponse(500, { code: "upstream", message: "Something went wrong on our side. Please try again shortly.", retryAfterS: 5 });
     }

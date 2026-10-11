@@ -59,7 +59,7 @@ export async function getJson<T>(fetchFn: FetchLike, url: string, timeoutMs = AP
   }
 }
 
-/** A "busy" answer is tried again after its Retry-After, until this much waiting in total; only then is it shown. */
+/** A "busy" answer is tried again after its Retry-After until this much time has passed since the first try; only then is it shown. */
 export const BUSY_TOTAL_WAIT_MS = 2500;
 /** The shortest wait before a retry, and the one used when the proxy sends no Retry-After. */
 const BUSY_MIN_WAIT_MS = 250;
@@ -69,9 +69,11 @@ export interface RetryOptions {
   readonly signal?: AbortSignal;
   /** Called before each retry (the UI may say "Busy, trying again…"). */
   readonly onBusy?: () => void;
-  /** Total wait across retries (default BUSY_TOTAL_WAIT_MS). */
+  /** Wall time from the first try after which a busy answer is no longer retried (default BUSY_TOTAL_WAIT_MS). */
   readonly maxWaitMs?: number;
   readonly sleep?: (ms: number) => Promise<void>;
+  /** Clock for the budget (ms; default Date.now). */
+  readonly now?: () => number;
   readonly timeoutMs?: number;
 }
 
@@ -95,6 +97,8 @@ export function abortableSleep(ms: number, signal?: AbortSignal, sleep: (ms: num
  */
 export async function retryBusy<T>(attempt: () => Promise<T>, opts: RetryOptions = {}): Promise<T> {
   const budget = opts.maxWaitMs ?? BUSY_TOTAL_WAIT_MS;
+  const now = opts.now ?? Date.now;
+  const start = now();
   let waited = 0;
   for (;;) {
     try {
@@ -102,8 +106,10 @@ export async function retryBusy<T>(attempt: () => Promise<T>, opts: RetryOptions
     } catch (e) {
       if (!(e instanceof ServiceError) || e.code !== "busy") throw e;
       const wait = Math.max(BUSY_MIN_WAIT_MS, e.retryAfterS !== undefined ? e.retryAfterS * 1000 : BUSY_DEFAULT_WAIT_MS);
-      // The proxy's Retry-After is rounded up to whole seconds: if it doesn't fit, wait what is left instead.
-      const left = budget - waited;
+      // The budget is wall time from the first try (the proxy may already have queued each try for a while),
+      // or the time slept when the clock doesn't move (an injected sleep), whichever is more. The proxy's
+      // Retry-After is rounded up to whole seconds: if it doesn't fit, wait what is left instead.
+      const left = budget - Math.max(waited, now() - start);
       if (left < BUSY_MIN_WAIT_MS) throw e;
       const ms = Math.min(wait, left);
       opts.onBusy?.();

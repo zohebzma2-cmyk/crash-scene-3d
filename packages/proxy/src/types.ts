@@ -39,6 +39,11 @@ export interface KvStore {
    * limit.capacity). Returns 0 when a token was taken, else the milliseconds until one will be available.
    */
   takeToken(key: string, nowMs: number, limit: BucketLimit): Promise<number>;
+  /**
+   * Give one token back to the bucket `key` (never above limit.capacity): a call that took its user token but
+   * was then refused by the global bucket. Best effort; optional for stores that can't.
+   */
+  returnToken?(key: string, nowMs: number, limit: BucketLimit): Promise<void>;
 }
 
 export interface ProxyDeps {

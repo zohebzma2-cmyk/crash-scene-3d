@@ -191,7 +191,7 @@ export interface ProviderConfig {
    * NHTSA vPIC (makes and model lists): its own token buckets, separate from the map's (owner, 2026-10-11).
    * Both take one token per vPIC call (a model list is four calls, one per vehicle kind), so the per-user
    * refill caps one person's share of the global one. Cache hits take none. Over the limit a call waits up
-   * to ~2.5 s for a token.
+   * to ~2.5 s in all for its user and global tokens together.
    */
   readonly vehiclesBurst: { readonly perUser: BucketLimit; readonly global: BucketLimit };
   readonly cacheTtlS: { readonly search: number; readonly overpass: number; readonly tile: number; readonly terrain: number; readonly vehicles: number };
