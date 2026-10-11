@@ -111,7 +111,7 @@ It exits 1 on any miss and prints a table. It sends only requests the proxy reje
 
 `--local` marks the three static-file `Cache-Control` rows as SKIP, because Netlify's local server sets its own value. **Run without `--local` on the real site**, where all three must pass. `--dev` also skips the `/assets/*` row for a plain Vite dev server (which has none).
 
-The CSP in the page itself is tested separately, in a real browser: `e2e/csp.spec.ts` loads the built app and every step under the policy and fails on any violation. Run it with `npm run e2e`, or against a running copy with `CSP_BASE_URL=http://localhost:8888`.
+The CSP in the page itself is tested separately, in real browsers: `e2e/csp-steps.spec.ts` (Chromium and WebKit, also runnable against a deployed `BASE_URL`) and `e2e/csp.spec.ts` load the built app and every step under the policy and fail on any violation. Run it with `npm run e2e`, or against a running copy with `CSP_BASE_URL=http://localhost:8888`.
 
 ## First-deploy checklist
 
@@ -120,7 +120,7 @@ Do this on the first deploy (a deploy preview is fine), in this order.
 1. **Variables.** `PROXY_USER_SALT` is set (secret, Functions scope). Without it `/api/*` answers 500 "This service isn't set up yet."
 2. **Build.** The deploy log shows Node 22, `vite build` succeeding, and `Packaging Functions ... api.mts`.
 3. **Headers.** `npm run verify:headers -- https://<deploy-url>` (no `--local`) passes, including the three `Cache-Control` rows.
-4. **App.** Open `/` and `/?example=t-bone-intersection`; step through all four steps. Open the browser console: no CSP errors. Run the CSP spec against it: `CSP_BASE_URL=https://<deploy-url> npx playwright test e2e/csp.spec.ts`. (`--project` desktop is enough.)
+4. **App.** Open `/` and `/?example=t-bone-intersection`; step through all four steps. Open the browser console: no CSP errors. Run the every-step CSP spec against it, on WebKit (Safari's engine) and Chromium: `BASE_URL=https://<deploy-url> E2E_FULL=1 npx playwright test e2e/csp-steps.spec.ts --project=webkit-desktop --project=desktop` (it needs no fixtures; `e2e/csp.spec.ts` needs the fixtures build).
 5. **Blobs stores.** After one search, one map view and one vehicle lookup, Netlify → Blobs shows `csd-proxy-cache`, `csd-proxy-slots`, `csd-proxy-geo-<today>` and `csd-proxy-user-<today>`. Geo entries appear **only** in the dated stores.
 6. **The sweep.** The next UTC day (and a week later) the old `csd-proxy-user-*` store is gone, and `csd-proxy-geo-*` stores older than 7 days are gone. If not, read the function log for "listStores" errors. (Not provable locally.)
 7. **Rate limits.**

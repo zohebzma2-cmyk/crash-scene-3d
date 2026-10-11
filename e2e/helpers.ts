@@ -24,6 +24,9 @@ export async function watchCsp(page: Page): Promise<() => Promise<CspViolation[]
   page.on("console", (m) => {
     const t = m.text();
     if (t.startsWith("__e2e_csp__")) seen.push(JSON.parse(t.slice("__e2e_csp__".length)) as CspViolation);
+    // The browser's own report too ("Refused to apply a stylesheet ...", "Refusing to load ..."), in case an
+    // engine blocks something without dispatching an event we can see.
+    else if (m.type() === "error" && /^Refus(ed|ing) to |Content Security Policy/.test(t)) seen.push({ directive: "console", blocked: t, source: m.location().url, line: m.location().lineNumber, sample: "" });
   });
   await page.addInitScript(() => {
     document.addEventListener("securitypolicyviolation", (e) => {
