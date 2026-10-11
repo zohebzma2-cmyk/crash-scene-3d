@@ -110,5 +110,6 @@ describe("label layout", () => {
     const controls: Rect[] = [{ x: 0, y: 0, w: 390, h: 150 }, { x: 0, y: 210, w: 390, h: 210 }, { x: 0, y: 150, w: 150, h: 60 }, { x: 210, y: 150, w: 180, h: 60 }];
     const [o] = layoutLabels([body], { viewport: VIEWS[1]!, obstacles: [body.rect], controls });
     expect(rectsOverlap(o!, body.rect, 0)).toBe(false);
+    expect(controls.some((c) => rectsOverlap(o!, c, 0)), "it is under a control (the third pass)").toBe(true);
   });
 });

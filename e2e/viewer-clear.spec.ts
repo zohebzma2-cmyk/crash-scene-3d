@@ -35,6 +35,19 @@ async function hudClearOfBar(page: Page, name: ExampleName, height: number): Pro
   await page.evaluate(() => document.querySelector(".viewer")!.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await check("viewer at the top of the screen");
+  // The band where the picture's bottom edge crosses the bar's top is the one that matters, and a 90 px step can skip it:
+  // put the picture's bottom edge at several offsets either side of the bar's top (the HUD's height in each direction).
+  const barTop = (await boxes(page, ".panel-foot", "action bar"))[0]?.y;
+  if (barTop != null && isPhone(page)) {
+    const hudH = (await hudBoxes(page)).reduce((m, b) => Math.max(m, b.height), 0) * 2;
+    for (const off of [-1.5, -1, -0.5, 0, 0.5, 1, 1.5]) {
+      await page.evaluate(() => document.querySelector(".viewer")!.scrollIntoView({ block: "start" }));
+      const bottom = (await page.locator(".viewer-canvas").boundingBox())!.y + (await page.locator(".viewer-canvas").boundingBox())!.height;
+      await page.evaluate((by) => window.scrollBy(0, by), bottom - (barTop + off * hudH));
+      await page.waitForTimeout(80);
+      await check(`picture bottom ${off} HUD heights from the bar's top`);
+    }
+  }
   const max = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
   for (let y = 0; y <= Math.min(max, 1400); y += 90) {
     await page.evaluate((to) => window.scrollTo(0, to), y);

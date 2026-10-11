@@ -6,9 +6,9 @@ import { Mesh, MeshBasicMaterial, OrthographicCamera, PerspectiveCamera, PlaneGe
 import { buildRoadArt, streetNameSpots, type Pose, type RoadNetwork, type Scene, type SimulationResult, type TerrainGrid, type Units, type Vec2 } from "@csd/core";
 import type { CameraView } from "./types";
 import { cameraFor, headingToYaw, heightAt, layoutLabels, rectsOverlap, toThree, type LabelRequest, type PlacedLabel, type Rect } from "./math";
-import { projectVehicle, vehicleLabel } from "./labels";
+import { projectRing, projectVehicle, vehicleLabel } from "./labels";
 import { stillCamera } from "./still-camera";
-import { LIFT } from "./scene-geometry";
+import { LIFT, RING_M } from "./scene-geometry";
 import { drawLabel, groundInView, placeNamesInView, type Label } from "./StreetNames";
 import { distanceText, markerRows, measureRows } from "../lib/measure";
 import { vehicleToken, type SceneColors } from "./tokens";
@@ -164,6 +164,9 @@ function planLabels(g: CanvasRenderingContext2D, ctx: CaptureContext, cam: Camer
     items.set(item.id, item);
     requests.push({ id: item.id, anchor: p.anchor, rect: p.rect, w: item.w, h: item.h });
   }
+  // The impact ring is kept clear too, as in the live picture.
+  const ringAt = ctx.sim.impactPointM;
+  bodies.push(...projectRing(cam, size, ringAt, RING_M.outer, heightAt(ctx.terrain, ringAt) + LIFT.ring).strips);
   if (view === "aftermath") {
     const v3 = new Vector3();
     markerRows(measureRows(ctx.sim)).forEach((r, n) => {
@@ -178,7 +181,7 @@ function planLabels(g: CanvasRenderingContext2D, ctx: CaptureContext, cam: Camer
       requests.push({ id: item.id, anchor: { x, y }, rect: { x, y, w: 0, h: 0 }, w: item.w, h: item.h, prefer: ["C"], maxDistance: PILL_REACH * k });
     });
   }
-  const placed = layoutLabels(requests, { viewport: size, obstacles: bodies, maxDistance: 64 * k, gap: 2 * GAP * k, step: 8 * k });
+  const placed = layoutLabels(requests, { viewport: size, obstacles: bodies, maxDistance: 64 * k, farDistance: PILL_REACH * k, gap: 2 * GAP * k, step: 8 * k });
   return { k, sans, mono, items, placed };
 }
 

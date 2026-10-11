@@ -13,6 +13,8 @@ export { offsetPolyline };
  * terrain grid) and sit on top of it by these amounts, so the coarse ground triangles can't poke through them.
  */
 export const LIFT = { lot: 0.06, road: 0.09, paint: 0.14, path: 0.28, ring: 0.24 } as const;
+/** The impact ring's inner and outer radius, meters. */
+export const RING_M = { inner: 1.3, outer: 1.65 } as const;
 
 /**
  * Draw order of the ground layers. They are drawn first, in this order, with no depth test and no depth write, so
