@@ -53,6 +53,7 @@ Fixtures mode serves the cached map data from `examples/` and never calls `/api`
 - `?fixtures=1` works only in a dev server or in a build made with `VITE_FIXTURES=1`. A normal production build ignores it and does not contain the cached map data. `npm run e2e` builds with `VITE_FIXTURES=1`.
 - `?example=<name>` opens an example scene on the review step. The names are `t-bone-intersection`, `highway-rear-end` and `parking-lot-backing`. In a production build it loads only the scene file and uses the real services. In a dev or fixtures build it also turns fixtures mode on.
 - The three examples are made-up claims on real public roads in Nashua, NH. Each has `scene.json`, `osm.json`, `terrain/` and `ATTRIBUTION.md`.
+- Catalog 3D models in fixtures mode come from two synthetic GLBs in `apps/web/fixtures/models/` (made by `node scripts/make-fixture-glb.mjs`): make "Synthetic", model "Box car" (named Body / Glass / Tire materials) or "Baked car" (one material with the paint baked into its texture, like the catalog's). Every other vehicle keeps our own model.
 
 ### Browser tests (Playwright)
 
@@ -318,6 +319,7 @@ Read these before you rely on a picture.
 
 - Every size is flagged `verified: false`. The motorcycle mass is flagged `verified: false` too. They need a primary source before release.
 - vPIC types map to presets: Passenger Car to car; MPV to SUV (van for known van models); Truck to pickup, or truck for heavy chassis models, or van; Motorcycle to motorcycle. Anything else asks the claimant.
+- **Catalog paint vs the picked colour.** Catalog photos and 3D models come in the catalog's own paint. The picked colour is what every picture and file shows: it fills our model and tints a catalog model (exactly for a model with a body-paint material; close, by recolouring the paint's texels, for a paint baked into the texture), and a "Picked: Red" chip sits next to any catalog photo. A dark catalog paint (black, dark grey) can't be told apart from tyres and trim in a baked texture, so that model keeps it and the viewer says so. Vehicles are told apart by their letters and outlines, never by paint.
 - **One PDF page, unless there is overflow.** If the assumptions and warnings do not fit at 8 pt, they move to page 2 (and on, if the lists are very long). Nothing is cut.
 - **Speeds above 150 mph** (`LIMITS.maxSpeedMph`) are refused. So are speeds and limits finer than a tenth of a mph ("Use whole or tenths of a mile per hour, like 25 or 25.5."), so the saved file always matches what was entered.
 
