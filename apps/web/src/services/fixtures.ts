@@ -2,7 +2,7 @@
 // It exists only in a dev server or a build made with VITE_FIXTURES=1: a normal production build
 // neither honors ?fixtures=1 nor contains the map data. (?example=<name> still works there; it loads
 // just that scene.json and uses the real services. See examples.ts.)
-import { normName, typeFromVpic, type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult, type RoadNetwork, type Scene } from "@csd/core";
+import { typeFromVpic, type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult, type RoadNetwork, type Scene } from "@csd/core";
 import { mapConfig } from "../config/map";
 import { dist, nearestOnPolyline, polylineCrossings } from "../lib/geometry";
 import { fakeToLatLon, fakeToLocal } from "./fakes";
@@ -11,6 +11,7 @@ import type { GeoService, RoadsService, VehiclesService } from "./types";
 import type { RoadsDeps } from "./roads";
 import { townLookups } from "./towns";
 import { ServiceError } from "./types";
+import { resolveMake } from "./vehicles";
 
 export interface FixtureEnv {
   readonly DEV?: boolean;
@@ -213,10 +214,12 @@ const OTHER_MAKES = [
 ];
 
 export function createFixtureVehicles(): VehiclesService {
+  const names = [...Object.keys(MODELS), ...OTHER_MAKES].sort((a, b) => a.localeCompare(b));
   return {
-    makes: async () => [...Object.keys(MODELS), ...OTHER_MAKES].sort((a, b) => a.localeCompare(b)),
+    makes: async () => names,
+    canonicalMake: (text) => resolveMake(text, names),
     models: async (make, year) => {
-      const key = Object.keys(MODELS).find((k) => normName(k) === normName(make));
+      const key = resolveMake(make, Object.keys(MODELS));
       return (key ? MODELS[key] ?? [] : [])
         .filter(([, , from, to]) => year >= from && year <= (to ?? year))
         .map(([name, vpicType]) => ({ name, vpicType, type: typeFromVpic(vpicType, name) }))

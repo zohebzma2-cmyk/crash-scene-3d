@@ -12,7 +12,8 @@ export function normName(s: string): string {
  * A full alias match counts as an exact match ("chevy" is Chevrolet, not a fuzzy guess).
  */
 export const MAKE_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-  chevy: "chevrolet", chev: "chevrolet", chevrolette: "chevrolet",
+  // No "chev": that is half of "chevy" or "chevrolet", and a half-typed make is never looked up (it still ranks Chevrolet first).
+  chevy: "chevrolet", chevrolette: "chevrolet",
   vw: "volkswagen", volks: "volkswagen", volkswagon: "volkswagen", vdub: "volkswagen",
   merc: "mercedesbenz", mercedes: "mercedesbenz", benz: "mercedesbenz", mb: "mercedesbenz", mercedez: "mercedesbenz", mercedesbens: "mercedesbenz",
   beemer: "bmw", bimmer: "bmw", beamer: "bmw", bmer: "bmw",

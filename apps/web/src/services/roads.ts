@@ -2,7 +2,7 @@
 // plus Terrarium terrain tiles (also through the proxy). Terrain is best effort: the
 // network works without it (the viewer then draws flat ground).
 import { PROXY_ROUTES, type LatLon, type LocalFrame, type RoadNetwork, type TerrainGrid } from "@csd/core";
-import { getBytes, getJson, type FetchLike } from "./http";
+import { getBytes, getJsonRetrying, retryBusy, type FetchLike } from "./http";
 import type { RoadsService } from "./types";
 
 export type TileBytes = (z: number, x: number, y: number) => Promise<Uint8Array>;
@@ -44,10 +44,11 @@ export function createRoadsService(fetchFn: FetchLike, deps: RoadsDeps): RoadsSe
   return {
     async load(center, radiusM = ROAD_RADIUS_M) {
       const q = new URLSearchParams({ lat: center.lat.toFixed(6), lon: center.lon.toFixed(6), radius: String(radiusM) });
-      const json = await getJson<unknown>(fetchFn, `${PROXY_ROUTES.overpass}?${q}`);
+      // A busy answer is tried again after its Retry-After (up to 2.5 s in all) before it counts as a failure.
+      const json = await getJsonRetrying<unknown>(fetchFn, `${PROXY_ROUTES.overpass}?${q}`);
       const frame: LocalFrame = { origin: center };
       const net = deps.parseOverpass(json, frame, radiusM, new Date().toISOString());
-      const terrain = await deps.terrain(frame, radiusM, (z, x, y) => getBytes(fetchFn, `${PROXY_ROUTES.terrain}/${z}/${x}/${y}.png`));
+      const terrain = await deps.terrain(frame, radiusM, (z, x, y) => retryBusy(() => getBytes(fetchFn, `${PROXY_ROUTES.terrain}/${z}/${x}/${y}.png`)));
       return terrain ? { ...net, terrain } : net;
     },
   };

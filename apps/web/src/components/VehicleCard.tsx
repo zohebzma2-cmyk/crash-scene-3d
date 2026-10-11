@@ -9,6 +9,8 @@ import { RadioGroup } from "../a11y/roving";
 import { Icon } from "../icons/Icon";
 import { roleName } from "../lib/text";
 import { useServices } from "../services/context";
+import { ServiceError } from "../services/types";
+import { VEHICLE_LOOKUP_MESSAGES } from "../services/vehicles";
 import { useDoc } from "../state/DocProvider";
 import { useRoads } from "../state/Roads";
 import { DirectionPicker } from "./DirectionPicker";
@@ -32,24 +34,37 @@ const MakeLogo = (logoModule?.MakeLogo ?? logoModule?.default) as ComponentType<
 
 /** DESIGN.md doesn't specify a braking control; a plain checkbox, off unless the claimant says so (the physics assumes no braking). */
 export const BRAKING_LABEL = "Braking just before the crash";
-/** A make that matches exactly waits this long before its models are asked for, so passing through "Mini" on the way to a longer name costs nothing. */
-export const LOOKUP_DEBOUNCE_MS = 250;
+/**
+ * Typing waits this long before a make's models are asked for (the service waits longer still for a make the
+ * list doesn't know), so passing through "Mini" or "Chev" on the way to a longer name costs nothing. Picking a
+ * year or a make from the list asks at once.
+ */
+export const LOOKUP_DEBOUNCE_MS = 450;
 export { FIRST_VPIC_YEAR };
 export const MAKE_LIST_LIMIT = 40;
 export const MODEL_LIST_LIMIT = 60;
 export const MAKES_LOADING_TEXT = "Loading the makes…";
-export const MAKES_FAILED_TEXT = "Couldn't load the list of makes. Type the make; it still works.";
-export const MODELS_FAILED_TEXT = "Couldn't load the model list. Type the model; it still works.";
-export const MODELS_FAILED_LOOKUP = "Couldn't load the model list. Type the model if you know it. Pick the type below.";
+/**
+ * Why a vehicle list couldn't load, as one of the service's vehicle-list sentences ("The vehicle list is busy right
+ * now."). Anything else (a proxy message about map requests, an unexpected error) becomes the generic sentence.
+ */
+export function vehicleListReason(e: unknown): string {
+  const known: readonly string[] = Object.values(VEHICLE_LOOKUP_MESSAGES);
+  return e instanceof ServiceError && known.includes(e.message) ? e.message : VEHICLE_LOOKUP_MESSAGES.other;
+}
+export const makesFailedText = (reason: string = VEHICLE_LOOKUP_MESSAGES.other) => `${reason} Type the make; it still works.`;
+export const modelsFailedText = (reason: string = VEHICLE_LOOKUP_MESSAGES.other) => `${reason} Type the model; it still works.`;
+export const modelsFailedLookup = (reason: string = VEHICLE_LOOKUP_MESSAGES.other) => `${reason} Pick the type below.`;
+export const noModelsText = (make: string, year: number) => `No ${make} models found for ${year}. Pick the type below.`;
 export const asTypedText = (text: string) => `Use ‘${text}’ as typed`;
 export const notInVpic = (make: string) => `‘${make}’ isn't in NHTSA vPIC's list. Pick the type below.`;
 
 /** The makes list for every card: loaded once per session by the Vehicles step. */
-export type MakesState = { readonly status: "loading" } | { readonly status: "ok"; readonly names: readonly string[] } | { readonly status: "error" };
+export type MakesState = { readonly status: "loading" } | { readonly status: "ok"; readonly names: readonly string[] } | { readonly status: "error"; readonly reason?: string };
 
 type Lookup =
   | { key: string; state: "ok"; models: VehicleModelResult[] }
-  | { key: string; state: "warn"; text: string; models: VehicleModelResult[] };
+  | { key: string; state: "warn"; text: string; reason: string; models: VehicleModelResult[] };
 
 const focusSoon = (ref: RefObject<HTMLInputElement | null>) => window.setTimeout(() => ref.current?.focus(), 0);
 const findModel = (models: readonly VehicleModelResult[], text: string, make: string | null) => {
@@ -88,10 +103,14 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   const lastYear = years[0] ?? FIRST_VPIC_YEAR;
   const makeNames = makes.status === "ok" ? makes.names : null;
   const resolvedMake = makeNames ? resolveName(v.make, makeNames, { aliases: MAKE_ALIASES }) : null;
-  // Models are asked for once the make is known: one of vPIC's makes (typed exactly, by a common name like
-  // "chevy", or picked), or, when the makes list couldn't load, whatever was typed once the field is left.
-  // Never for half a make, so typing costs no requests.
-  const lookupMake = makeNames ? resolvedMake : makes.status === "error" && makeDone && v.make.trim().length >= 2 ? v.make.trim() : null;
+  // Models are asked for under the makes list's spelling when the text is one of vPIC's makes (typed exactly, by a
+  // common name like "chevy", or picked). Anything else is asked for as typed once typing stops (vPIC may know a
+  // make outside the list): the service waits longer for it, and the next keystroke drops that wait, so half a
+  // make is never asked for while someone is typing. One request per make and year either way.
+  const typedMake = v.make.trim();
+  const lookupMake = resolvedMake ?? (normName(typedMake).length >= 2 ? typedMake : null);
+  /** Set by a pick from the list: ask at once instead of after the typing pause. */
+  const askNow = useRef(false);
   const key = `${v.year ?? ""}|${lookupMake ? normName(lookupMake) : ""}`;
   const keyRef = useRef(key);
   useEffect(() => { keyRef.current = key; });
@@ -100,27 +119,33 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   const askable = yearOk && lookupMake != null;
   const current = lookup && lookup.key === key ? lookup : null;
 
-  // vPIC models for this year and make: one request per make and year, cached for the session by the service.
+  // vPIC models for this year and make, once the make is known: one request per make and year, cached for the
+  // session by the service (which retries a busy answer first). Changing the make clears the model (in the
+  // reducer) and loads the new make's list; typing on drops the wait (the signal).
   useEffect(() => {
     if (!askable || v.year == null || lookupMake == null) return;
     const asked = key;
     const make = lookupMake;
     const year = v.year;
+    const typedOn = new AbortController();
+    const wait = askNow.current ? 0 : LOOKUP_DEBOUNCE_MS;
+    askNow.current = false;
     const timer = window.setTimeout(() => {
-      vehicles.models(make, year).then(
+      vehicles.models(make, year, { signal: typedOn.signal }).then(
         (models) => {
           if (keyRef.current !== asked) return;
           setLookup({ key: asked, state: "ok", models });
           applyModel(models, latest.current.model, asked, make);
         },
-        () => {
-          // The proxy's own retry has already run; here only a plain line, never its busy text.
-          if (keyRef.current !== asked) return;
-          setLookup({ key: asked, state: "warn", text: MODELS_FAILED_LOOKUP, models: [] });
+        (e: unknown) => {
+          // The service has already retried a busy answer; here one plain line worded for the vehicle list.
+          if (typedOn.signal.aborted || keyRef.current !== asked) return;
+          const reason = vehicleListReason(e);
+          setLookup({ key: asked, state: "warn", text: modelsFailedLookup(reason), reason, models: [] });
         },
       );
-    }, LOOKUP_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    }, wait);
+    return () => { window.clearTimeout(timer); typedOn.abort(); };
     // `applyModel` only reads refs and dispatch; the key stands for year + make.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, askable, vehicles]);
@@ -145,13 +170,17 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   let loading = false;
   const typedModel = current?.state === "ok" ? findModel(current.models, v.model, lookupMake) : undefined;
   const note = matchNote && matchNote.key === key && typedModel?.name === matchNote.model ? matchNote : null;
-  const typedMake = v.make.trim();
+  // A make still being typed (not one of vPIC's, field not left) gets no "Looking up…" yet.
+  const settledMake = resolvedMake != null || makeDone;
   if (badYear) { lookupText = "Check the year. Pick the type below."; warn = true; }
-  else if (askable && !current) { lookupText = `Looking up ${lookupMake} models for ${v.year}…`; loading = true; }
   else if (current?.state === "warn") { lookupText = current.text; warn = true; }
   else if (note) { lookupText = note.text; warn = note.warn; matched = !note.warn; }
-  else if (current?.state === "ok") lookupText = current.models.length ? `${current.models.length} ${lookupMake} models for ${v.year}. Pick yours to fill in the type.` : `vPIC has no ${lookupMake} models for ${v.year}. Pick the type below.`;
-  else if (makeNames && makeDone && typedMake && !resolvedMake) { lookupText = notInVpic(typedMake); warn = true; }
+  else if (current?.state === "ok" && v.year != null) {
+    if (current.models.length) lookupText = `${current.models.length} ${lookupMake} models for ${v.year}. Pick yours to fill in the type.`;
+    else { lookupText = noModelsText(lookupMake ?? typedMake, v.year); warn = !resolvedMake; }
+  }
+  else if (askable && settledMake) { lookupText = `Looking up ${lookupMake} models for ${v.year}…`; loading = true; }
+  else if (makeNames && makeDone && typedMake && !resolvedMake && v.year == null) { lookupText = notInVpic(typedMake); warn = true; }
   else if (v.typeSource === "claim") lookupText = `${PRESETS[v.type].label}, from your claim. Change it if it's wrong.`;
   else lookupText = "Enter the year, make and model to fill in the type, or pick it below.";
 
@@ -167,7 +196,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
     if (typed && !makeNames?.some((n) => normName(n) === normName(typed))) out.push({ id: `${ids}-mk-typed`, value: typed, main: asTypedText(typed), free: true });
     return out;
   }, [v.make, makeNames, ids]);
-  const makeStatus: ComboStatus | null = makes.status === "loading" ? { kind: "loading", text: MAKES_LOADING_TEXT } : makes.status === "error" ? { kind: "note", text: MAKES_FAILED_TEXT } : null;
+  const makeStatus: ComboStatus | null = makes.status === "loading" ? { kind: "loading", text: MAKES_LOADING_TEXT } : makes.status === "error" ? { kind: "note", text: makesFailedText(makes.reason) } : null;
 
   // ---- model ----
   const modelItems: ComboItem[] = useMemo(() => {
@@ -190,7 +219,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
       : !typedMake ? { kind: "note", text: "Pick the make to see its models." }
       : { kind: "note", text: "No model list for this make. Type the model; it still works." };
   } else if (!current) modelStatus = { kind: "loading", text: `Loading ${lookupMake} models for ${v.year}…` };
-  else if (current.state === "warn") modelStatus = { kind: "note", text: MODELS_FAILED_TEXT };
+  else if (current.state === "warn") modelStatus = { kind: "note", text: modelsFailedText(current.reason) };
   else if (current.models.length === 0) modelStatus = { kind: "note", text: `vPIC has no ${lookupMake} models for ${v.year}. Type the model; it still works.` };
 
   const sameAsClaim = v.id === "A" && v.year === claim.year && v.make === claim.make && v.model === claim.model;
@@ -222,7 +251,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
               }}
               onPick={(item) => {
                 setYearText(item.value);
-                if (Number(item.value) !== latest.current.year) patch({ year: Number(item.value) });
+                if (Number(item.value) !== latest.current.year) { askNow.current = lookupMake != null; patch({ year: Number(item.value) }); }
                 focusSoon(makeRef);
               }}
             />
@@ -232,6 +261,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
               onType={(text) => { patch({ make: text }); setMakeDone(false); }}
               onPick={(item) => {
                 setMakeDone(true);
+                if (`${v.year ?? ""}|${normName(item.value)}` !== key) askNow.current = true;
                 if (item.value !== latest.current.make) patch({ make: item.value });
                 focusSoon(modelRef);
               }}

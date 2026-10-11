@@ -119,7 +119,7 @@ describe("step 2: vehicles", () => {
     setValue(make, "Ford");
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(models).toHaveBeenLastCalledWith("Ford", 2018);
+    expect(models).toHaveBeenLastCalledWith("Ford", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     setValue(model, "Escape");
     expect(b.textContent).toContain("SUV from NHTSA vPIC");
     expect(model.value).toBe("Escape");
@@ -131,7 +131,7 @@ describe("step 2: vehicles", () => {
     expect(rows()).toEqual([]);                          // and the old make's models are gone
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(models).toHaveBeenLastCalledWith("Toyota", 2018);
+    expect(models).toHaveBeenLastCalledWith("Toyota", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(rows()).toEqual(["Camry"]);
   });
 
@@ -143,22 +143,20 @@ describe("step 2: vehicles", () => {
     const b = card("B");
     const [year, make] = [...b.querySelectorAll<HTMLInputElement>("input[type=text]")] as [HTMLInputElement, HTMLInputElement];
     setValue(year, "2018");
-    // A make vPIC doesn't list: nothing is asked for it, and once the field is left the card says so.
+    // A make the list doesn't know is still asked for once typing stops (vPIC may know it); the failure is one plain line.
     act(() => make.focus());
     setValue(make, "Zork");
-    act(() => make.blur());
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(models).not.toHaveBeenCalledWith("Zork", 2018);
-    expect(b.textContent).toContain("‘Zork’ isn't in NHTSA vPIC's list. Pick the type below.");
-    // A listed make whose model list fails: a plain line, never the proxy's busy text.
-    act(() => make.focus());
+    expect(models).toHaveBeenLastCalledWith("Zork", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(b.textContent).toContain("We couldn't load the vehicle list right now. Pick the type below.");
+    // A listed make whose model list fails: the same plain line, never the proxy's busy text.
     setValue(make, "Ford");
     act(() => make.blur());
     await vi.advanceTimersByTimeAsync(600);
     await flush();
-    expect(models).toHaveBeenLastCalledWith("Ford", 2018);
-    expect(b.textContent).toContain("Couldn't load the model list. Type the model if you know it. Pick the type below.");
+    expect(models).toHaveBeenLastCalledWith("Ford", 2018, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(b.textContent).toContain("We couldn't load the vehicle list right now. Pick the type below.");
     expect(b.textContent).not.toMatch(/map requests|map service/);
     click(get("radio", "Pickup", b));
     expect(get("radio", "Pickup", b).getAttribute("aria-checked")).toBe("true");

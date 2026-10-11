@@ -10,7 +10,7 @@ import { useFlow } from "../state/Flow";
 import { useUi } from "../state/Ui";
 import { Tips } from "../tips/Tips";
 import { MiniMap } from "./MiniMap";
-import { VehicleCard, type MakesState } from "./VehicleCard";
+import { VehicleCard, vehicleListReason, type MakesState } from "./VehicleCard";
 import { GatePanel } from "./Warnings";
 
 export function VehiclesStep() {
@@ -25,7 +25,7 @@ export function VehiclesStep() {
   useEffect(() => {
     let off = false;
     // Once per session (the service caches it); every card ranks against it. A failure leaves typing working.
-    vehicles.makes().then((names) => { if (!off) setMakes({ status: "ok", names }); }, () => { if (!off) setMakes({ status: "error" }); });
+    vehicles.makes().then((names) => { if (!off) setMakes({ status: "ok", names }); }, (e: unknown) => { if (!off) setMakes({ status: "error", reason: vehicleListReason(e) }); });
     return () => { off = true; };
   }, [vehicles]);
 

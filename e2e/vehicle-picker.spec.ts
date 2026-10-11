@@ -110,7 +110,8 @@ test.describe("the vehicle picker", () => {
     await expect(await optionsOf(make, page)).toHaveText(["Use ‘Zephyr’ as typed"]);
     await page.keyboard.press("Enter");
     await expect(make).toHaveValue("Zephyr");
-    await expect(b.locator(".lookup")).toContainText("‘Zephyr’ isn't in NHTSA vPIC's list. Pick the type below.");
+    // vPIC may know a make outside the list: it is asked for once, as typed, and has no models.
+    await expect(b.locator(".lookup")).toContainText("No Zephyr models found for 2019. Pick the type below.");
     const model = fieldOf(b, "Model");
     await model.click();
     await model.pressSequentially("Roadster", { delay: 40 });

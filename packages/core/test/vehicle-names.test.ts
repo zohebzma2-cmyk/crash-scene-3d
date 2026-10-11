@@ -85,7 +85,8 @@ describe("makes: aliases and typos", () => {
     expect(resolveName("chevy", MAKES, { aliases: MAKE_ALIASES })).toBe("Chevrolet");
     expect(resolveName("CHEVROLET", MAKES, { aliases: MAKE_ALIASES })).toBe("Chevrolet");
     expect(resolveName("vw", MAKES, { aliases: MAKE_ALIASES })).toBe("Volkswagen");
-    expect(resolveName("chev", MAKES, { aliases: MAKE_ALIASES })).toBe("Chevrolet");
+    expect(resolveName("chev", MAKES, { aliases: MAKE_ALIASES })).toBeNull();   // half a make
+    expect(rankNames("chev", MAKES, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })[0]).toEqual({ name: "Chevrolet", kind: "prefix" });
     expect(resolveName("chevro", MAKES, { aliases: MAKE_ALIASES })).toBeNull();
     expect(resolveName("toyta", MAKES, { aliases: MAKE_ALIASES })).toBeNull();
     expect(resolveName("", MAKES, { aliases: MAKE_ALIASES })).toBeNull();

@@ -2,7 +2,7 @@
 // list that is open while you type, arrow keys and Enter to pick, Escape to close, and touch rows at
 // least --size-touch tall. The parent ranks the items; the input always keeps what was typed, so a
 // vehicle vPIC doesn't know still works ("Use 'Zephyr' as typed").
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
 
 export interface ComboItem {
   readonly id: string;
@@ -42,6 +42,8 @@ export interface VehicleComboboxProps {
 }
 
 export const SUGGESTIONS_LABEL = "Suggestions";
+/** The list closes this long after the field loses focus (the address search uses the same pause). */
+export const BLUR_CLOSE_MS = 120;
 
 export function VehicleCombobox({
   id, label, value, items, onType, onPick, onCommit, status = null, inputMode = "text", maxLength, className = "", inputClassName = "", inputRef, listLabel = SUGGESTIONS_LABEL,
@@ -51,6 +53,8 @@ export function VehicleCombobox({
   const [open, setOpen] = useState(false);
   /** The highlighted row; -1 for none. Typing highlights the best match so Enter takes it. */
   const [active, setActive] = useState(-1);
+  const closeTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   const current = active >= 0 && active < items.length ? active : -1;
   const visible = open && (items.length > 0 || status != null);
   const activeId = visible && current >= 0 ? items[current]?.id : undefined;
@@ -111,8 +115,14 @@ export function VehicleCombobox({
           setOpen(true);
           setActive(e.target.value.trim() ? 0 : -1);
         }}
-        onFocus={() => { setOpen(true); setActive(-1); }}
-        onBlur={() => { setOpen(false); setActive(-1); onCommit?.(); }}
+        onFocus={() => { window.clearTimeout(closeTimer.current); setOpen(true); setActive(-1); }}
+        onBlur={() => {
+          onCommit?.();
+          // Close a moment later, as the address search does: on phones the list is in the page flow, and closing it
+          // at once would move whatever was just tapped below it before the tap lands.
+          window.clearTimeout(closeTimer.current);
+          closeTimer.current = window.setTimeout(() => { setOpen(false); setActive(-1); }, BLUR_CLOSE_MS);
+        }}
         onKeyDown={onKeyDown}
       />
       {visible ? (

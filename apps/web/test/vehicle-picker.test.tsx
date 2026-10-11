@@ -2,10 +2,11 @@
 // The vehicle picker: year, make and model as type-ahead lists (WAI-ARIA comboboxes) over NHTSA vPIC.
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PROXY_ROUTES } from "@csd/core";
+import { BUSY_MESSAGE, PROXY_ROUTES } from "@csd/core";
+import { modelsFailedText, vehicleListReason } from "../src/components/VehicleCard";
 import { createFixtureVehicles } from "../src/services/fixtures";
-import { createVehiclesService } from "../src/services/vehicles";
-import type { VehiclesService } from "../src/services/types";
+import { VEHICLE_LOOKUP_MESSAGES, createVehiclesService } from "../src/services/vehicles";
+import { ServiceError, type ModelsOptions, type VehiclesService } from "../src/services/types";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { get, key, renderApp, setValue } from "./helpers";
 import { makeServices, tbone } from "./fakes";
@@ -35,11 +36,14 @@ async function typeLikeAPerson(input: HTMLInputElement, text: string) {
 }
 const settle = async (ms = 400) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 
-function spied(inner: VehiclesService) {
+function spied(inner: Pick<VehiclesService, "makes" | "models"> & Partial<Pick<VehiclesService, "canonicalMake">>) {
   const makes = vi.fn(() => inner.makes());
-  const models = vi.fn((make: string, year: number) => inner.models(make, year));
-  return { vehicles: { makes, models } satisfies VehiclesService, makes, models };
+  const models = vi.fn((make: string, year: number, opts?: ModelsOptions) => inner.models(make, year, opts));
+  const canonicalMake = (text: string) => inner.canonicalMake?.(text) ?? null;
+  return { vehicles: { makes, models, canonicalMake } satisfies VehiclesService, makes, models };
 }
+/** The make and year of each models call (the third argument is the caller's abort signal). */
+const asked = (s: ReturnType<typeof spied>) => s.models.mock.calls.map(([mk, y]) => [mk, y] as const);
 
 describe("vehicle picker: keyboard", () => {
   it("2019, chevy, silverado: Enter takes the best match each time and the type fills in as a pickup", async () => {
@@ -98,7 +102,7 @@ describe("vehicle picker: keyboard", () => {
 
     // One makes request for the page, one models request for Chevrolet 2019; none per keystroke.
     expect(s.makes).toHaveBeenCalledTimes(1);
-    expect(s.models.mock.calls.filter(([mk]) => mk !== "Honda")).toEqual([["Chevrolet", 2019]]);
+    expect(asked(s).filter(([mk]) => mk !== "Honda")).toEqual([["Chevrolet", 2019]]);
   });
 
   it("Escape closes the list and keeps the text; ArrowDown opens it again", async () => {
@@ -165,22 +169,24 @@ describe("vehicle picker: free text", () => {
     await typeLikeAPerson(make, "Zephyr");
     expect(rowNames(make)).toEqual(["Use ‘Zephyr’ as typed"]);
     key(make, "Enter");
-    await settle();
+    await settle(800);
     expect(make.value).toBe("Zephyr");
-    expect(card("B").querySelector(".lookup")?.textContent).toContain("‘Zephyr’ isn't in NHTSA vPIC's list. Pick the type below.");
+    // vPIC may know a make outside the list, so it is asked for once (as typed), and says it has no models.
+    expect(card("B").querySelector(".lookup")?.textContent).toContain("No Zephyr models found for 2019. Pick the type below.");
     const model = field("B", "model");
     act(() => model.focus());
-    expect(listOf(model)?.parentElement?.textContent).toContain("No model list for this make. Type the model; it still works.");
+    expect(listOf(model)?.parentElement?.textContent).toContain("vPIC has no Zephyr models for 2019. Type the model; it still works.");
     await typeLikeAPerson(model, "Roadster");
     expect(rowNames(model)).toEqual(["Use ‘Roadster’ as typed"]);
     key(model, "Enter");
     expect(model.value).toBe("Roadster");
     act(() => { get("radio", "Car", card("B")).click(); });
     expect(stored()[1]).toMatchObject({ make: "Zephyr", model: "Roadster", type: "car", typeSource: "manual" });
-    expect(s.models.mock.calls.some(([mk]) => mk === "Zephyr")).toBe(false);
+    // Once for the whole make, never for "Ze", "Zep"... while it was being typed.
+    expect(asked(s).filter(([mk]) => /^ze/i.test(mk))).toEqual([["Zephyr", 2019]]);
   });
 
-  it("when the makes list can't load, the make is still typed, and its models are asked for once the field is left", async () => {
+  it("when the makes list can't load, the make is still typed, and its models are asked for once typing stops", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const inner = createFixtureVehicles();
     const s = spied({ makes: () => Promise.reject(new Error("down")), models: (m, y) => inner.models(m, y) });
@@ -190,11 +196,11 @@ describe("vehicle picker: free text", () => {
     await typeLikeAPerson(field("B", "year"), "2019");
     const make = field("B", "make");
     await typeLikeAPerson(make, "Ford");
-    expect(listOf(make)?.parentElement?.textContent).toContain("Couldn't load the list of makes. Type the make; it still works.");
-    expect(s.models.mock.calls.some(([mk]) => mk === "Ford")).toBe(false);   // not while typing
+    expect(listOf(make)?.parentElement?.textContent).toContain("We couldn't load the vehicle list right now. Type the make; it still works.");
+    expect(asked(s).filter(([mk]) => /^fo/i.test(mk))).toEqual([]);   // not while typing
     act(() => make.blur());
-    await settle();
-    expect(s.models.mock.calls.filter(([mk]) => mk === "Ford")).toEqual([["Ford", 2019]]);
+    await settle(800);
+    expect(asked(s).filter(([mk]) => /^fo/i.test(mk))).toEqual([["Ford", 2019]]);
     expect(card("B").querySelector(".lookup")?.textContent).toMatch(/Ford models for 2019/);
   });
 });
@@ -220,8 +226,9 @@ describe("vehicle picker: requests", () => {
     const { urls, fetchFn } = countingFetch();
     const { services } = makeServices({ vehicles: createVehiclesService(fetchFn) });
     app = await renderApp(services, { hash: "#vehicles", storage: located() });
-    await settle();
+    await settle(1000);
     const claimCalls = urls.length;   // the makes list, and vehicle A's own model list (Honda, from the claim)
+    expect(urls).toEqual([PROXY_ROUTES.makes, `${PROXY_ROUTES.models}?make=Honda&year=2021`]);
     expect(urls.filter((u) => u.startsWith(PROXY_ROUTES.makes))).toHaveLength(1);
     await typeLikeAPerson(field("B", "year"), "2019");
     await typeLikeAPerson(field("B", "make"), "chevy");
@@ -244,6 +251,7 @@ describe("vehicle picker: requests", () => {
   });
 
   it("the service caches makes once and models once per make and year, whatever the spelling", async () => {
+    window.sessionStorage.clear();   // the service also keeps the lists in sessionStorage
     const { urls, fetchFn } = countingFetch();
     const svc = createVehiclesService(fetchFn);
     await Promise.all([svc.makes(), svc.makes()]);
@@ -253,13 +261,23 @@ describe("vehicle picker: requests", () => {
     expect(urls).toEqual([PROXY_ROUTES.makes, `${PROXY_ROUTES.models}?make=Chevrolet&year=2019`, `${PROXY_ROUTES.models}?make=Chevrolet&year=2020`]);
   });
 
-  it("a failed request is not cached: the next ask tries again", async () => {
+  it("a model list that stays busy after the retries is not cached, and is worded for the vehicle list, never the map", async () => {
+    window.sessionStorage.clear();
     let fail = true;
-    const fetchFn = vi.fn(async () => (fail ? new Response(JSON.stringify({ code: "busy", message: "x", retryAfterS: 1 }), { status: 429 }) : new Response(JSON.stringify(["Ford"]))));
-    const svc = createVehiclesService(fetchFn);
-    await expect(svc.makes()).rejects.toThrow();
+    const answer = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.startsWith(PROXY_ROUTES.makes)) return answer(["Ford"]);
+      return fail ? answer({ code: "busy", message: BUSY_MESSAGE, retryAfterS: 1 }, 429) : answer([{ name: "F-150", vpicType: "Truck", type: "pickup" }]);
+    });
+    const svc = createVehiclesService(fetchFn, { sleep: async () => undefined });
+    const err = await svc.models("Ford", 2019).catch((e: unknown) => e);
+    expect(vehicleListReason(err)).toBe(VEHICLE_LOOKUP_MESSAGES.busy);
+    expect(modelsFailedText(vehicleListReason(err))).toBe("The vehicle list is busy right now. Type the model; it still works.");
+    expect(vehicleListReason(new ServiceError(BUSY_MESSAGE, "busy"))).toBe(VEHICLE_LOOKUP_MESSAGES.other);
+    const tries = fetchFn.mock.calls.length;
+    expect(tries).toBeGreaterThan(2);   // the makes list, then the busy model list tried more than once
     fail = false;
-    await expect(svc.makes()).resolves.toEqual(["Ford"]);
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    await expect(svc.models("Ford", 2019)).resolves.toEqual([{ name: "F-150", vpicType: "Truck", type: "pickup" }]);
+    expect(fetchFn.mock.calls.length).toBe(tries + 1);
   });
 });
