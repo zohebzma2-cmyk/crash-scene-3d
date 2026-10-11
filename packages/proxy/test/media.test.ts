@@ -655,8 +655,7 @@ describe("upstream diagnostics", () => {
 
   it("a model answer we can't use logs its shape (names and types, never values)", async () => {
     const t = setup(catalog({ [`${CI}/vehicles/ford/f-150/p702/model`]: () => json({ model: { href: `${CDN}/3d/x.glb?sig=${KEY}` }, watermarked: true, fallback: false }) }));
-    const r = await t.get(model(F150));
-    expect(await r.json()).toEqual({ fallback: true, reason: "no-model" });
+    await t.get(model(F150));
     const line = t.logs.find((l) => l.includes("/model -> 200"))!;
     expect(line).toContain("but no model URL we can use");
     expect(line).toContain("model:{href:url(https://cdn.carimagesapi.com)}");

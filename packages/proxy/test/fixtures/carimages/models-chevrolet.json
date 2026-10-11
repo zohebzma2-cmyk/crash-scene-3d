@@ -1,0 +1,9 @@
+{
+  "_fixture": "Shape of GET /api/v1/makes/{make}/models as published at https://carimagesapi.com/docs (Catalog - Cars, Models). Values are synthetic.",
+  "make": { "slug": "chevrolet", "name": "Chevrolet" },
+  "data": [
+    { "slug": "silverado", "name": "Silverado", "year_start": 1999, "year_end": null, "generation_count": 4 },
+    { "slug": "malibu", "name": "Malibu", "year_start": 1964, "year_end": 2024, "generation_count": 9 }
+  ],
+  "total": 2
+}

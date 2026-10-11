@@ -88,6 +88,19 @@ function safeAssetUrl(raw: unknown, hosts: readonly string[], secrets: readonly 
   return secrets.some((x) => x && forms(x).some((f) => out.includes(f) || lower.includes(f.toLowerCase()))) ? null : out;
 }
 
+/** Where a 3D model answer may put the GLB's URL: top level, or inside a `model` or `glb` object. */
+const MODEL_URL_FIELDS = ["url", "model_url", "glb_url", "glb", "src", "download_url"] as const;
+function modelUrlIn(b: Obj): string | null {
+  for (const o of [b, isObj(b.model) ? b.model : null, isObj(b.glb) ? b.glb : null]) {
+    if (!o) continue;
+    for (const f of MODEL_URL_FIELDS) {
+      const s = str(o[f]);
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
 /** Photo URLs of one picture, keyed "<format>@<width>" ("webp@400") and "<format>@default". */
 type AssetSet = Readonly<Record<string, string>>;
 const FORMATS = ["webp", "png", "jpg"] as const;
@@ -357,12 +370,40 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     return { value: parseJson(entry.bytes) as T, hit: entry.hit };
   }
 
-  /** Download a file from an allowed host (no credentials sent), check it, cache it. */
-  function asset(ctx: Ctx, cacheKey: string, ttlS: number, url: string, service: "carimages" | "logodev", check: (b: Uint8Array) => boolean): Promise<Entry> {
+  const apiBase = new URL(ci.apiUrl);
+  /**
+   * A catalog link into CarImages' own REST API rather than its CDN. The docs' catalog answers link every picture
+   * that way ("https://carimagesapi.com/api/v1/vehicles/bmw/3-series/g20/image?redirect=1&format=png"), and that
+   * endpoint wants the key and secret like every REST call (unkeyed it answers 401); it then 302s to the CDN.
+   */
+  const keyedLink = (url: string): URL | null => {
+    let u: URL;
+    try { u = new URL(url); } catch { return null; }
+    return u.origin === apiBase.origin && u.pathname.startsWith(`${apiBase.pathname}/`) ? u : null;
+  };
+
+  /**
+   * Download a file, check it, cache it. A CDN link (or logo.dev's) is fetched with no credentials. A link into
+   * CarImages' REST API is one keyed call (headers only, one quota token, `redirect=1` so it answers with the file)
+   * whose redirect is followed by hand to the CDN without the key: redirect hops never carry request headers.
+   * Either way redirects go only to that provider's own asset hosts, https, at most three hops.
+   */
+  function asset(
+    ctx: Ctx, cacheKey: string, ttlS: number, url: string, service: "carimages" | "logodev", check: (b: Uint8Array) => boolean,
+    keys?: { key: string; secret: string },
+  ): Promise<Entry> {
+    const keyed = service === "carimages" ? keyedLink(url) : null;
+    if (keyed && !keys) return Promise.reject(new NoMatch("not-configured"));
+    if (keyed && !keyed.searchParams.has("redirect")) keyed.searchParams.set("redirect", "1");
+    const call: UpstreamCall = keyed && keys
+      ? {
+          service: "carimages", url: keyed.toString(), quota: ciQuota, redirectHosts: ci.assetHosts, onError: ciDiag,
+          init: { headers: { Authorization: `Bearer ${keys.key}`, "X-Api-Secret": keys.secret } },
+        }
+      : { service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts, onError: service === "carimages" ? ciDiag : ldDiag };
     return fetchUpstream(ctx, {
       cacheKey, ttlS, validStored: check,
-      // Redirects only to that provider's own asset hosts, https, at most three hops (never an internal address).
-      calls: [{ service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts, onError: service === "carimages" ? ciDiag : ldDiag }],
+      calls: [call],
       process: (bytes) => {
         if (!check(bytes)) throw new BadUpstreamBody("not the expected file");
         return { bytes, contentType: "application/octet-stream" };
@@ -473,17 +514,24 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     return false;
   }
 
-  /** Download a catalog asset; when the catalog answer was a cached one whose link has expired, refresh it once. */
+  /**
+   * Download a catalog asset; when the catalog answer was a cached one whose CDN link has expired, refresh it once.
+   * A link into the REST API doesn't expire: its 404 means the provider has no such picture or model.
+   */
   async function catalogAsset<T>(
-    ctx: Ctx, resolve: () => Promise<{ url: string | null; catalogHit: boolean; catalogKeys: readonly string[]; extra: T }>,
+    ctx: Ctx, keys: { key: string; secret: string }, resolve: () => Promise<{ url: string | null; catalogHit: boolean; catalogKeys: readonly string[]; extra: T }>,
     cacheKey: (extra: T) => string, ttlS: number, check: (b: Uint8Array) => boolean,
   ): Promise<{ entry: Entry; extra: T }> {
     for (let attempt = 0; ; attempt++) {
       const r = await resolve();
       if (!r.url) throw new NoMatch("no-image");
       try {
-        return { entry: await asset(ctx, cacheKey(r.extra), ttlS, r.url, "carimages", check), extra: r.extra };
+        return { entry: await asset(ctx, cacheKey(r.extra), ttlS, r.url, "carimages", check, keys), extra: r.extra };
       } catch (e) {
+        if (keyedLink(r.url)) {
+          if (e instanceof ProxyFailure && !(e instanceof QuotaFailure) && e.status === 404) throw new NoMatch("no-image");
+          throw e;
+        }
         // Only "this link no longer works" (403, 404, 410) refreshes the catalog; a 5xx or a timeout does not.
         const expiredLink = e instanceof ProxyFailure && !(e instanceof QuotaFailure) && [403, 404, 410].includes(e.upstreamStatus ?? 0);
         if (attempt === 0 && r.catalogHit && expiredLink) {
@@ -522,7 +570,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     if (!model) return noImage("no-model", "make-only");
     if (!model.thumb) return noImage("no-image", "make-only");
     const key = `media/ci/moto-img/${make.slug}/${model.slug}/${width}`;
-    const entry = await asset(ctx, key, ttl.image, model.thumb, "carimages", (b) => imageKind(b) !== null);
+    const entry = await asset(ctx, key, ttl.image, model.thumb, "carimages", (b) => imageKind(b) !== null, keys);
     if (await isPlaceholder(ctx, entry.bytes, `moto/${make.slug}/${model.slug}`, key, !entry.hit)) { await ctx.deps.store.delete(key); return noImage("no-image"); }
     return mediaResponse(entry, ttl.image, imageKind(entry.bytes) ?? "application/octet-stream", { [MEDIA_HEADERS.image]: "exact" });
   }
@@ -538,7 +586,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     const year = p.data.year ?? null;
     try {
       if (type === "moto") return await motoImage(ctx, keys, makeText, modelText, width);
-      const { entry, extra } = await catalogAsset(ctx, async () => {
+      const { entry, extra } = await catalogAsset(ctx, keys, async () => {
         const car = await resolveCar(ctx, keys, makeText, modelText, year);
         let set = car.gen.image;
         let served: VehicleImageView = "front34";
@@ -569,7 +617,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     if (!keys) return noModel("not-configured");
     const year = p.data.year ?? null;
     try {
-      const { entry, extra } = await catalogAsset(ctx, async () => {
+      const { entry, extra } = await catalogAsset(ctx, keys, async () => {
         const car = await resolveCar(ctx, keys, p.data.make, p.data.model, year);
         const path = `/vehicles/${encodeURIComponent(car.make.slug)}/${encodeURIComponent(car.model.slug)}/${encodeURIComponent(car.gen.slug)}/model`;
         // v2: answers kept by the first deploy (read with the old parser, kept 30 days) are read again.
@@ -580,8 +628,9 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
           const call = ciCall(path, keys);
           const got = await keyedJson(ctx, infoKey, ttl.model, call, (body) => {
             const b = isObj(body) && isObj(body.data) ? body.data : isObj(body) ? body : {};
-            const raw = str(b.url) ?? str(b.model_url) ?? str(b.glb) ?? str(b.glb_url);
-            const out = { url: safeAssetUrl(raw, ci.assetHosts, ciSecrets(keys)), watermarked: b.watermarked === true, fallback: b.fallback === true };
+            // The docs publish no example: "JSON with the model URL + watermarked / fallback flags". Unknown: the
+            // free plan's watermark (the safe guess when the flag is missing).
+            const out = { url: safeAssetUrl(modelUrlIn(b), ci.assetHosts, ciSecrets(keys)), watermarked: b.watermarked !== false, fallback: b.fallback === true };
             if (out.fallback) shapeDiag("carimages", call.url, "with fallback: true (no 3D for this car yet)", body);
             else if (!out.url) shapeDiag("carimages", call.url, "but no model URL we can use", body);
             return out;
@@ -594,7 +643,9 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
         }
         // A car the provider has no 3D for comes back as a masked placeholder model: that is "no model".
         if (info.fallback) throw new NoMatch("no-model");
-        return { url: info.url, catalogHit: infoHit, catalogKeys: [infoKey], extra: { ...car, watermarked: info.watermarked } };
+        // No URL we can read in the JSON: the same endpoint with ?redirect=1 answers with the GLB itself (a 302 to
+        // the CDN, per the docs). One more keyed call, made only in that case.
+        return { url: info.url ?? `${ci.apiUrl}${path}?redirect=1`, catalogHit: infoHit, catalogKeys: [infoKey], extra: { ...car, watermarked: info.watermarked } };
       }, (x) => `media/ci/glb/${x.make.slug}/${x.model.slug}/${x.gen.slug}`, ttl.model, (b) => isGlb(b) && b.byteLength <= ci.maxModelBytes);
       return mediaResponse(entry, ttl.model, "model/gltf-binary", { [MEDIA_HEADERS.watermarked]: extra.watermarked ? "true" : "false" });
     } catch (e) {

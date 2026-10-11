@@ -1,0 +1,8 @@
+{
+  "_fixture": "Shape of GET /api/v1/makes as published at https://carimagesapi.com/docs (Catalog - Cars, Makes), read 2026-10-11. Values are synthetic.",
+  "data": [
+    { "slug": "chevrolet", "name": "Chevrolet", "logo": "https://carimagesapi.com/makes/chevrolet.png" },
+    { "slug": "ford", "name": "Ford", "logo": "https://carimagesapi.com/makes/ford.png" }
+  ],
+  "total": 2
+}

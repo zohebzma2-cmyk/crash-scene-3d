@@ -1,0 +1,38 @@
+{
+  "_fixture": "Shape of GET /api/v1/makes/{make}/models/{model} as published at https://carimagesapi.com/docs: every picture is a link into the keyed REST API with redirect=1 ('https://carimagesapi.com/api/v1/vehicles/bmw/3-series/g20/image?redirect=1&format=png'); the docs elide the sizes links ('...'), filled in here the same way with size=. Values are synthetic.",
+  "make": { "slug": "chevrolet", "name": "Chevrolet" },
+  "slug": "silverado",
+  "name": "Silverado",
+  "year_start": 1999,
+  "year_end": null,
+  "generations": [
+    {
+      "slug": "gmt-t1xx-2019-2024",
+      "name": "T1XX",
+      "year_start": 2019,
+      "year_end": 2024,
+      "body_type": "pickup",
+      "views": ["front34", "front34-r", "front", "side", "side-r", "rear34", "rear34-r", "rear"],
+      "images": {
+        "png": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=png",
+        "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp",
+        "jpg": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=jpg",
+        "sizes": {
+          "200": { "png": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=png&size=200", "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp&size=200", "jpg": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=jpg&size=200" },
+          "400": { "png": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=png&size=400", "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp&size=400", "jpg": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=jpg&size=400" },
+          "800": { "png": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=png&size=800", "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp&size=800", "jpg": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=jpg&size=800" },
+          "1200": { "png": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=png&size=1200", "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp&size=1200", "jpg": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=jpg&size=1200" }
+        }
+      }
+    },
+    {
+      "slug": "gmt900-2007-2013",
+      "name": "GMT900",
+      "year_start": 2007,
+      "year_end": 2013,
+      "body_type": "pickup",
+      "views": ["front34"],
+      "images": null
+    }
+  ]
+}

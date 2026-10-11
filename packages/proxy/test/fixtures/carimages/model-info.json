@@ -1,0 +1,6 @@
+{
+  "_fixture": "GET /api/v1/vehicles/{make}/{model}/{gen}/model. The docs publish no example, only 'JSON with the model URL + watermarked / fallback flags' and that assets are served from cdn.carimagesapi.com with expires + sig: this shape is our assumption until production logs show the real one. Values are synthetic.",
+  "url": "https://cdn.carimagesapi.com/3d/chevrolet/silverado/gmt-t1xx-2019-2024.glb?expires=1791763200&sig=0f0e0d0c0b0a",
+  "watermarked": true,
+  "fallback": false
+}

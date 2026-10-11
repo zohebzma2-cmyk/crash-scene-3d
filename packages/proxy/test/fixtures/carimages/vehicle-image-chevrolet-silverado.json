@@ -1,0 +1,16 @@
+{
+  "_fixture": "Shape of GET /api/v1/vehicles/{make}/{model}/{gen}/image as published at https://carimagesapi.com/docs (Vehicle image (JSON), Camera angles): views keyed by angle, links into the keyed API ('...&view=front34-r'). Values are synthetic.",
+  "vehicle": { "make": { "slug": "chevrolet", "name": "Chevrolet" }, "model": { "slug": "silverado", "name": "Silverado" }, "generation": { "slug": "gmt-t1xx-2019-2024" } },
+  "images": {
+    "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp",
+    "sizes": {}
+  },
+  "views": {
+    "side": {
+      "png": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=png&view=side",
+      "webp": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=webp&view=side",
+      "jpg": "https://carimagesapi.com/api/v1/vehicles/chevrolet/silverado/gmt-t1xx-2019-2024/image?redirect=1&format=jpg&view=side",
+      "sizes": {}
+    }
+  }
+}
