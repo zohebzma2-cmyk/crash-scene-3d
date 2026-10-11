@@ -84,12 +84,20 @@ describe("a normal search never hits 429", () => {
     expect(seen[1]! - seen[0]!).toBeGreaterThanOrEqual(config.limits.perUserMinIntervalMs);
   });
 
-  it("a caller who really floods Overpass is still told to wait", async () => {
+  it("a caller who floods Overpass: at most 3 reserve a slot, the other 7 get 429 at once (no waiting, no polling)", async () => {
     const t = setup(upstream);
-    const c = claimant(t);
-    await c.at(0, ...[0, 1, 2, 3, 4].map((i) => overpass(42.76 + i / 100, -71.46)));
-    const res = await settle(Promise.all(c.sent.map((s) => s.res)));
-    expect(res.filter((r) => r.status === 200).length).toBeLessThanOrEqual(3);
-    expect(res.some((r) => r.status === 429)).toBe(true);
+    const res = Array.from({ length: 10 }, (_, i) => t.get(overpass(Number((42.76 + i / 100).toFixed(4)), -71.46), "flooder"));
+    const done: Array<Response | null> = res.map(() => null);
+    res.forEach((p, i) => { void p.then((r) => { done[i] = r; }); });
+    // The clock does not move: only already-due work (and its promise chains) runs.
+    for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(0);
+    const refusedNow = done.filter((r) => r?.status === 429);
+    expect(refusedNow.length).toBeGreaterThanOrEqual(7);
+    expect(Date.now()).toBe(START);
+    // Each request touched the caller's slot once (one reservation), not every 100 ms.
+    expect(t.slotCalls.filter((k) => k.startsWith("user:flooder:overpass"))).toHaveLength(10);
+    const all = await settle(Promise.all(res));
+    expect(all.filter((r) => r.status === 200).length).toBeLessThanOrEqual(3);
+    expect(t.calls.filter((c) => c.url.includes("overpass")).length).toBeLessThanOrEqual(3);
   });
 });

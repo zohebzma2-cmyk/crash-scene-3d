@@ -33,6 +33,13 @@ export function memoryStore(opts: { now?: () => number } = {}): KvStore {
       if (slots.size > MAX_ENTRIES) for (const [k, until] of slots) if (until <= nowMs) slots.delete(k);
       return Promise.resolve(true);
     },
+    reserveSlot(key, nowMs, intervalMs, maxWaitMs) {
+      // Same as takeSlot: no await between the read and the write.
+      const start = Math.max(nowMs, slots.get(key) ?? 0);
+      if (start - nowMs > maxWaitMs) return Promise.resolve(null);
+      slots.set(key, start + intervalMs);
+      return Promise.resolve(start);
+    },
     takeToken(key, nowMs, limit) {
       const state = refillBucket(buckets.get(key) ?? null, nowMs, limit);
       if (state.tokens < 1) {

@@ -358,3 +358,28 @@ describe("user key", () => {
     expect(resolveSalt({ VITEST: "true" })).toEqual({ ok: true, salt: "" });
   });
 });
+
+describe("reserveSlot: a queue of one every interval, refused past maxWait", () => {
+  for (const [label, make] of [["memory", () => memoryStore()], ["blobs", () => setupKv().kv]] as const) {
+    it(`${label}: books back to back, refuses beyond the wait without booking, shares takeSlot's booking`, async () => {
+      const kv = make();
+      const t = DAY1;
+      expect(await kv.reserveSlot("user:u:overpass", t, 1000, 2000)).toBe(t);
+      expect(await kv.reserveSlot("user:u:overpass", t, 1000, 2000)).toBe(t + 1000);
+      expect(await kv.reserveSlot("user:u:overpass", t, 1000, 2000)).toBe(t + 2000);
+      expect(await kv.reserveSlot("user:u:overpass", t, 1000, 2000)).toBeNull();
+      expect(await kv.reserveSlot("user:u:overpass", t + 1500, 1000, 2000)).toBe(t + 3000); // the refusal booked nothing
+      expect(await kv.takeSlot("user:u:overpass", t + 3500, 1000)).toBe(false);
+      expect(await kv.reserveSlot("user:v:overpass", t, 1000, 0)).toBe(t); // free now: no wait needed
+    });
+  }
+
+  it("blobs: concurrent reservations never share a start", async () => {
+    const { kv } = setupKv();
+    const got = await Promise.all(Array.from({ length: 6 }, () => kv.reserveSlot("user:u:overpass", DAY1, 1000, 2000)));
+    const starts = got.filter((s): s is number => s !== null);
+    expect(new Set(starts).size).toBe(starts.length);
+    expect(starts.length).toBeLessThanOrEqual(3);
+    expect(starts.length).toBeGreaterThanOrEqual(1);
+  });
+});

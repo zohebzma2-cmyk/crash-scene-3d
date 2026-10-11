@@ -9,6 +9,8 @@ export const MAX_SLOT_WAIT_MS = 1200;
  * Overpass only: how long a request waits for the caller's own 1 req/s slot instead of being refused.
  * Picking a street asks for the roads around it (/api/geo/overpass) and its cross streets
  * (/api/geo/cross-streets) within a third of a second; the second one used to get an instant 429.
+ * The request reserves the caller's next free slot (KvStore.reserveSlot) and sleeps until it: no
+ * polling, and with 2 s and 1 req/s at most two requests per caller wait; more are refused at once.
  * Waiting keeps every caller at 1 request a second to Overpass, and the global slot still holds
  * all callers together to 1 a second. Nominatim's per-user slot still refuses at once (the app
  * spaces its on-submit searches a second apart itself).
@@ -129,12 +131,15 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   }
   if (!ctx.userSlots.has(base)) {
     const userKey = `user:${ctx.userKey}:${base}`;
-    const queueUntil = Math.min(now() + (USER_QUEUE_MS[base] ?? 0), ctx.deadline);
-    for (;;) {
-      if (await store.takeSlot(userKey, now(), limits.perUserMinIntervalMs)) break;
-      const left = queueUntil - now();
-      if (left <= 0) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
-      await sleep(Math.min(SLOT_POLL_MS, left));
+    const queueMs = USER_QUEUE_MS[base];
+    if (queueMs === undefined) {
+      if (!(await store.takeSlot(userKey, now(), limits.perUserMinIntervalMs))) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+    } else {
+      // Reserve the caller's next slot (one read, one write) and sleep until it, instead of polling: at most
+      // queueMs / interval requests wait per caller, the rest are refused at once, first come first served.
+      const start = await store.reserveSlot(userKey, now(), limits.perUserMinIntervalMs, Math.max(0, Math.min(queueMs, ctx.deadline - now())));
+      if (start === null) throw busy(Math.ceil(limits.perUserMinIntervalMs / 1000));
+      if (start > now()) await sleep(start - now());
     }
     ctx.userSlots.add(base);
   }
