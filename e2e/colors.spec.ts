@@ -7,7 +7,7 @@
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { FACTORY_COLORS } from "@csd/core";
-import { boxes, crossIntersections, exampleSceneFile, expect, fillDefaultClaim, isPhone, openExample, pdfText, saveFiles, test, toReview, waitForViewer, watchCsp } from "./helpers";
+import { boxes, crossIntersections, exampleSceneFile, expect, fillDefaultClaim, freshStart, isPhone, openExample, pdfText, saveFiles, searchAndPick, test, toReview, waitForViewer, watchCsp } from "./helpers";
 
 const RED = FACTORY_COLORS.find((c) => c.name === "Red")!;
 const BLUE = FACTORY_COLORS.find((c) => c.name === "Blue")!;
@@ -231,4 +231,40 @@ test("@xb the catalog-model note is kept clear: no vehicle label over it (Top an
       await clear(`view ${view}, ${k}`);
     }
   }
+});
+
+test("@xb a catalog photo on the card gets a 'Picked: Red' chip once a colour is picked (light and dark)", async ({ page, pageErrors }, info) => {
+  const csp = await watchCsp(page);
+  await freshStart(page, "/?media=on#location");
+  await searchAndPick(page);
+  await page.getByRole("button", { name: /Next: vehicles/ }).click();
+  const card = page.locator("#vehicle-A");
+  await expect(card.locator(".vehicle-photo")).toHaveAttribute("data-photo", "photo");
+  await expect(card.locator(".paint-chip")).toHaveCount(0);
+  await card.locator('[data-paint-picker="A"]').getByRole("radio", { name: "Red" }).click();
+  const chip = card.locator(".vehicle-photo-wrap .paint-chip");
+  await expect(chip).toHaveText("Picked: Red");
+  // Inside the card, next to the photo, and no sideways scroll at 390.
+  const [cardBox, chipBox, photoBox] = [await card.boundingBox(), await chip.boundingBox(), await card.locator(".vehicle-photo").boundingBox()];
+  expect(chipBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
+  expect(chipBox!.x + chipBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 0.5);
+  expect(chipBox!.y).toBeGreaterThanOrEqual(photoBox!.y + photoBox!.height - 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const res = await new AxeBuilder({ page }).include("#vehicle-A .vehicle-head").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+  expect(res.violations.map((v) => v.id)).toEqual([]);
+  expect(await csp()).toEqual([]);
+  expect(pageErrors()).toEqual([]);
+  const scrollToCard = () => page.evaluate(() => {
+    const el = document.getElementById("vehicle-A");
+    const bars = [".app-header", ".disclaimer-bar"].reduce((h, sel) => h + (document.querySelector(sel)?.getBoundingClientRect().height ?? 0), 0);
+    if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - bars - 16);
+  });
+  await scrollToCard();
+  await shot(page, "photo-chip", info.project.name);
+  await page.getByRole("button", { name: "Switch to the dark theme" }).click();
+  await page.waitForTimeout(300);
+  const dark = await new AxeBuilder({ page }).include("#vehicle-A .vehicle-head").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+  expect(dark.violations.map((v) => v.id), "dark theme").toEqual([]);
+  await scrollToCard();
+  await shot(page, "photo-chip-dark", info.project.name);
 });

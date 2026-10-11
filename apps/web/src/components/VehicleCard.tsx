@@ -16,6 +16,7 @@ import { useRoads } from "../state/Roads";
 import { ColorPicker } from "./ColorPicker";
 import { DirectionPicker } from "./DirectionPicker";
 import { ImpactZones } from "./ImpactZones";
+import { VehiclePhoto } from "./VehiclePhoto";
 import { SpeedInput } from "./SpeedInput";
 import { Tile } from "./Tile";
 import { VehicleCombobox, type ComboItem, type ComboStatus } from "./VehicleCombobox";
@@ -31,7 +32,7 @@ const ACTION_TILES: Record<Action, { icon: string; label: string }> = {
 // The maker's logo in each make row, once round B's MakeLogo component exists; nothing until then.
 const logoModules = import.meta.glob<Record<string, unknown>>("./MakeLogo.tsx", { eager: true });
 const logoModule = Object.values(logoModules)[0];
-const MakeLogo = (logoModule?.MakeLogo ?? logoModule?.default) as ComponentType<{ make: string }> | undefined;
+const MakeLogo = (logoModule?.MakeLogo ?? logoModule?.default) as ComponentType<{ make: string; showName?: boolean; decorative?: boolean }> | undefined;
 
 /** DESIGN.md doesn't specify a braking control; a plain checkbox, off unless the claimant says so (the physics assumes no braking). */
 export const BRAKING_LABEL = "Braking just before the crash";
@@ -207,7 +208,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   // ---- make ----
   const makeItems: ComboItem[] = useMemo(() => {
     const out: ComboItem[] = (makeNames ? rankNames(v.make, makeNames, { ...MAKE_MATCH, limit: MAKE_LIST_LIMIT }) : [])
-      .map((r, i) => ({ id: `${ids}-mk${i}`, value: r.name, main: r.name, lead: MakeLogo ? <MakeLogo make={r.name} /> : undefined }));
+      .map((r, i) => ({ id: `${ids}-mk${i}`, value: r.name, main: r.name, lead: MakeLogo ? <MakeLogo make={r.name} showName={false} decorative /> : undefined }));
     const typed = v.make.trim();
     if (typed && !makeNames?.some((n) => normName(n) === normName(typed))) out.push({ id: `${ids}-mk-typed`, value: typed, main: asTypedText(typed), free: true });
     return out;
@@ -240,6 +241,8 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
 
   const sameAsClaim = v.id === "A" && v.year === claim.year && v.make === claim.make && v.model === claim.model;
   const sub = [vehicleName(v), v.id === "A" ? (sameAsClaim ? "from your claim" : "changed from your claim") : null].filter(Boolean).join(" · ") || "Year, make and model if you know them";
+  // A photo is asked for only once a model from the vPIC list is picked (never per keystroke).
+  const modelPicked = current?.state === "ok" && current.models.some((m) => m.name.toLowerCase() === v.model.trim().toLowerCase());
   const titleId = `${ids}-title`;
 
   return (
@@ -248,8 +251,9 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
         <span className="badge-letter">{v.id}</span>
         <div className="vehicle-title">
           <h2 id={titleId}>{roleName(v)}</h2>
-          <p className="vehicle-sub">{sub}</p>
+          <p className="vehicle-sub">{MakeLogo && v.make.trim() ? <MakeLogo make={v.make} showName={false} /> : null}<span>{sub}</span></p>
         </div>
+        <VehiclePhoto vehicle={v} ready={modelPicked} />
         {canRemove ? <button className="btn btn-quiet btn-sm" type="button" aria-label={`Remove vehicle ${v.id}`} onClick={onRemove}><Icon name="trash" className="icon-sm" /><span>Remove</span></button> : null}
       </header>
 

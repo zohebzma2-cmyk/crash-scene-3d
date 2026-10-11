@@ -57,7 +57,22 @@ export interface ProxyDeps {
    * and a neutral "no tile" PNG outside the captured area. Nothing is fetched from a tile server.
    */
   readonly fixtureTiles?: (z: number, x: number, y: number) => Uint8Array | null | Promise<Uint8Array | null>;
+  /**
+   * Read a provider secret at call time (Netlify env in production). Never stored on this object, never
+   * logged, never in a URL, a cache key, an error or a response: it only goes upstream in a request header.
+   * Absent, or answering undefined: the media routes answer their fallback.
+   */
+  readonly secret?: (name: SecretName) => string | undefined;
+  /** One-line operational log (console.warn by default). Never given a secret. */
+  readonly log?: (line: string) => void;
 }
+
+/**
+ * The Netlify secrets the proxy reads. LOGO_DEV_TOKEN (logo.dev's publishable key) is deliberately not
+ * here: it is for logo.dev's CDN in users' browsers, which our CSP rules out, and logo.dev's fair-use
+ * rules forbid fetching that CDN from a server. Server-side logos come from its API (LOGO_DEV_SECRET_KEY).
+ */
+export type SecretName = "CARIMAGES_API_KEY" | "CARIMAGES_API_SECRET" | "LOGO_DEV_SECRET_KEY";
 
 /** The bucket arithmetic, shared by the memory and Blobs stores. */
 export function refillBucket(state: { tokens: number; at: number } | null, nowMs: number, limit: BucketLimit): { tokens: number; at: number } {

@@ -42,6 +42,8 @@ export interface BlobStoreLike {
 }
 
 export const GEO_STORE_PREFIX = "csd-proxy-geo-";
+/** Vehicle photos, models and logos (see BlobsParts.media). */
+export const MEDIA_STORE = "csd-proxy-media";
 export const USER_STORE_PREFIX = "csd-proxy-user-";
 /** Days a geo entry may live: today's store plus the six before it. */
 export const GEO_RETENTION_DAYS = 7;
@@ -49,6 +51,11 @@ export const GEO_RETENTION_DAYS = 7;
 export interface BlobsParts {
   /** Entries that hold no typed or pinned data (tiles, terrain, vPIC). */
   readonly cache: BlobStoreLike;
+  /**
+   * Vehicle photos, 3D models, logos and their catalogs (keys starting "media/"), kept apart so they can be
+   * wiped in one go: CarImages' terms require deleting stored images when the subscription ends. Defaults to `cache`.
+   */
+  readonly media?: BlobStoreLike;
   /** Global slots and buckets. */
   readonly slots: BlobStoreLike;
   /** Entries built from typed text or a pin: one store per UTC day (YYYYMMDD). */
@@ -99,6 +106,8 @@ interface Waiter { readonly nowMs: number; readonly resolve: (retryInMs: number)
 
 export function kvOnBlobs(parts: BlobsParts): KvStore {
   const { cache } = parts;
+  /** The store a non-geo entry lives in. */
+  const plain = (key: string): BlobStoreLike => (key.startsWith("media/") && parts.media ? parts.media : cache);
   const allowUnconditional = parts.allowUnconditional === true;
   /** Said once per store: the real service always sends ETags, so a missing one means something is wrong. */
   let reportedNoEtag = false;
@@ -201,7 +210,7 @@ export function kvOnBlobs(parts: BlobsParts): KvStore {
         const found = await Promise.all(geoStores(clock()).map((s) => s.getWithMetadata(blobKey(key), { type: "arrayBuffer" }).catch(() => null)));
         hit = found.find((h) => h !== null) ?? null; // newest day first
       } else {
-        hit = await cache.getWithMetadata(blobKey(key), { type: "arrayBuffer" });
+        hit = await plain(key).getWithMetadata(blobKey(key), { type: "arrayBuffer" });
       }
       if (!hit) return null;
       const { contentType, expiresAt, meta } = hit.metadata;
@@ -215,12 +224,12 @@ export function kvOnBlobs(parts: BlobsParts): KvStore {
         await sweep(clock());
         await parts.geoStore(dayOf(clock())).set(blobKey(key), buf, opts);
       } else {
-        await cache.set(blobKey(key), buf, opts);
+        await plain(key).set(blobKey(key), buf, opts);
       }
     },
     async delete(key) {
       if (isGeo(key)) await Promise.all(geoStores(clock()).map((s) => s.delete(blobKey(key)).catch(() => undefined)));
-      else await cache.delete(blobKey(key));
+      else await plain(key).delete(blobKey(key));
     },
     async takeSlot(key, nowMs, intervalMs) {
       const store = await storeFor(key, nowMs);
@@ -288,6 +297,7 @@ export function blobsStore(): KvStore {
   const real = () =>
     (kv ??= kvOnBlobs({
       cache: open("csd-proxy-cache"),
+      media: open(MEDIA_STORE),
       slots: open("csd-proxy-slots"),
       geoStore: (day) => open(`${GEO_STORE_PREFIX}${day}`),
       userStore: (day) => open(`${USER_STORE_PREFIX}${day}`),

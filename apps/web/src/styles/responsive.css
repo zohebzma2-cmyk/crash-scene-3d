@@ -25,6 +25,7 @@
   .tiles-5 { grid-template-columns: repeat(3, minmax(var(--space-0), 1fr)); }
   .tiles-4 { grid-template-columns: repeat(2, minmax(var(--space-0), 1fr)); }
   .vehicle-head { padding: var(--space-3) var(--space-4); }
+  .vehicle-photo { width: calc(var(--space-12) + var(--space-6)); height: var(--space-12); }
   .vehicle-grid { grid-template-columns: minmax(var(--space-0), 1fr); padding: var(--space-4); gap: var(--space-6); }
   .ymm { grid-template-columns: minmax(var(--space-0), var(--size-year-field)) minmax(var(--space-0), 1fr); }
   .ymm .field:last-child { grid-column: 1 / -1; }

@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Box3, Vector3, type Mesh } from "three";
 import type { Scene, SimulationResult } from "@csd/core";
-import { createFixtureVehicleModels, createVehicleModelsService, MODEL_ROUTE, NO_MODEL_TTL_MS, type VehicleModelAsset } from "../../src/services/vehicle-models";
+import { MEDIA_HEADERS, PROXY_ROUTES } from "@csd/core";
+import { createFixtureModelFetch, createVehicleModelsService, NO_MODEL_TTL_MS, type VehicleModelAsset } from "../../src/services/vehicle-models";
+import { vehicleModelUrl } from "../../src/services/media";
 import { parseGlb } from "../../src/viewer/glb-loader";
 import { normalise, planTint } from "../../src/viewer/glb-model";
 import { catalogWants, useCatalogModels, type ModelLoader } from "../../src/viewer/catalog-models";
@@ -23,50 +25,77 @@ const Q = { year: 2021, make: "Synthetic", model: "Box car" };
 
 afterEach(() => { vi.restoreAllMocks(); });
 
-describe("the vehicle models service (/api/vehicles/model)", () => {
-  it("asks our own route with the year, make and model only, and returns the GLB with its watermark flag", async () => {
-    const fetchFn = vi.fn(async (_url: string) => glbResponse({ watermarked: "1" }));
+const fallback = (reason: string) => new Response(JSON.stringify({ fallback: true, reason }), { status: 200, headers: { "content-type": "application/json; charset=utf-8", [MEDIA_HEADERS.fallback]: reason } });
+
+describe("the vehicle models service (PROXY_ROUTES.vehicleModel, roundB/images' route)", () => {
+  it("asks the route with images' vehicleModelUrl, reads MEDIA_HEADERS.watermarked, and keeps the GLB for the session", async () => {
+    const fetchFn = vi.fn(async (_url: string) => glbResponse({ [MEDIA_HEADERS.watermarked]: "true" }));
     const s = createVehicleModelsService(fetchFn);
     const r = await s.load(Q);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn.mock.calls[0]![0]).toBe(vehicleModelUrl(Q));
     const url = new URL(fetchFn.mock.calls[0]![0], "http://x");
-    expect(url.pathname).toBe(MODEL_ROUTE);
-    expect([...url.searchParams.keys()].sort()).toEqual(["make", "model", "year"]);
-    expect(url.searchParams.get("make")).toBe("Synthetic");
+    expect(url.pathname).toBe(PROXY_ROUTES.vehicleModel);
+    expect(url.searchParams.get("year")).toBe("2021");
     expect(r?.watermarked).toBe(true);
     expect(r?.bytes.byteLength).toBe(BOX.byteLength);
-    // Cached for the session: a second viewer opening doesn't fetch again.
     await s.load(Q);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    // "false" or no header: not watermarked.
+    const s2 = createVehicleModelsService(async () => glbResponse({ [MEDIA_HEADERS.watermarked]: "false" }));
+    expect((await s2.load(Q))?.watermarked).toBe(false);
+  });
+
+  it("leaves the year out when it isn't known (the route's year must be a number), and never asks about a motorcycle", async () => {
+    const fetchFn = vi.fn(async (_url: string) => glbResponse());
+    const s = createVehicleModelsService(fetchFn);
+    await s.load({ year: null, make: "Synthetic", model: "Box car" });
+    const url = new URL(fetchFn.mock.calls[0]![0], "http://x");
+    expect(url.searchParams.has("year")).toBe(false);
+    expect(await s.load({ year: 2020, make: "Honda", model: "Gold Wing", type: "motorcycle" })).toBeNull();
+    expect(await s.load({ year: 2020, make: "Honda", model: " " })).toBeNull();
+    expect(await s.load({ year: null, make: "", model: "Accord" })).toBeNull();
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ["the route says fallback", () => new Response(JSON.stringify({ fallback: true }), { headers: { "content-type": "application/json" } }), 1],
-    ["the route has no such model (404)", () => new Response("", { status: 404 }), 1],
-    ["the body isn't a GLB", () => new Response("hello", { headers: { "content-type": "model/gltf-binary" } }), 1],
-    ["the route errors (502)", () => new Response("no", { status: 502 }), 2],
-    ["the proxy answers an error as JSON", () => new Response(JSON.stringify({ code: "busy", message: "Busy" }), { status: 200, headers: { "content-type": "application/json" } }), 2],
-    ["the network fails", () => { throw new TypeError("offline"); }, 2],
-  ] as const)("falls back to our model (null) when %s; asks again next time only after an error", async (_label, answer, calls) => {
-    const fetchFn = vi.fn(async () => answer());
+    ["no-model", 1], ["no-make", 1], ["moto-not-in-plan", 1],
+    ["quota", 2], ["busy", 2], ["upstream", 2], ["not-configured", 2],
+  ] as const)("a {fallback: true, reason: %s} answer keeps our model; it is remembered only when the vehicle has no model", async (reason, calls) => {
+    const fetchFn = vi.fn(async () => fallback(reason));
     let t = 0;
     const s = createVehicleModelsService(fetchFn, 1000, () => t);
     expect(await s.load(Q)).toBeNull();
     await new Promise((r) => setTimeout(r, 0));
     expect(await s.load(Q)).toBeNull();
     expect(fetchFn).toHaveBeenCalledTimes(calls);
-    // "No model" is remembered for NO_MODEL_TTL_MS only.
-    t += NO_MODEL_TTL_MS + 1;
+    t += NO_MODEL_TTL_MS + 1;      // remembered for NO_MODEL_TTL_MS only
     await s.load(Q);
     expect(fetchFn).toHaveBeenCalledTimes(calls + 1);
   });
 
-  it("never asks without a make and a model", async () => {
-    const fetchFn = vi.fn(async () => glbResponse());
+  it("the reason may come in the header only", async () => {
+    const fetchFn = vi.fn(async () => new Response("{}", { status: 200, headers: { "content-type": "application/json", [MEDIA_HEADERS.fallback]: "no-model" } }));
     const s = createVehicleModelsService(fetchFn);
-    expect(await s.load({ year: 2020, make: "Honda", model: " " })).toBeNull();
-    expect(await s.load({ year: null, make: "", model: "Accord" })).toBeNull();
-    expect(fetchFn).not.toHaveBeenCalled();
+    expect(await s.load(Q)).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    await s.load(Q);
+    // A body without fallback:true isn't a fallback answer: not remembered.
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["the route errors (502)", () => new Response("no", { status: 502 })],
+    ["the route is over its quota (429)", () => new Response("{}", { status: 429, headers: { "content-type": "application/json" } })],
+    ["the body isn't a GLB", () => new Response("hello", { headers: { "content-type": "model/gltf-binary" } })],
+    ["the network fails", () => { throw new TypeError("offline"); }],
+  ])("%s: our model, and the next opening asks again", async (_label, answer) => {
+    const fetchFn = vi.fn(async () => answer());
+    const s = createVehicleModelsService(fetchFn);
+    expect(await s.load(Q)).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await s.load(Q)).toBeNull();
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   it("an abort rejects with an AbortError", async () => {
@@ -77,12 +106,17 @@ describe("the vehicle models service (/api/vehicles/model)", () => {
     await expect(p).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("fixtures mode serves the synthetic models only, never /api", async () => {
-    const fetchFn = vi.fn(async (url: string) => (url === "/assets/box.glb" ? glbResponse() : new Response("", { status: 404 })));
-    const s = createFixtureVehicleModels({ "../../fixtures/models/synthetic-box-car.glb": async () => "/assets/box.glb" }, fetchFn);
+  it("fixtures mode: the synthetic models answer the model route like the proxy (watermarked); everything else goes on to images' fixtures", async () => {
+    const assets = vi.fn(async () => glbResponse());
+    vi.stubGlobal("fetch", assets);
+    const next = vi.fn(async (_u: string) => fallback("no-model"));
+    const fx = createFixtureModelFetch({ "../../fixtures/models/synthetic-box-car.glb": async () => "/assets/box.glb" }, next);
+    const s = createVehicleModelsService(fx);
     expect((await s.load({ year: null, make: "synthetic", model: "BOX CAR" }))?.watermarked).toBe(true);
+    expect((assets.mock.calls[0] as unknown as [string])[0]).toBe("/assets/box.glb");
     expect(await s.load({ year: 2021, make: "Honda", model: "Accord" })).toBeNull();
-    expect(fetchFn.mock.calls.every(([u]) => !String(u).startsWith("/api/"))).toBe(true);
+    expect(next).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 });
 

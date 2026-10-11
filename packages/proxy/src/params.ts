@@ -72,6 +72,28 @@ export const modelsParams = (currentYear: number) =>
     year: int(1950, currentYear + 2),
   });
 
+const VEHICLE_MODEL = /^[A-Za-z0-9][A-Za-z0-9 .&'/()+-]{0,59}$/;
+const makeField = text(1, 40).refine((s) => VEHICLE_MAKE.test(s));
+const modelField = text(1, 60).refine((s) => VEHICLE_MODEL.test(s));
+
+/** /api/vehicles/model: only the year, make and model are ever sent upstream (as catalog slugs). */
+export const vehicleModelParams = (currentYear: number) =>
+  z.strictObject({ make: makeField, model: modelField, year: int(1950, currentYear + 2).optional() });
+
+/** /api/vehicles/image. */
+export const vehicleImageParams = (currentYear: number) =>
+  z.strictObject({
+    make: makeField,
+    model: modelField,
+    year: int(1950, currentYear + 2).optional(),
+    view: z.enum(["front34", "front34-r", "front", "side", "side-r", "rear34", "rear34-r", "rear"]).default("front34"),
+    width: z.enum(["200", "400", "800", "1200"]).transform(Number).default(400),
+    type: z.enum(["car", "moto"]).default("car"),
+  });
+
+/** /api/logos/make. */
+export const makeLogoParams = z.strictObject({ name: makeField });
+
 /** z/x/y of a tile path, checked against the zoom range and the 2^z grid. */
 export function tileCoords(parts: readonly string[], maxZoom: number): { z: number; x: number; y: number } | null {
   if (parts.length !== 3 || !parts.every((p) => /^\d{1,8}$/.test(p))) return null;

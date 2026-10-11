@@ -21,7 +21,7 @@ interface Live { readonly key: string; readonly ctrl: AbortController; model: Ca
 export function catalogWants(scene: Scene, sim: SimulationResult): Want[] {
   return scene.vehicles.flatMap((v) => {
     const rv = sim.vehicles.find((x) => x.id === v.id);
-    const q: VehicleModelQuery = { year: v.year, make: v.make, model: v.model };
+    const q: VehicleModelQuery = { year: v.year, make: v.make, model: v.model, type: v.type };
     if (!rv || !askable(q)) return [];
     // The same box our own model fills: the footprint less its skin, and our model's height for that type.
     const foot: Footprint = { lengthM: rv.lengthM - 2 * SKIN_M, widthM: rv.widthM - 2 * SKIN_M, heightM: vehicleModel(rv.type, rv.lengthM, rv.widthM).heightM };

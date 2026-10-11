@@ -34,16 +34,22 @@ const MAX_BODY_BYTES = 15 * 1024 * 1024;
 export const UPSTREAM_MESSAGE = UPSTREAM_MESSAGES.map;
 export const NOT_FOUND_MESSAGE = "That wasn't found.";
 
-export type Service = "nominatim" | "overpass" | "tiles" | "terrain" | "vehicles" | "photon";
+export type Service = "nominatim" | "overpass" | "tiles" | "terrain" | "vehicles" | "photon" | "carimages" | "logodev";
 /**
- * Tiles, elevation tiles, type-ahead and vPIC use token buckets (ProviderConfig.tileBurst / suggestBurst /
- * vehiclesBurst); Nominatim and Overpass are 1 req/s.
+ * Tiles, elevation tiles, type-ahead, vPIC and the media providers (CarImages, logo.dev) use token buckets
+ * (ProviderConfig.tileBurst / suggestBurst / vehiclesBurst / media.*.burst); Nominatim and Overpass are 1 req/s.
  */
-const isBucketService = (s: Service) => s === "tiles" || s === "terrain" || s === "photon" || s === "vehicles";
-const burstOf = (config: ProviderConfig, s: Service) => (s === "photon" ? config.suggestBurst : s === "vehicles" ? config.vehiclesBurst : config.tileBurst);
+const isBucketService = (s: Service) => s === "tiles" || s === "terrain" || s === "photon" || s === "vehicles" || s === "carimages" || s === "logodev";
+const burstOf = (config: ProviderConfig, s: Service) =>
+  s === "photon" ? config.suggestBurst : s === "vehicles" ? config.vehiclesBurst
+    : s === "carimages" ? config.media.carimages.burst : s === "logodev" ? config.media.logodev.burst : config.tileBurst;
 
 export class ProxyFailure extends Error {
-  constructor(readonly status: number, readonly error: ProxyError, readonly why?: { readonly service: string; readonly limiter: "user" | "global" }) {
+  constructor(
+    readonly status: number, readonly error: ProxyError, readonly why?: { readonly service: string; readonly limiter: "user" | "global" },
+    /** The provider's own 4xx when that is why the call failed (never sent to the browser). */
+    readonly upstreamStatus?: number,
+  ) {
     super(error.message);
   }
 }
@@ -54,6 +60,34 @@ export class ProxyFailure extends Error {
  */
 export function busy(ctx: Pick<Ctx, "topic">, retryAfterS: number, service: string, limiter: "user" | "global"): ProxyFailure {
   return new ProxyFailure(429, { code: "busy", message: BUSY_MESSAGES[ctx.topic], retryAfterS }, { service, limiter });
+}
+
+/**
+ * A keyed provider call was not made (our daily soft cap, or a cooldown after the provider's own 429), or the
+ * provider answered 429. The media routes turn it into their fallback; it is never shown as an error.
+ */
+export class QuotaFailure extends ProxyFailure {
+  constructor(retryAfterS: number) {
+    // Never shown: the media routes answer their fallback instead.
+    super(429, { code: "busy", message: BUSY_MESSAGES.vehicles, retryAfterS });
+  }
+}
+
+/**
+ * A call that spends a provider's monthly quota. Before it is made (never for a cache hit) it takes a token
+ * from `key` (a rolling daily bucket) and checks the cooldown entry; when the provider answers 429 the
+ * cooldown is set for `cooldownS`. Either way the request fails with QuotaFailure without waiting.
+ */
+export interface QuotaSpec {
+  readonly key: string;
+  readonly limit: BucketLimit;
+  /**
+   * Each caller's own share of the daily cap (a rolling bucket kept with the per-user records, which are dated by
+   * UTC day): one person can't spend everyone's quota. Taken first; given back if the shared cap then refuses.
+   */
+  readonly perUser?: BucketLimit;
+  readonly cooldownKey: string;
+  readonly cooldownS: number;
 }
 
 /** Thrown by a `process` hook when the upstream body is unusable (counts like a 5xx: try the next URL). */
@@ -91,9 +125,21 @@ export interface Ctx {
 
 export interface UpstreamCall {
   readonly url: string;
-  readonly init?: { method?: string; headers?: Record<string, string>; body?: string };
+  /**
+   * `redirect: "error"` for calls that carry a key in a header: a redirect to another host must never take
+   * the key along. The default follows redirects.
+   */
+  readonly init?: { method?: string; headers?: Record<string, string>; body?: string; redirect?: "follow" | "error" };
+  /**
+   * Redirects are followed by hand, at most MAX_REDIRECT_HOPS, and only to an https URL whose host is in this
+   * list; any other Location (another host, http:, an IP, a fourth hop) fails the call. For downloads whose URL
+   * came from a provider (media), so a redirect can't point the server at an internal address.
+   */
+  readonly redirectHosts?: readonly string[];
   /** Slot service for this URL (fallback hosts get their own). */
   readonly service: Service | `${Service}-${number}`;
+  /** This call spends a provider quota (keyed media API calls). */
+  readonly quota?: QuotaSpec;
 }
 
 export interface UpstreamSpec {
@@ -191,11 +237,40 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
   }
 }
 
+/** Take one quota token for a keyed call, or throw QuotaFailure (no waiting: the caller falls back at once). */
+async function takeQuota(ctx: Ctx, q: QuotaSpec): Promise<void> {
+  const { store, now } = ctx.deps;
+  const cooling = await store.get(q.cooldownKey);
+  if (cooling && cooling.expiresAt > now()) throw new QuotaFailure(Math.max(1, Math.ceil((cooling.expiresAt - now()) / 1000)));
+  const mine = `user:${ctx.userKey}:${q.key}`;
+  if (q.perUser) {
+    const wait = await store.takeToken(mine, now(), q.perUser);
+    if (wait > 0) throw new QuotaFailure(Math.max(1, Math.ceil(wait / 1000)));
+  }
+  const retryInMs = await store.takeToken(q.key, now(), q.limit);
+  if (retryInMs > 0) {
+    if (q.perUser) await store.returnToken?.(mine, now(), q.perUser).catch(() => undefined);
+    throw new QuotaFailure(Math.max(1, Math.ceil(retryInMs / 1000)));
+  }
+}
+
 type Attempt =
   | { kind: "ok"; bytes: Uint8Array; contentType: string; headers: Headers }
   | { kind: "not-modified"; headers: Headers }
-  | { kind: "retry"; timeout: boolean }
+  | { kind: "retry"; timeout: boolean; status?: number }
   | { kind: "fail"; status: number };
+
+/** Most redirects a `redirectHosts` call follows. */
+export const MAX_REDIRECT_HOPS = 3;
+
+/** The next URL of a redirect, or null unless it is https, has no credentials and its host is allowed. */
+export function allowedRedirect(from: string, location: string | null, hosts: readonly string[]): string | null {
+  if (!location) return null;
+  let u: URL;
+  try { u = new URL(location, from); } catch { return null; }
+  if (u.protocol !== "https:" || u.username || u.password || u.port || !hosts.includes(u.hostname)) return null;
+  return u.toString();
+}
 
 async function attempt(ctx: Ctx, call: UpstreamCall, budgetMs: number): Promise<Attempt> {
   const ctrl = new AbortController();
@@ -204,15 +279,24 @@ async function attempt(ctx: Ctx, call: UpstreamCall, budgetMs: number): Promise<
     timer = setTimeout(() => { ctrl.abort(); resolve("timeout"); }, budgetMs);
   });
   const work = (async (): Promise<Attempt> => {
-    const res = await ctx.deps.fetch(call.url, {
-      method: call.init?.method ?? "GET",
-      body: call.init?.body,
-      headers: { ...call.init?.headers, "User-Agent": ctx.config.userAgent },
-      signal: ctrl.signal,
-      redirect: "follow",
-    });
+    let url = call.url;
+    let res: Response;
+    for (let hop = 0; ; hop++) {
+      res = await ctx.deps.fetch(url, {
+        method: call.init?.method ?? "GET",
+        body: call.init?.body,
+        headers: { ...call.init?.headers, "User-Agent": ctx.config.userAgent },
+        signal: ctrl.signal,
+        redirect: call.redirectHosts ? "manual" : (call.init?.redirect ?? "follow"),
+      });
+      if (!call.redirectHosts || res.status < 300 || res.status >= 400 || res.status === 304) break;
+      const next = hop < MAX_REDIRECT_HOPS ? allowedRedirect(url, res.headers.get("location"), call.redirectHosts) : null;
+      await res.body?.cancel().catch(() => undefined);
+      if (!next) return { kind: "fail", status: 502 };
+      url = next;
+    }
     if (res.status === 304) return { kind: "not-modified", headers: res.headers };
-    if (res.status === 429 || res.status >= 500) return { kind: "retry", timeout: false };
+    if (res.status === 429 || res.status >= 500) return { kind: "retry", timeout: false, status: res.status };
     if (!res.ok) return { kind: "fail", status: res.status };
     // Only a complete 200 is a usable body: a 204 is empty and a 206 is a fragment.
     if (res.status !== 200) return { kind: "retry", timeout: false };
@@ -299,12 +383,23 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
   if (cached && cached.expiresAt > now()) return entryOf(cached, spec.ttlS, { stale: false, hit: true });
 
   let sawTimeout = false;
+  let sawQuota = false;
   let failStatus: number | null = null;
   try {
     const ordered = byHealth(spec.calls, ctx);
     for (const [idx, call] of ordered.entries()) {
       if (ctx.deadline - now() < MIN_ATTEMPT_MS) { sawTimeout = true; break; }
       await takeSlots(ctx, call.service);
+      if (call.quota) {
+        try {
+          await takeQuota(ctx, call.quota);
+        } catch (e) {
+          // No call is made: give the shared token back (the caller's own token covers its whole request).
+          const base = call.service.split("-")[0] as Service;
+          await store.returnToken?.(`global:${base}`, now(), burstOf(ctx.config, base).global).catch(() => undefined);
+          throw e;
+        }
+      }
       const left = ctx.deadline - now();
       if (left < MIN_ATTEMPT_MS) { sawTimeout = true; break; }
       // With mirrors still to try, don't spend the whole deadline on this one.
@@ -330,6 +425,11 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
         return { ...entryOf({ ...cached, expiresAt: now() + refreshed * 1000, meta: metaOf(result.headers, now(), cached.meta) }, spec.ttlS, { stale: false, hit: false }) };
       }
       if (result.kind === "retry") {
+        if (result.status === 429 && call.quota) {
+          // The provider's own limit: stop asking it for a while (every instance sees this entry).
+          sawQuota = true;
+          await store.set(call.quota.cooldownKey, new Uint8Array([1]), "text/plain", call.quota.cooldownS);
+        }
         if (ordered.length > 1) ctx.health.set(call.url, now() + PENALTY_MS);
         sawTimeout ||= result.timeout;
         // A slow provider with an old copy in hand: serve the copy now rather than spend the deadline on mirrors.
@@ -369,9 +469,10 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
     throw e;
   }
   if (cached) return entryOf(cached, spec.ttlS, { stale: true, hit: true });
-  if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE });
+  if (sawQuota) throw new QuotaFailure(60);
+  if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE }, undefined, 404);
   if (sawTimeout && failStatus === null) throw new ProxyFailure(504, { code: "timeout", message: TIMEOUT_MESSAGES[ctx.topic], retryAfterS: 5 });
-  throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGES[ctx.topic], retryAfterS: 5 });
+  throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGES[ctx.topic], retryAfterS: 5 }, undefined, failStatus ?? undefined);
 }
 
 /**
