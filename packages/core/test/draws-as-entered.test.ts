@@ -40,17 +40,21 @@ describe("drawsAsEntered", () => {
     expect(drawn).toBeGreaterThan(150);
   }, 120_000);
 
-  it("counts its work in units that grow with the vehicles and the speeds scanned", () => {
+  it("counts its work the same every time, more for every speed it has to scan", () => {
     const [example, file] = NETWORKS[0]!;
     const roads = loadRoads(file), scene = loadScene(example);
-    const known: WorkMeter = { units: 0 }, unsure: WorkMeter = { units: 0 };
-    drawsAsEntered(scene, roads, known);
-    drawsAsEntered({ ...scene, vehicles: scene.vehicles.map((v) => ({ ...v, speed: { kind: "unsure" as const, limitMph: 30 } })) }, roads, unsure);
-    expect(known.units).toBeGreaterThan(0);
-    expect(unsure.units).toBeGreaterThanOrEqual(known.units);
-    // The same scene always costs the same.
-    const again: WorkMeter = { units: 0 };
+    const once: WorkMeter = { units: 0 }, again: WorkMeter = { units: 0 };
+    drawsAsEntered(scene, roads, once);
     drawsAsEntered(scene, roads, again);
-    expect(again.units).toBe(known.units);
+    expect(once.units).toBeGreaterThan(0);
+    expect(again.units).toBe(once.units);
+    // A "not sure" scene that works at no speed (its approach runs into something) scans every speed in its range; the same
+    // scene at one typed speed checks one.
+    const c = loadBench().find((x) => { const r = drawsAsEntered(x.scene, roadsOf(x.net)); return !r.ok && r.errors[0]!.code === "no-workable-speed" && /passed through|building/.test(r.errors[0]!.text); })!;
+    const typed: Scene = { ...c.scene, vehicles: c.scene.vehicles.map((v) => (v.speed.kind === "unsure" ? { ...v, speed: { kind: "known" as const, mph: v.speed.limitMph ?? 25 } } : v)) };
+    const scanned: WorkMeter = { units: 0 }, single: WorkMeter = { units: 0 };
+    drawsAsEntered(c.scene, roadsOf(c.net), scanned);
+    drawsAsEntered(typed, roadsOf(c.net), single);
+    expect(scanned.units).toBeGreaterThan(single.units);
   });
 });
