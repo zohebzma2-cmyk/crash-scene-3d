@@ -80,7 +80,9 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
         // under the minute limit; 120 a day keeps a month under 3,800.
         burst: { perUser: { capacity: 8, refillPerS: 0.2 }, global: { capacity: 20, refillPerS: 0.5 } },
         dailyCap: 120,
-        perUserDailyCap: 15,
+        // Each person's share of that: 40 keyed calls a rolling day, about 8 to 10 vehicles now that a photo's
+        // download is a keyed call too (4 to 5 calls for a new vehicle's photo; owner, 2026-10-11).
+        perUserDailyCap: 40,
         cooldownS: 15 * 60,
       },
       logodev: {

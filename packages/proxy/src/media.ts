@@ -333,6 +333,24 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     const note = info.note ? ` (${redactForLog(info.note, secrets).slice(0, 120)})` : "";
     logOnce(`proxy: ${provider} ${endpointForLog(info.url, secrets)} -> ${info.status || "no answer"}${note}${body ? ` ${body}` : ""}`);
   };
+  /**
+   * A `quota` answer says which cap refused it, once per distinct line: the caller's own daily share (per-user),
+   * everyone's daily cap (shared), the cooldown after the provider's 429, or that 429. No caller is named.
+   */
+  const quotaDiag = (e: QuotaFailure): void => {
+    const provider = (e.quotaKey ?? "quota:unknown").replace(/^quota:/, "").replace(/[^\w-]/g, "");
+    const cfg = provider === "logodev" ? ld : provider === "carimages" ? ci : null;
+    const what = e.refusedBy === "per-user" ? `the per-user daily cap${cfg ? ` (${cfg.perUserDailyCap} keyed calls a rolling day per person)` : ""}`
+      : e.refusedBy === "shared" ? `the shared daily cap${cfg ? ` (${cfg.dailyCap} keyed calls a rolling day for everyone)` : ""}`
+        : e.refusedBy === "cooldown" ? `the cooldown after the provider's 429${cfg ? ` (${Math.round(cfg.cooldownS / 60)} min)` : ""}`
+          : "the provider's own 429 (cooldown started)";
+    logOnce(`proxy: ${provider} quota -> refused by ${what}; answering the fallback`);
+  };
+  /** reasonOf, plus the quota log line. */
+  const fallbackOf = (e: unknown): MediaFallbackReason => {
+    if (e instanceof QuotaFailure) quotaDiag(e);
+    return reasonOf(e);
+  };
   const ciDiag = diag("carimages");
   const ldDiag = diag("logodev");
   /** A 200 whose JSON we could not use: its shape (names and types, never values), once per distinct line. */
@@ -605,7 +623,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       }
       return mediaResponse(entry, ttl.image, imageKind(entry.bytes) ?? "application/octet-stream", { [MEDIA_HEADERS.image]: "exact", [MEDIA_HEADERS.view]: extra.served });
     } catch (e) {
-      const reason = reasonOf(e);
+      const reason = fallbackOf(e);
       return noImage(reason, e instanceof NoMatch ? e.match : "none");
     }
   }
@@ -649,7 +667,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       }, (x) => `media/ci/glb/${x.make.slug}/${x.model.slug}/${x.gen.slug}`, ttl.model, (b) => isGlb(b) && b.byteLength <= ci.maxModelBytes);
       return mediaResponse(entry, ttl.model, "model/gltf-binary", { [MEDIA_HEADERS.watermarked]: extra.watermarked ? "true" : "false" });
     } catch (e) {
-      const reason = reasonOf(e);
+      const reason = fallbackOf(e);
       return noModel(reason === "no-image" ? "no-model" : reason);
     }
   }
@@ -755,7 +773,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
         // A 404 (or "nobody has it") moves on quietly; anything else is remembered so a miss isn't cached.
         if (e instanceof NoMatch) { if (e.reason !== "no-image") transient ??= e.reason; continue; }
         if (e instanceof ProxyFailure && e.status === 404) continue;
-        transient ??= reasonOf(e);
+        transient ??= fallbackOf(e);
       }
     }
     if (transient) return noLogo(transient);

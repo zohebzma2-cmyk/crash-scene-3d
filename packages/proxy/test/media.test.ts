@@ -674,3 +674,41 @@ describe("upstream diagnostics", () => {
     expect(line).not.toContain(LD_SECRET);
   });
 });
+
+describe("quota answers say which cap refused them", () => {
+  it("defaults: 40 keyed CarImages calls per person a day, 120 shared; logo.dev 10 per person", () => {
+    const { carimages, logodev } = defaultProviderConfig().media;
+    expect(carimages.perUserDailyCap).toBe(40);
+    expect(carimages.dailyCap).toBe(120);
+    expect(logodev.perUserDailyCap).toBe(10);
+  });
+
+  it("the per-user cap: the owner's own share, named as such", async () => {
+    const base = defaultProviderConfig();
+    const config: ProviderConfig = { ...base, media: { ...base.media, carimages: { ...base.media.carimages, perUserDailyCap: 3 } } };
+    const t = setup(catalog(), { config });
+    await t.get(image(F150), "heavy");
+    const r = await t.get(image({ year: "2015", make: "Ford", model: "Focus" }), "heavy");
+    expect(r.headers.get(MEDIA_HEADERS.fallback)).toBe("quota");
+    expect(t.logs).toContain("proxy: carimages quota -> refused by the per-user daily cap (3 keyed calls a rolling day per person); answering the fallback");
+    expect(t.logs.join("\n")).not.toContain("heavy"); // no caller is named
+  });
+
+  it("the shared cap: everyone's, named as such", async () => {
+    const base = defaultProviderConfig();
+    const config: ProviderConfig = { ...base, media: { ...base.media, carimages: { ...base.media.carimages, dailyCap: 3 } } };
+    const t = setup(catalog(), { config });
+    await t.get(image(F150));
+    await t.get(image({ year: "2015", make: "Ford", model: "Focus" }), "someone-else");
+    expect(t.logs).toContain("proxy: carimages quota -> refused by the shared daily cap (3 keyed calls a rolling day for everyone); answering the fallback");
+  });
+
+  it("the provider's 429, then the cooldown, each named", async () => {
+    const t = setup(catalog({ [`${CI}/makes`]: () => json({ error: "Monthly quota exceeded" }, 429) }));
+    await t.get(image(F150));
+    await t.get(image(F150));
+    expect(t.logs).toContain("proxy: carimages quota -> refused by the provider's own 429 (cooldown started); answering the fallback");
+    expect(t.logs).toContain("proxy: carimages quota -> refused by the cooldown after the provider's 429 (15 min); answering the fallback");
+    expect(t.logs.filter((l) => l.includes("quota ->"))).toHaveLength(2); // once per distinct line
+  });
+});

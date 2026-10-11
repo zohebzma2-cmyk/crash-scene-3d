@@ -67,11 +67,19 @@ export function busy(ctx: Pick<Ctx, "topic">, retryAfterS: number, service: stri
  * provider answered 429. The media routes turn it into their fallback; it is never shown as an error.
  */
 export class QuotaFailure extends ProxyFailure {
-  constructor(retryAfterS: number) {
+  constructor(
+    retryAfterS: number,
+    /** What refused it: the caller's own daily share, the shared daily cap, the cooldown after a provider 429, or that 429. */
+    readonly refusedBy: QuotaRefusal = "provider",
+    /** The QuotaSpec key ("quota:carimages"), when known. */
+    readonly quotaKey?: string,
+  ) {
     // Never shown: the media routes answer their fallback instead.
     super(429, { code: "busy", message: BUSY_MESSAGES.vehicles, retryAfterS });
   }
 }
+
+export type QuotaRefusal = "per-user" | "shared" | "cooldown" | "provider";
 
 /**
  * A call that spends a provider's monthly quota. Before it is made (never for a cache hit) it takes a token
@@ -297,16 +305,16 @@ async function takeSlots(ctx: Ctx, service: string): Promise<void> {
 async function takeQuota(ctx: Ctx, q: QuotaSpec): Promise<void> {
   const { store, now } = ctx.deps;
   const cooling = await store.get(q.cooldownKey);
-  if (cooling && cooling.expiresAt > now()) throw new QuotaFailure(Math.max(1, Math.ceil((cooling.expiresAt - now()) / 1000)));
+  if (cooling && cooling.expiresAt > now()) throw new QuotaFailure(Math.max(1, Math.ceil((cooling.expiresAt - now()) / 1000)), "cooldown", q.key);
   const mine = `user:${ctx.userKey}:${q.key}`;
   if (q.perUser) {
     const wait = await store.takeToken(mine, now(), q.perUser);
-    if (wait > 0) throw new QuotaFailure(Math.max(1, Math.ceil(wait / 1000)));
+    if (wait > 0) throw new QuotaFailure(Math.max(1, Math.ceil(wait / 1000)), "per-user", q.key);
   }
   const retryInMs = await store.takeToken(q.key, now(), q.limit);
   if (retryInMs > 0) {
     if (q.perUser) await store.returnToken?.(mine, now(), q.perUser).catch(() => undefined);
-    throw new QuotaFailure(Math.max(1, Math.ceil(retryInMs / 1000)));
+    throw new QuotaFailure(Math.max(1, Math.ceil(retryInMs / 1000)), "shared", q.key);
   }
 }
 
@@ -454,7 +462,7 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
   if (cached && cached.expiresAt > now()) return entryOf(cached, spec.ttlS, { stale: false, hit: true });
 
   let sawTimeout = false;
-  let sawQuota = false;
+  let sawQuota: string | null = null;
   let failStatus: number | null = null;
   try {
     const ordered = byHealth(spec.calls, ctx);
@@ -498,7 +506,7 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
       if (result.kind === "retry") {
         if (result.status === 429 && call.quota) {
           // The provider's own limit: stop asking it for a while (every instance sees this entry).
-          sawQuota = true;
+          sawQuota = call.quota.key;
           await store.set(call.quota.cooldownKey, new Uint8Array([1]), "text/plain", call.quota.cooldownS);
         }
         if (ordered.length > 1) ctx.health.set(call.url, now() + PENALTY_MS);
@@ -541,7 +549,7 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
     throw e;
   }
   if (cached) return entryOf(cached, spec.ttlS, { stale: true, hit: true });
-  if (sawQuota) throw new QuotaFailure(60);
+  if (sawQuota !== null) throw new QuotaFailure(60, "provider", sawQuota);
   if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE }, undefined, 404);
   if (sawTimeout && failStatus === null) throw new ProxyFailure(504, { code: "timeout", message: TIMEOUT_MESSAGES[ctx.topic], retryAfterS: 5 });
   throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGES[ctx.topic], retryAfterS: 5 }, undefined, failStatus ?? undefined);
