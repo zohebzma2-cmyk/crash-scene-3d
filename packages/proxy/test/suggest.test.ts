@@ -168,14 +168,16 @@ describe("/api/geo/suggest", () => {
     expect(Date.now() - START).toBeLessThanOrEqual(4100);
   });
 
-  it("is limited by a token bucket, not 1 req/s: a typing burst of 5 passes, a flood does not", async () => {
+  it("is limited by a token bucket, not 1 req/s: a typing burst of 12 passes, a flood does not", async () => {
+    const { capacity, refillPerS } = config.suggestBurst.perUser;
+    expect([capacity, refillPerS]).toEqual([12, 3]);
     const t = setup(goodPhoton);
-    const burst = await settle(Promise.all(["elm", "oak", "pine", "maple", "birch"].map((q) => t.get(suggestPath(q), "typist"))));
-    expect(burst.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
-    const flood = await settle(Promise.all(Array.from({ length: 15 }, (_, i) => t.get(suggestPath(`street ${i}`), "flooder"))));
+    const burst = await settle(Promise.all(Array.from({ length: capacity }, (_, i) => t.get(suggestPath(`elm ${i}`), "typist"))));
+    expect(burst.every((r) => r.status === 200)).toBe(true);
+    const flood = await settle(Promise.all(Array.from({ length: 30 }, (_, i) => t.get(suggestPath(`street ${i}`), "flooder"))));
     const ok = flood.filter((r) => r.status === 200).length;
-    expect(ok).toBeGreaterThanOrEqual(5);
-    expect(ok).toBeLessThanOrEqual(8); // burst 5 plus the ~2/s refill over the 1.2 s wait
+    expect(ok).toBeGreaterThanOrEqual(capacity);
+    expect(ok).toBeLessThanOrEqual(capacity + Math.ceil(refillPerS * 1.2)); // burst 12 plus the 3/s refill over the 1.2 s wait
     const refused = flood.find((r) => r.status === 429)!;
     expect(await refused.json()).toMatchObject({ code: "busy", message: BUSY_MESSAGE });
   });
