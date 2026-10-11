@@ -1,9 +1,10 @@
 // The PDF summary: US Letter, brand fonts embedded, laid out like the locked
 // prototype. The goal is one page. The layout shrinks in steps (padding, then
 // text down to 8 pt, never smaller) to fit. If the assumptions and warnings
-// still don't fit, the full lists move to page 2 (and on, if they are huge),
-// with the header and the full footer repeated on every page. Nothing is ever
-// dropped, and nothing is ever drawn over the footer.
+// still don't fit, page 1 keeps as many whole assumptions as fit and says what
+// continues; the rest of the list and the warnings move to page 2 (and on, if
+// they are huge), with the header and the full footer repeated on every page.
+// Nothing is ever dropped, and nothing is ever drawn over the footer.
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFName, PDFString, type PDFImage } from "pdf-lib";
 import { DISCLAIMER_LONG, DISCLAIMER_SHORT, toLocal } from "@csd/core";
@@ -293,11 +294,16 @@ interface Built {
   readonly movedList: string;
   /** A plain one-line "… continued on page 2" block for when the sections it names moved. */
   readonly placeholder: (text: string) => Block;
-  /** Blocks of page 1 (one-page mode: everything). */
+  /** Blocks of page 1 (one-page mode: everything; split mode: the sections above the assumptions). */
   readonly first: readonly Block[];
-  /** Overflow blocks that follow (assumption and warning lists in overflow mode). */
+  /** Overflow blocks that follow (the whole assumption and warning lists in overflow mode). */
   readonly rest: readonly Block[];
   readonly footerH: number;
+  /**
+   * Split mode: the assumptions section of page 1 holding as many whole assumptions as fit in `room` (pt, the
+   * section's heading and its "continued on page 2" line included), and the lists that follow on the next pages.
+   */
+  readonly fill?: (room: number) => { readonly block: Block; readonly shown: number; readonly rest: readonly Block[]; readonly movedText: string };
 }
 
 /** Split items into two columns of nearly equal height, keeping their order (left column first). */
@@ -316,7 +322,29 @@ function twoColumns<T extends { h: number }>(items: readonly T[]): { left: T[]; 
   return { left: [...left], right: [...right], leftH: left.reduce((a, it) => a + it.h, 0), rightH: right.reduce((a, it) => a + it.h, 0) };
 }
 
-function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "full" | "split", footerH: number): Built {
+/** Fill two columns in order (left first) up to `cap` each: how many items fit, and the columns. */
+function fillColumns<T extends { h: number }>(items: readonly T[], cap: number): { left: T[]; right: T[]; leftH: number; rightH: number; shown: number } {
+  const cols: [T[], T[]] = [[], []];
+  const hs = [0, 0];
+  let c = 0;
+  let shown = 0;
+  for (const it of items) {
+    while (c < 2 && hs[c]! + it.h > cap) c++;
+    if (c >= 2) break;
+    cols[c]!.push(it);
+    hs[c]! += it.h;
+    shown++;
+  }
+  return { left: cols[0], right: cols[1], leftH: hs[0]!, rightH: hs[1]!, shown };
+}
+
+/** "Assumptions 9 to 16", "Assumption 16" or "Assumptions" (none shown yet): what of the list still has to come. */
+function assumptionsLeft(shown: number, total: number): string {
+  if (shown <= 0) return "assumptions";
+  return total - shown === 1 ? `assumption ${total}` : `assumptions ${shown + 1} to ${total}`;
+}
+
+function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "full" | "split", footerH: number, laterRoom: number): Built {
   const { model } = input;
   const m = s.m;
   const { M, CW, colW, colGap, body, small, gapBig, gapSm, hair, radius, pad } = m;
@@ -570,30 +598,32 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   const bullet = px("space-4") * PX_TO_PT * 0.7;
   // Assumptions are numbered (DESIGN.md section 8): "1.", "2.", ... and the numbering carries onto the overflow pages.
   const numW = s.cv.measure("sans", body, `${model.assumptions.length}.`) + body * 0.7;
-  const aItems = mode === "full" ? model.assumptions.map((a, i) => { const ls = s.lines(a, colW - numW, "sans", body); return { n: i + 1, ls, h: ls.length * lh(body) + pad * 1.2 }; }) : [];
-  const aCols = twoColumns(aItems);
-  const assumptions: Block = {
-    h: headingH() + (mode === "full" ? Math.max(aCols.leftH, aCols.rightH) : lh(body) + pad), gapBefore: gapBig, kind: "main",
-    draw: (sh, y0) => {
-      heading(sh, "body", M, y0, "Assumptions used");
-      if (mode === "split") {
-        sh.block("body", M, y0 + headingH(), [`${cap(movedList([], model.warnings.length > 0))} continued on page 2`], "sans", body, color("color-text-secondary"));
-        return;
-      }
-      const col = (items: typeof aItems, x: number) => {
-        let ay = y0 + headingH();
-        for (const it of items) {
-          sh.text("body", [x, ay + lh(body) * 0.5 + body * 0.35], `${it.n}.`, "sans", body, color("color-text-secondary"));
-          sh.block("body", x + numW, ay, it.ls, "sans", body, color("color-text"));
-          ay += it.h;
-        }
-      };
-      col(aCols.left, M);
-      col(aCols.right, rx);
-    },
+  const aItems = model.assumptions.map((a, i) => { const ls = s.lines(a, colW - numW, "sans", body); return { n: i + 1, ls, h: ls.length * lh(body) + pad * 1.2 }; });
+  type AItem = (typeof aItems)[number];
+  /** The assumptions section: its heading, the items in two columns and, when some of it moves on, the "continued" line. */
+  const assumptionsBlock = (cols: { left: readonly AItem[]; right: readonly AItem[]; leftH: number; rightH: number }, cont: string | null): Block => {
+    const colsH = Math.max(cols.leftH, cols.rightH);
+    const contGap = colsH > 0 ? gapSm * 0.5 : 0;
+    return {
+      h: headingH() + colsH + (cont ? contGap + lh(body) + pad : 0), gapBefore: gapBig, kind: "main",
+      draw: (sh, y0) => {
+        heading(sh, "body", M, y0, "Assumptions used");
+        const col = (items: readonly AItem[], x: number) => {
+          let ay = y0 + headingH();
+          for (const it of items) {
+            sh.text("body", [x, ay + lh(body) * 0.5 + body * 0.35], `${it.n}.`, "sans", body, color("color-text-secondary"));
+            sh.block("body", x + numW, ay, it.ls, "sans", body, color("color-text"));
+            ay += it.h;
+          }
+        };
+        col(cols.left, M);
+        col(cols.right, rx);
+        if (cont) sh.block("body", M, y0 + headingH() + colsH + contGap, [cont], "sans", body, color("color-text-secondary"));
+      },
+    };
   };
 
-  const first: Block[] = [top, table, measures, assumptions];
+  const first: Block[] = mode === "full" ? [top, table, measures, assumptionsBlock(twoColumns(aItems), null)] : [top, table, measures];
   const placeholder = (text: string): Block => ({
     h: lh(body) + pad, gapBefore: gapBig, kind: "main",
     draw: (sh, y) => { sh.block("body", M, y, [text], "sans", body, color("color-text-secondary")); },
@@ -623,37 +653,63 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     return { first, rest: [], footerH, placeholder, movedList: "" };
   }
 
-  /* Overflow: the full lists, full width, on the pages that follow. */
-  const rest: Block[] = [];
-  const bulletBlock = (text: string, kind: "main" | "warn", textCol: string, dot: string, gapBefore: number, n?: number): Block => {
+  /* Overflow: the lists, full width, on the pages that follow. */
+  const bulletBlocks = (text: string, kind: "main" | "warn", textCol: string, dot: string, gapBefore: number, n?: number): Block[] => {
     const lead = n === undefined ? bullet : numW;
     const ls = s.lines(text, CW - lead - (kind === "warn" ? gapSm : 0), "sans", body);
-    const h = ls.length * lh(body) + pad * 1.2 + (kind === "warn" ? pad : 0);
-    return {
-      h, gapBefore, kind,
+    const extra = pad * 1.2 + (kind === "warn" ? pad : 0);
+    // An item is never cut between pages, unless it alone is taller than a whole page: then it breaks between lines,
+    // with its number or bullet on the first part.
+    const per = Math.max(1, Math.floor((laterRoom - extra) / lh(body)));
+    const parts: string[][] = [];
+    for (let i = 0; i < ls.length; i += per) parts.push(ls.slice(i, i + per));
+    return parts.map((part, j) => ({
+      h: part.length * lh(body) + extra, gapBefore: j === 0 ? gapBefore : 0, kind,
       draw: (sh, y) => {
         const off = kind === "warn" ? gapSm : 0;
         const ty = y + (kind === "warn" ? pad * 0.5 : 0);
-        if (n === undefined) sh.add("body", (c) => c.circle([M + off + bullet * 0.3, ty + lh(body) / 2], body * 0.12, dot));
-        else sh.text("body", [M, ty + lh(body) * 0.5 + body * 0.35], `${n}.`, "sans", body, color("color-text-secondary"));
-        sh.block("body", M + off + lead, ty, ls, "sans", body, textCol);
+        if (j === 0) {
+          if (n === undefined) sh.add("body", (c) => c.circle([M + off + bullet * 0.3, ty + lh(body) / 2], body * 0.12, dot));
+          else sh.text("body", [M, ty + lh(body) * 0.5 + body * 0.35], `${n}.`, "sans", body, color("color-text-secondary"));
+        }
+        sh.block("body", M + off + lead, ty, part, "sans", body, textCol);
       },
-    };
+    }));
   };
   const headBlock = (text: string, gapBefore: number, kind: "main" | "warn"): Block => ({
     h: headingH() + (kind === "warn" ? gapSm * 0.5 : 0), gapBefore, kind,
     draw: (sh, y) => { heading(sh, "body", kind === "warn" ? M + gapSm : M, y + (kind === "warn" ? gapSm * 0.5 : 0), text); },
   });
-  if (model.assumptions.length) {
-    rest.push({ ...headBlock("Assumptions used", gapBig, "main"), breakBefore: true });
-    model.assumptions.forEach((a, i) => rest.push(bulletBlock(a, "main", color("color-text"), color("color-text"), 0, i + 1)));
-  }
-  if (model.warnings.length) {
-    const wh = headBlock("Details that may not fit together", gapBig, "warn");
-    rest.push(model.assumptions.length ? wh : { ...wh, breakBefore: true });
-    for (const w of model.warnings) rest.push(bulletBlock(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0));
-  }
-  return { first, rest, footerH, placeholder, movedList: movedList([], model.warnings.length > 0) };
+  /** The lists that follow page 1 when its first `shown` assumptions are on it. */
+  const restFrom = (shown: number): Block[] => {
+    const rest: Block[] = [];
+    const left = model.assumptions.slice(shown);
+    if (left.length) {
+      rest.push({ ...headBlock(shown > 0 ? "Assumptions used (continued)" : "Assumptions used", gapBig, "main"), breakBefore: true });
+      left.forEach((a, i) => rest.push(...bulletBlocks(a, "main", color("color-text"), color("color-text"), 0, shown + i + 1)));
+    }
+    if (model.warnings.length) {
+      const wh = headBlock("Details that may not fit together", gapBig, "warn");
+      rest.push(left.length ? wh : { ...wh, breakBefore: true });
+      for (const w of model.warnings) rest.push(...bulletBlocks(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0));
+    }
+    return rest;
+  };
+  // Page 1 takes as many whole assumptions as fit in the room left under the other sections (in the same two
+  // columns as a one-page summary); only the rest, and the warnings, move on, and a line says what moved.
+  const fill = (room: number) => {
+    const contH = gapSm * 0.5 + lh(body) + pad;
+    const total = aItems.length;
+    const greedy = fillColumns(aItems, room - headingH() - contH);
+    const all = greedy.shown === total;
+    const shown = greedy.shown;
+    const moved = [...(all ? [] : [assumptionsLeft(shown, total)]), ...(model.warnings.length ? ["details that may not fit together"] : [])];
+    const movedText = listOf(moved);
+    const cols = all ? twoColumns(aItems) : greedy;
+    const block = assumptionsBlock(cols, moved.length ? `${cap(movedText)} continued on page 2` : null);
+    return { block, shown, rest: restFrom(shown), movedText };
+  };
+  return { first, rest: restFrom(0), footerH, placeholder, movedList: movedList([], model.warnings.length > 0), fill };
 }
 
 /* ------------------------------------------------------------------ pagination */
@@ -704,7 +760,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
   const scratch = doc.addPage([pageW, pageH]);
   const measureCv = new PdfCanvas(doc, scratch, fonts);
 
-  const planFor = (li: number, mode: "full" | "split", fallback = false): { pages: Placed[][]; m: Metrics; mk: (cv: PdfCanvas) => Sheet; built: Built; foot: ReturnType<typeof footer>; movedText: string } => {
+  const planFor = (li: number, mode: "full" | "split", fallback = false): { pages: Placed[][]; m: Metrics; mk: (cv: PdfCanvas) => Sheet; built: Built; foot: ReturnType<typeof footer>; movedText: string; fits: boolean } => {
     const m = metricsFor(measureCv, LEVELS[li]!);
     const sh = new Sheet(measureCv, m);
     // The footer and header are the same shape on every page, so measure them with throwaway sheets.
@@ -712,10 +768,20 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     const head1 = header(new Sheet(measureCv, m), true);
     const head2 = header(new Sheet(measureCv, m), false);
     sh.headerH = head1 - m.M;
-    const built = buildBlocks(sh, input, thumb, mode, foot.height);
     const limit = m.H - m.M - foot.height - m.gapBig;
+    const built = buildBlocks(sh, input, thumb, mode, foot.height, limit - head2);
     let blocks: Block[] = [...built.first, ...built.rest];
     let movedText = built.movedList;
+    // Split mode: page 1 must hold its sections and the assumptions heading with its "continued" line.
+    let fits = true;
+    if (mode === "split" && !fallback && built.fill) {
+      let y = head1;
+      built.first.forEach((b, i) => { y += (i === 0 ? 0 : b.gapBefore) + b.h; });
+      const f = built.fill(limit - y - m.gapBig);
+      fits = y + m.gapBig + f.block.h <= limit + 1e-6;
+      blocks = [...built.first, f.block, ...f.rest];
+      movedText = f.movedText;
+    }
     if (fallback) {
       // Last resort: the first-page sections that fit stay, a one-line note says what moved, and the rest follows on page 2.
       const core = built.first.slice(0, 3);
@@ -736,7 +802,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
       ];
     }
     const pages = paginate(blocks, head1, head2, limit);
-    return { pages, m, mk: (cv) => new Sheet(cv, m), built, foot, movedText };
+    return { pages, m, mk: (cv) => new Sheet(cv, m), built, foot, movedText, fits };
   };
 
   let chosen: ReturnType<typeof planFor> | null = null;
@@ -748,8 +814,8 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
   if (!chosen) {
     for (let li = 0; li < LEVELS.length && !chosen; li++) {
       const p = planFor(li, "split");
-      // Page 1 holds all the first-page blocks when the overflow starts on page 2.
-      if (p.pages[0]!.length === p.built.first.length) { chosen = p; levelIdx = li; }
+      // Page 1 holds all the first-page sections and the assumptions section (as many as fit) when the overflow starts on page 2.
+      if (p.fits && p.pages[0]!.length === p.built.first.length + 1) { chosen = p; levelIdx = li; }
     }
     if (!chosen) { levelIdx = LEVELS.length - 1; chosen = planFor(levelIdx, "split", true); }
   }

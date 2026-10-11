@@ -10,7 +10,7 @@ import { buildExports, footerBandHeight, sceneFile } from "../src";
 import { about } from "../src/about";
 import { planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
 import { buildModel, approachPhrase, fileClaim, printable, speedInputs } from "../src/model";
-import { buildPdf, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
+import { buildPdf, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
 import { renderBand, renderDiagramPng, renderStillPng } from "../src/png";
 import { MAX_PNG_SIDE, decodePng } from "../src/png-decode";
 import { color, rgb01 } from "../src/style";
@@ -332,7 +332,7 @@ describe("PDF pages", () => {
     expect(dia.maxY - dia.minY).toBeGreaterThanOrEqual(room / 3 - 6);
   });
 
-  it("moves the full assumptions and warnings to page 2 when 30 warnings can't fit, repeating header and footer", async () => {
+  it("moves what doesn't fit of the assumptions, and the warnings, to page 2 when 30 warnings can't fit, repeating header and footer", async () => {
     const { scene, sim } = manyShortWarnings(30);
     const { r, read } = await makePdf(scene, sim);
     saveOutput("page-30-warnings.pdf", r.bytes);
@@ -341,9 +341,9 @@ describe("PDF pages", () => {
     expect(read.pages).toBe(2);
     expect(read.text).toContain("Page 1 of 2");
     expect(read.text).toContain("Page 2 of 2");
-    // the warnings move too, so page 1 says so
-    expect(read.pageTexts[0]).toContain("Assumptions and details that may not fit together continued on page 2");
-    expect(r.notes.join(" ")).toContain("assumptions and details that may not fit together continue on page 2");
+    // the warnings move, so page 1 says so (with whichever assumptions didn't fit on it)
+    expect(read.pageTexts[0]).toMatch(/(?:Assumptions? \d+(?: to \d+)? and d|D)etails that may not fit together continued on page 2/);
+    expect(r.notes.join(" ")).toMatch(/details that may not fit together continue on page 2/);
     // every assumption and every warning is there, in full
     for (const a of sim.assumptions) expect(read.text).toContain(norm(a.text));
     for (const w of sim.warnings) expect(read.text).toContain(norm(w.text));
@@ -977,9 +977,9 @@ describe("overflow placeholder always lands on page 1", () => {
     const noWarnings: SimulationResult = { ...sim, warnings: [] };
     const { r, read } = await makePdf(scene, noWarnings);
     expect(r.pages).toBeGreaterThanOrEqual(2);
-    expect(read.pageTexts[0]).toContain("Assumptions continued on page 2");
+    expect(read.pageTexts[0]).toMatch(/Assumptions?(?: \d+(?: to \d+)?)? continued on page 2/);
     expect(read.pageTexts[0]).not.toContain("details that may not fit together");
-    expect(r.notes.join(" ")).toContain("assumptions continue on page 2");
+    expect(r.notes.join(" ")).toMatch(/assumptions?(?: \d+(?: to \d+)?)? continue on page/);
     expect(r.notes.join(" ")).not.toContain("details that may not fit together");
   }, 60_000);
 });
@@ -997,11 +997,15 @@ describe("numbered assumptions (DESIGN.md section 8)", () => {
     const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
     for (const { scene, sim } of Object.values(real)) numbered((await makePdf(scene, sim)).read.text, sim.assumptions);
   }, 60_000);
-  it("overflow pages keep the numbering in one sequence; warnings stay bullets", async () => {
+  it("overflow pages keep the numbering in one sequence from page 1 on; warnings stay bullets", async () => {
     const { scene, sim } = stress(30);
     const { r, read } = await makePdf(scene, sim);
     expect(r.pages).toBeGreaterThanOrEqual(3);
-    numbered(read.pageTexts.slice(1).join(" "), sim.assumptions);
+    numbered(read.text, sim.assumptions);
+    // page 2 picks up where page 1 stopped
+    const onFirst = sim.assumptions.filter((a, i) => read.pageTexts[0]!.includes(`${i + 1}. ${norm(a.text).slice(0, 14)}`)).length;
+    expect(onFirst).toBeGreaterThan(0);
+    expect(read.pageTexts[1]).toContain(`${onFirst + 1}. ${norm(sim.assumptions[onFirst]!.text).slice(0, 14)}`);
     expect(read.text).not.toMatch(/\b1\. Check 1:/);
   }, 90_000);
 });
@@ -1421,4 +1425,80 @@ describe("a hit side the picture couldn't use as entered (red team, 2026-10-10)"
     expect(m.adjustedNotes).toEqual([]);
     expect(m.vehicles.every((v) => !/as entered/.test(v.hitOn))).toBe(true);
   });
+});
+
+describe("page 1 fills before the assumptions move on (owner, 2026-10-10)", () => {
+  // Real physics output (test/data/overflow-3v.json): the t-bone example with a parked third car, both moving speeds
+  // "not sure" and two hit sides the picture couldn't use as entered. Its assumptions don't all fit on page 1.
+  const fixture = JSON.parse(readFileSync(new URL("./data/overflow-3v.json", import.meta.url), "utf8")) as { scene: Scene; sim: SimulationResult };
+  /** Share of the room between the header and the footer that page 1's body uses. */
+  const fillOf = (p: PdfResult["report"][number]) => (p.bodyBottom - p.extents.header.maxY) / (p.footerTop - p.extents.header.maxY);
+
+  it("is the scene it says it is", () => {
+    const { scene, sim } = fixture;
+    expect(scene.vehicles).toHaveLength(3);
+    expect(scene.vehicles.filter((v) => v.speed.kind === "unsure").length).toBeGreaterThanOrEqual(2);
+    expect(sim.warnings.some((w) => w.code === "zone-used")).toBe(true);
+  });
+
+  it("puts as many whole assumptions on page 1 as fit, then says which continue on page 2", async () => {
+    const { scene, sim } = fixture;
+    const { r, read } = await makePdf(scene, sim);
+    saveOutput("overflow-3v.pdf", r.bytes);
+    expect(r.pages).toBe(2);
+    const first = read.pageTexts[0]!;
+    const second = read.pageTexts[1]!;
+    const on = (text: string, i: number) => text.includes(`${i + 1}. ${norm(sim.assumptions[i]!.text).slice(0, 14)}`);
+    const shown = sim.assumptions.filter((_, i) => on(first, i)).length;
+    expect(shown, "page 1 shows some assumptions").toBeGreaterThan(0);
+    expect(shown).toBeLessThan(sim.assumptions.length);
+    // the first `shown` are on page 1, the rest on page 2, each once and whole
+    sim.assumptions.forEach((a, i) => {
+      expect(on(i < shown ? first : second, i), `assumption ${i + 1} on page ${i < shown ? 1 : 2}`).toBe(true);
+      expect(on(i < shown ? second : first, i), `assumption ${i + 1} only once`).toBe(false);
+      expect(countOf(read.text, norm(a.text)), `assumption ${i + 1} whole`).toBe(1);
+    });
+    for (const w of sim.warnings) expect(second).toContain(norm(w.text));
+    expect(first).toContain(`Assumptions ${shown + 1} to ${sim.assumptions.length} and details that may not fit together continued on page 2`);
+    expect(second.replace(/ /g, "")).toContain("ASSUMPTIONSUSED(CONTINUED)");
+    expect(r.notes.join(" ")).toContain(`assumptions ${shown + 1} to ${sim.assumptions.length} and details that may not fit together continue on page 2`);
+    await expectSafePages(r);
+  }, 60_000);
+
+  it("leaves no big blank on page 1 when the list overflows", async () => {
+    const { scene, sim } = fixture;
+    for (const thumb of [true, false]) {
+      const { r } = await makePdf(scene, sim, { thumb });
+      expect(r.pages).toBe(2);
+      expect(fillOf(r.report[0]!), `page 1 fill (map picture: ${thumb})`).toBeGreaterThan(0.95);
+      expect(r.report[0]!.minTextPt).toBeGreaterThanOrEqual(MIN_TEXT_PT - 1e-6);
+    }
+    for (const { scene: s2, sim: m2 } of [manyShortWarnings(30), stress(30)]) {
+      const { r } = await makePdf(s2, m2);
+      expect(r.pages).toBeGreaterThanOrEqual(2);
+      expect(fillOf(r.report[0]!)).toBeGreaterThan(0.9);
+    }
+  }, 120_000);
+
+  it("keeps the diagram at least MIN_DIAGRAM_FRACTION of the room on an overflowing page 1", async () => {
+    const { scene, sim } = fixture;
+    const { r } = await makePdf(scene, sim);
+    const p = r.report[0]!;
+    const dia = p.extents.diagram;
+    expect(dia.maxY - dia.minY).toBeGreaterThanOrEqual((p.footerTop - p.extents.header.maxY) * MIN_DIAGRAM_FRACTION - 6);
+  });
+
+  it("cuts an assumption between pages only when it alone is taller than a page", async () => {
+    const { scene, sim } = twoVehicle();
+    const huge = Array.from({ length: 160 }, (_, i) => `part ${i + 1} of one very long assumption that keeps going.`).join(" ");
+    const big: SimulationResult = { ...sim, assumptions: [...sim.assumptions, { id: "huge", text: huge }] };
+    const { r, read } = await makePdf(scene, big);
+    expect(r.pages).toBeGreaterThanOrEqual(3);
+    // every piece of it is there once, in order, and it starts with its number
+    const at = Array.from({ length: 160 }, (_, i) => read.text.indexOf(`part ${i + 1} of one`));
+    at.forEach((x, i) => { expect(x, `part ${i + 1}`).toBeGreaterThan(0); if (i) expect(x).toBeGreaterThan(at[i - 1]!); });
+    expect(read.text).toContain(`${big.assumptions.length}. part 1 of one`);
+    for (const a of sim.assumptions) expect(countOf(read.text, norm(a.text))).toBe(1);
+    await expectSafePages(r);
+  }, 90_000);
 });
