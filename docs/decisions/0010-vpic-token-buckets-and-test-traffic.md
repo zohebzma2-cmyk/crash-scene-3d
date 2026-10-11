@@ -1,6 +1,6 @@
 # 0010. vPIC token buckets, per-topic busy messages, and our own live test traffic
 
-Status: Proposed, 2026-10-11 (asked for by the owner after the vehicles-step "map requests" report; the CLAUDE.md hard rule 6 wording is his to update).
+Status: Accepted, 2026-10-11 (the owner extended CLAUDE.md hard rule 6 to vPIC the same day).
 
 ## Context
 - **The bug:** typing a make and model on the live vehicles step showed "We're getting a lot of map requests right now…".
