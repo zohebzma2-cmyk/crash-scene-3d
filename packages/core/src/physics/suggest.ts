@@ -43,7 +43,7 @@ const PIN_FIX_MIN_M = 2;
  * Counts, never a clock, so the fixes found are the same on every device. Chosen so the worst benchmark scene takes under
  * 300 ms off the main thread (docs/FIXER-BENCHMARK.md).
  */
-export const FIX_LIMITS = Object.freeze({ checks: 140, units: 1_500_000 });
+export const FIX_LIMITS = Object.freeze({ checks: 220, units: 900_000 });
 /** Work units charged per vehicle for working out which hit sides each vehicle could be reached on (no placing). */
 const FACING_UNITS = 100;
 /** Kept for callers that report the old cap: the most changes judged per search. */

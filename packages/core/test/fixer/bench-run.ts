@@ -12,7 +12,11 @@ export interface CaseResult {
   readonly working: number;
   readonly offered: number;
   readonly best: string | null;
-  /** Search time, ms: the fastest of `repeat` runs (other processes on the machine only ever add time). */
+  /**
+   * Search time, ms: the fastest of `repeat` cold runs (other processes on the machine only ever add time). Each run gets
+   * its own copy of the road data, so nothing the physics remembers per road network (guides, crossings, poses) carries
+   * over from an earlier run: the time a first search on fresh roads takes.
+   */
   readonly ms: number;
 }
 
@@ -28,8 +32,9 @@ export function measureCase(c: BenchCase, repeat = 2, fixer: typeof suggestFixes
   const code = first.ok ? "draws" : first.errors[0]!.code;
   let best = Infinity, s = fixer(c.scene, roads);
   for (let i = 0; i < repeat; i++) {
+    const fresh = roads ? structuredClone(roads) : null;
     const t0 = performance.now();
-    s = fixer(c.scene, roads);
+    s = fixer(c.scene, fresh);
     best = Math.min(best, performance.now() - t0);
   }
   const working = s.fixes.filter((f) => draws(f.scene, roads)).length;
