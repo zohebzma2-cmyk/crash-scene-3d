@@ -58,7 +58,7 @@ Stores it creates (names are in `packages/proxy/src/blobs.ts`):
 | Store | Holds | Lifetime |
 |---|---|---|
 | `csd-proxy-cache` | tiles, terrain, vPIC lists (no typed or pinned data) | per entry, 7 to 30 days; kept past expiry for stale-on-error |
-| `csd-proxy-slots` | global 1 req/s slots and token buckets | tiny, bounded by the number of services |
+| `csd-proxy-slots` | global 1 req/s slots (Nominatim, Overpass) and token buckets (tiles, terrain, type-ahead, vPIC) | tiny, bounded by the number of services |
 | `csd-proxy-geo-YYYYMMDD` | address searches, crossings, Overpass data around a pin: **what people typed or pinned** | one store per UTC day; **at most 7 days** |
 | `csd-proxy-user-YYYYMMDD` | per-caller slots and buckets (hashed keys) | one store per UTC day; older ones deleted |
 
@@ -126,10 +126,27 @@ Do this on the first deploy (a deploy preview is fine), in this order.
 7. **Rate limits.**
    - Send two searches less than a second apart from one browser: the second answers `429` with JSON `{"code":"busy", ..., "retryAfterS": ...}` and a `Retry-After` header.
    - A single map view (about 20 tiles at once) loads fully, with no `429`s. Tiles and terrain use token buckets: per user burst 64, refill 16/s, plus a global cap.
+   - Vehicle lookups (vPIC) use their own token buckets: per user 8 refilling 1/s (one per request), all users 16 refilling 2/s (one per vPIC call). Typing two vehicles never sees a busy message: `e2e/live/vehicles.live.spec.ts` checks this once (see "Our own test traffic").
+   - Every `429` the proxy sends is logged as `proxy: busy topic=… service=… limiter=user|global` (no user data). Read it with `npx -y netlify-cli@27.9.0 logs --source functions --since 1h`.
    - Do not hammer the real providers to test this; two quick requests are enough.
 8. **Upstream identity.** A search works end to end (Nominatim returns a result). If a provider answers 403, the User-Agent contact in `ProviderConfig` is the first thing to check.
 9. **Privacy spot check.** Function logs contain no addresses, coordinates or raw IPs.
 10. **No source maps.** `apps/web/vite.config.ts` turns `build.sourcemap` on only for `--mode development` and for `VITE_FIXTURES=1` (the e2e build), so a production `npm run build` writes no `.map` files (checked: 0). On the deploy, `curl -sI https://<deploy-url>/assets/<the main js file>.map` must not return 200. Never set `VITE_FIXTURES=1` in the Netlify build environment: it also turns source maps on (and bundles the fixtures).
+
+## Our own test traffic
+
+The proxy's global buckets and slots are shared by everyone, and our own runs count against them. On 2026-10-10, about 115 live Playwright runs spent the same vPIC budget real people needed (docs/PROXY-BUSY.md). The rules:
+
+- **Stubbed against a deployed copy:** any e2e spec run with a `BASE_URL` that isn't this machine answers the vehicle lookups and map tiles inside the test. `/api/vehicles/*` goes to the real proxy code with a fake vPIC; `/api/geo/tile/*` gets a neutral PNG. This is `e2e/live-guard.ts`, made automatic for every spec through `e2e/helpers.ts`, and the live search specs use it too.
+- **Kept live:** search, crossing, type-ahead, Overpass and terrain, which the live checks are there to verify.
+- **One flow verifies vehicle lookups live:** `e2e/live/vehicles.live.spec.ts`. Run it once after a deploy that touches the proxy or the vehicles step.
+- **Scratch and measuring scripts against the live site** call `stubNonEssentialApi(page)` from `e2e/live-guard.ts` on every page they open. They make a handful of requests and never loop.
+- **No** `--repeat-each`, no loops, and no live suites side by side. Everything from one machine is one proxy user.
+- `E2E_LIVE_API=all` turns the guard off. It is for a deliberate full live check by the owner only. `E2E_LIVE_GUARD=1` forces the guard on, to test the guard against a local build.
+- **There is no test key or test bucket**, on purpose:
+  - it would need a Netlify secret and a bypass path in the proxy;
+  - once our runs stop calling vPIC and tiles, they fit the same per-user limits a person has;
+  - the per-user buckets are per IP and day, so our runs only ever spend our own per-user budget.
 
 ## Known limits
 
