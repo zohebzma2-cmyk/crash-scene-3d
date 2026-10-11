@@ -11,3 +11,4 @@ One short record per judgment call made in this build. Each says what was decide
 - [0007](0007-review-depth-by-risk.md) Full Opus review only for physics and security-sensitive code; visual changes by screenshot.
 - [0008](0008-feature-freeze.md) Feature freeze after impact and aftermath; new ideas go to README "Next version".
 - [0009](0009-fixer-learning.md) The one-tap fixer learns on the device only (kinds of fix picked, local, clearable) plus a regression corpus in the repo; cross-user learning only as a future opt-in.
+- [0010](0010-vehicle-images.md) Vehicle photos, 3D models and maker logos: CarImages through its catalog (never `/image`), logos from CarImages then logo.dev's API (not its CDN), keys in headers only, own buckets and a daily soft cap, every failure a quiet fallback.

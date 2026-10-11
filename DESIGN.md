@@ -348,6 +348,7 @@ Four steps, all reading and writing one shared scene state. Back never loses wor
 ### Step 2 — Which vehicles were involved?
 - A (your car, prefilled from the claim, editable) and B. **Add another vehicle** up to D; remove any but A while more than two remain. Letters re-pack in order.
 - **Vehicle**: year, make, model typed directly. Makes and models come from NHTSA vPIC (makes for passenger cars, MPVs, trucks and motorcycles; models by make and model year). Picking a model fills the type from vPIC's vehicle type; weight and size come from the preset table (section 16). If vPIC fails or doesn't know the model, the claimant picks the type by hand.
+- **Logo and photo** (round B, decision 0010): the maker's logo sits before the card's year/make/model line (`--size-icon` high) once the make is one the list knows; otherwise our car icon. A stock photo of the picked model (3:2, `--space-16` high on desktop, `--space-12` on phones) sits at the right of the card header once a model from the list is picked: our type icon with a spinner while it loads, and just our type icon when there is no photo. Never any error text for either. When a logo.dev logo is shown, "Logos provided by Logo.dev" (a link, `--text-xs`, tertiary text) appears under the cards.
 - **What was it doing?** Going straight, turning left, turning right, backing up, parked. Parked hides speed.
 - **Which way was it going / facing?** N, E, S, W. The arrow and caption update ("Facing east, backing up on Maple Ave").
 - **About how fast at the moment of the crash?** mph. This is the speed at impact (decided 2026-10-09). **Not sure** → posted limit ±5 mph, limit entered by the claimant or 25 mph if unknown (said in every place the speed appears).
@@ -563,13 +564,15 @@ export const mapProvider = {
 ## 11. Data rules
 
 - Repo examples, screenshots and design frames use made-up claims and people. Test searches use public landmarks only.
-- No API keys: OSM tiles, Nominatim, Overpass, Terrarium terrain and NHTSA vPIC need none.
+- No API keys in the browser: OSM tiles, Nominatim, Overpass, Terrarium terrain and NHTSA vPIC need none; the CarImages and logo.dev keys are server-side secrets of the proxy (decision 0010).
 - **The browser calls only its own origin** (`/api/*`). The proxy then calls, and nothing else:
   1. OSM tiles (the area in view).
   2. Photon type-ahead (the typed text and a bias point rounded to about 1 km) and Nominatim search as the on-submit fallback (the typed text only).
   3. Overpass (roads, buildings and parking around the pin, and named streets for an intersection search).
   4. AWS Terrarium elevation tiles (the area around the pin).
   5. NHTSA vPIC (model year and make text only; makes list).
+  6. CarImages (make, model and model year only) for the stock photo and the 3D model, and its brand logo.
+  7. logo.dev (the maker's web domain, or the make name for its search) for a logo CarImages doesn't have.
 - Google Fonts is a prototype convenience; the app self-hosts its fonts.
 
 ---
