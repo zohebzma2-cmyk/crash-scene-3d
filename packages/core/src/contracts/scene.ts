@@ -3,6 +3,7 @@
 // here with messages a normal person can read. Nothing from a scene is ever
 // rendered as HTML: the app shows these strings as text only.
 import { z } from "zod";
+import { MAX_PAINT_NAME, PAINT_HEX } from "../vehicle-color";
 
 // zod compiles a faster parser with `new Function` and probes for it first. Under a strict CSP (no
 // 'unsafe-eval') that probe is blocked and reported as a violation even though zod catches it. Our
@@ -119,6 +120,16 @@ const VehicleSchema = z.object({
   /** Braking before impact entered by the claimant. Default no braking (an assumption). */
   braking: z.boolean({ error: "Braking should be yes or no." }).default(false),
   zone: z.enum(ZONES, { error: "Pick where the vehicle was hit." }),
+  /**
+   * The paint the claimant picked (round B; additive, so older v3 files still load). Absent or null =
+   * "Not sure": the body is drawn in the vehicle's token colour. Never part of the vehicle's identity:
+   * letters and outlines stay in the token colour. Absent keys are left out of the canonical JSON, so
+   * a scene without a paint keeps the fingerprint it always had.
+   */
+  color: z.object({
+    name: text("The colour name", MAX_PAINT_NAME).min(1, { error: "The colour needs a name." }),
+    hex: z.string({ error: "The colour should look like #b3151b." }).regex(PAINT_HEX, { error: "The colour should look like #b3151b." }),
+  }, { error: "The colour isn't readable." }).nullable().optional(),
 }, { error: "Each vehicle needs its details filled in." });
 
 const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
