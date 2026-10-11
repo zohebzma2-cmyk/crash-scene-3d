@@ -53,7 +53,7 @@ test.describe("full flow on the default claim", () => {
     // The gate blocks until every vehicle has a direction, with no way around it.
     await page.getByRole("button", { name: /See the recreation/ }).click();
     const gate = page.getByTestId("gate-panel");
-    await expect(gate).toContainText("Pick which way your car (A) was going.");
+    await expect(gate).toContainText("Pick which way your car was going.");
     await expect(gate).toContainText("Pick which way vehicle B was going.");
     await expect(gate.getByRole("button", { name: "See it anyway" })).toHaveCount(0);
     await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
@@ -61,7 +61,7 @@ test.describe("full flow on the default claim", () => {
     await a.getByRole("radio", { name: "Northbound on Main Street" }).click();
     await expect(a.locator(".dir-caption")).toContainText(/north/i);
     await page.getByRole("button", { name: /See the recreation/ }).click();
-    await expect(gate).not.toContainText("your car (A)");
+    await expect(gate).not.toContainText("your car was going");
     await expect(gate).toContainText("Pick which way vehicle B was going.");
     await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
 

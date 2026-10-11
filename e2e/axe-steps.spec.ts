@@ -61,6 +61,10 @@ for (const theme of THEMES) {
 
       await page.locator("#vehicle-A").getByRole("radio", { name: "Northbound on Main Street" }).click();
       await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
+      // The default claim (A hit on the left) doesn't fit together: the gate offers its one-tap fixes.
+      await page.getByRole("button", { name: /See the recreation/ }).click();
+      await expect(page.getByTestId("gate-fixes").locator("button.refusal-fix").first()).toBeVisible({ timeout: 30_000 });
+      found.push(...await axe(page, "vehicles (gate panel with one-tap fixes)"));
       await page.locator("#vehicle-A").getByRole("radio", { name: "Hit on the right side", exact: true }).click();
       await toReview(page);
       await waitForViewer(page);
