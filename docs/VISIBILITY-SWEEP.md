@@ -151,21 +151,21 @@ C6b 7, C7 1) and in 174 phone scenes (C5 158, C4 87, C5b 12, C6a 7, C6b 7, C7 1)
 - `random:20261010#770`: A stops against a building, and from Wide's south-south-east side the building is in front of it
   (93% of sight lines blocked, 66 of 496 pixels). It is rare: one scene.
 
-## Proposed fixes (not implemented; for Zoheb to choose)
+## Proposed fixes (not implemented; for the owner to choose)
 
 | # | Fix | Where | Needs a DESIGN.md change? |
 |---|---|---|---|
 | C1 | Fixed cameras follow time when a vehicle would leave the safe frame. While the person hasn't moved the camera, Top and Wide refit to impact + rest + **the vehicles' current poses** whenever one would fall outside, easing back to the crash framing by impact. The alternative is to frame the start poses from the outset, which keeps the camera still but makes the crash much smaller on highways. | `math.ts` `framingPoints`/`cameraFor`, `Viewer.tsx` `Rig` (key at `:129`) | Yes, §7 framing rule |
 | C2 | Aftermath is the final-rest picture, so moving the time off final rest leaves it (back to Wide), the same way picking a preset leaves it. The alternative is to include the current poses in its box. | `ReviewStep.tsx` `chooseView` and timeline seek/play, or `aftermath.ts` | Yes, §7 Aftermath |
-| C3 | Driver views keep every vehicle in frame. The yaw stays on the driver's heading; the distance and elevation come from `fitDistance` over all vehicles' current boxes. The eye never goes inside or just above another body (raise it over the follower in a rear-end). Elevation rises until the sight line to the other vehicle clears the building footprints and heights, a pure-TS 2.5D check. If Zoheb prefers a true driver's perspective, the sweep can exempt "other vehicle" there instead. | `math.ts:194-203` | Yes, §7 driver views |
-| C4 | (a) Never clamp a preset: set OrbitControls `maxDistance` from the preset's own distance, at least the current 900. (b) Frame only the crash itself when the slide is very long: impact, the vehicles at the current time and a bounded part of the slide, with a floor on vehicle size (say 12 px long). The rest of a long slide is followed in time rather than shrunk to fit. (c) Separately, Zoheb may want the physics or schema to cap the 1–2.5 km slides; that is out of viewer scope. | `Viewer.tsx:540`, `math.ts` framing, `aftermath.ts` | (b) yes |
+| C3 | Driver views keep every vehicle in frame. The yaw stays on the driver's heading; the distance and elevation come from `fitDistance` over all vehicles' current boxes. The eye never goes inside or just above another body (raise it over the follower in a rear-end). Elevation rises until the sight line to the other vehicle clears the building footprints and heights, a pure-TS 2.5D check. If the owner prefers a true driver's perspective, the sweep can exempt "other vehicle" there instead. | `math.ts:194-203` | Yes, §7 driver views |
+| C4 | (a) Never clamp a preset: set OrbitControls `maxDistance` from the preset's own distance, at least the current 900. (b) Frame only the crash itself when the slide is very long: impact, the vehicles at the current time and a bounded part of the slide, with a floor on vehicle size (say 12 px long). The rest of a long slide is followed in time rather than shrunk to fit. (c) Separately, the owner may want the physics or schema to cap the 1–2.5 km slides; that is out of viewer scope. | `Viewer.tsx:540`, `math.ts` framing, `aftermath.ts` | (b) yes |
 | C5 | Fit into the **safe area**: the canvas minus the overlay rectangles the labels already measure (chips, HUD, caption, and the phone action bar when it overlaps). Fit to its size and shift the target, or use `camera.setViewOffset`, so the crash centers in it. | `math.ts` fit functions take an inset; `Viewer.tsx` passes `measureObstacles` rects | §7: "fills 60–70% of the *unobstructed* view" |
 | C6 | Use one height function everywhere: `heightAt` clamps to the grid edge, as the ground mesh does, or vehicles, paths, ring and cameras sample the ground surface itself. Tilt each body to the plane through its four wheel heights, or at least lift it to the highest corner. | `math.ts:23-33`, `vehicle-view.tsx` | No |
 | C7 | When a building hides a vehicle in a fixed view, try the other side or a steeper elevation, picking the azimuth with clear sight lines. The alternative is to fade that building. | `math.ts` Wide/Aftermath azimuth | No |
 
 Once fixed, the sweep becomes the permanent test. The gate comes off, `check.sh` runs the small default, and a deep run
 (`SWEEP_N=300`) runs before releases. The limits for start times and for "other vehicle in a driver view" follow whatever
-Zoheb decides for C1–C3.
+the owner decides for C1–C3.
 
 ## Harness
 
@@ -183,4 +183,4 @@ Zoheb decides for C1–C3.
 
 Run notes: the machine was heavily loaded during the deep run. Four desktop batches (scenes 257–272) hit the test timeout
 and were rerun on their own; their rows replace the partial ones. Raw data, the analysis scripts and full-size screenshots
-are outside the repo (scratchpad `sweep/`).
+were kept outside the repo.

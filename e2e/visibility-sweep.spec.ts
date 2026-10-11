@@ -18,7 +18,7 @@
 //   no-pixels      it is in frame, yet hiding it changes under 15% of the pixels inside its projected box
 //
 // SWEEP=1 npx playwright test e2e/visibility-sweep.spec.ts          (the small default: examples + SWEEP_N=6 random)
-// SWEEP_N=300 npx playwright test e2e/visibility-sweep.spec.ts   (a deep run, about an hour on SwiftShader)
+// SWEEP_N=300 npx playwright test e2e/visibility-sweep.spec.ts   (a deep run, about 70 min with 4 workers on SwiftShader)
 // SWEEP_SEED replays another seed; SWEEP_PIXELS=0 skips the pixel check; SWEEP_BATCH sets scenes per page (default 4).
 // SWEEP_OUT=<dir> writes every measurement (JSONL) and failure screenshots there.
 import { mkdirSync, appendFileSync, writeFileSync } from "node:fs";
@@ -80,13 +80,13 @@ async function openScene(page: Page, s: SweepScene, onApp: boolean): Promise<"ok
 
 interface Row { scene: string; width: number; view: View; when: When; vehicle: string; failures: Failure[]; probe: Omit<VehicleProbe, "hull">; pixels?: { changed: number; inHull: number } }
 
-const scenes = sweepScenes();
+// Opt-in until the fixes in docs/VISIBILITY-SWEEP.md land (it fails today, by design: it reproduces the bug). Then this gate
+// goes and check.sh runs the small default sweep on every push. Scenes are only built when the sweep runs.
+const ENABLED = process.env["SWEEP"] === "1" || Boolean(process.env["SWEEP_N"]);
+
+const scenes = ENABLED ? sweepScenes() : [];
 const batches: SweepScene[][] = [];
 for (let i = 0; i < scenes.length; i += BATCH) batches.push(scenes.slice(i, i + BATCH));
-
-// Opt-in until the fixes in docs/VISIBILITY-SWEEP.md land (it fails today, by design: it reproduces the bug). Then this gate
-// goes and check.sh runs the small default sweep on every push.
-const ENABLED = process.env["SWEEP"] === "1" || process.env["SWEEP_N"] !== undefined;
 
 test.describe("visibility sweep", () => {
   test.skip(!ENABLED, "opt-in for now: SWEEP=1 (or SWEEP_N=<n>)");
