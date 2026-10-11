@@ -3,7 +3,7 @@
 //
 // It replaces React.lazy because lazy() keeps a rejected import forever. A retry needs a new import(), and
 // Chromium also caches a failed module fetch by URL, so a retry imports the same file under a fresh query
-// (the URL is in Chromium's error message). WebKit fetches it again by itself.
+// (the URL is in Chromium's error message, or on the preload link Vite adds for the chunk).
 import { useSyncExternalStore } from "react";
 
 type ViewerModule = typeof import("./Viewer");
@@ -35,17 +35,25 @@ function start(load: () => Promise<ViewerModule>): Promise<ViewerModule> {
   return p;
 }
 
-/** Starts loading the 3D code (once); safe to call early and often. */
+/** Starts loading the 3D code (once); safe to call early and often. After a failure only Retry starts it again. */
 export function loadViewer(): Promise<ViewerModule> {
-  if (promise && status !== "failed") return promise;
-  return start(() => import("./Viewer"));
+  return promise ?? start(() => import("./Viewer"));
 }
 
-/** After a failure: load it again, past the browser's cached failure. */
+/** The built chunk's URL from the preload link Vite added for it (WebKit's import error doesn't name the file). */
+function preloadedChunkUrl(): string | null {
+  if (typeof document === "undefined") return null;
+  for (const l of document.querySelectorAll<HTMLLinkElement>('link[href*="/Viewer-"]')) {
+    if (/\/Viewer-[^/?]+\.js$/.test(new URL(l.href, location.href).pathname)) return l.href;
+  }
+  return null;
+}
+
+/** After a failure: load it again, past the browser's cached failure (a fresh query on the same file). */
 export function retryViewer(): Promise<ViewerModule> {
   if (status !== "failed") return loadViewer();
   attempts += 1;
-  const url = failedUrl;
+  const url = failedUrl ?? preloadedChunkUrl();
   return start(url ? () => import(/* @vite-ignore */ `${url}${url.includes("?") ? "&" : "?"}retry=${attempts}`) as Promise<ViewerModule> : () => import("./Viewer"));
 }
 
