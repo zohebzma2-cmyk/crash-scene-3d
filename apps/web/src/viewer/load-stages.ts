@@ -14,6 +14,8 @@ export interface Stage {
   readonly count?: { readonly done: number; readonly total: number };
   /** Why it failed, in plain words (shown as text). */
   readonly message?: string;
+  /** The same, in a few words, for narrow screens (the full message stays for screen readers). */
+  readonly short?: string;
 }
 
 /** Why the 3D view failed, when it did. */
@@ -44,6 +46,14 @@ export const FAILURE_TEXT = {
   lost: "The 3D view stopped, so this is the top-down diagram.",
 } as const;
 
+/** The failures in a few words, for a phone-width banner. */
+export const FAILURE_SHORT = {
+  map: "No map data, so no roads.",
+  models: "3D view didn't load.",
+  webgl: "3D view couldn't start.",
+  lost: "3D view stopped.",
+} as const;
+
 const ACTIVE_TEXT: Readonly<Record<StageId, string>> = {
   map: "Loading the map data",
   terrain: "Loading the terrain",
@@ -55,7 +65,7 @@ export const HEADLINE = "Building the scene…";
 
 export function loadStages(i: LoadInputs): Stage[] {
   const mapStatus: StageStatus = i.map === "loading" ? "active" : i.map === "ready" ? "done" : i.map === "none" ? "skipped" : "failed";
-  const map: Stage = { id: "map", label: STAGE_LABELS.map, status: mapStatus, ...(mapStatus === "failed" ? { message: FAILURE_TEXT.map } : {}) };
+  const map: Stage = { id: "map", label: STAGE_LABELS.map, status: mapStatus, ...(mapStatus === "failed" ? { message: FAILURE_TEXT.map, short: FAILURE_SHORT.map } : {}) };
 
   // Terrain comes after the roads in the same request chain: waiting until they are in, then counting tiles.
   let terrainStatus: StageStatus;
@@ -66,10 +76,10 @@ export function loadStages(i: LoadInputs): Stage[] {
   const terrain: Stage = { id: "terrain", label: STAGE_LABELS.terrain, status: terrainStatus, ...(count && terrainStatus === "active" ? { count } : {}) };
 
   const modelsStatus: StageStatus = i.models === "loading" ? "active" : i.models === "ready" ? "done" : i.models === "none" ? "skipped" : i.models === "failed" ? "failed" : "waiting";
-  const models: Stage = { id: "models", label: STAGE_LABELS.models, status: modelsStatus, ...(modelsStatus === "failed" ? { message: FAILURE_TEXT.models } : {}) };
+  const models: Stage = { id: "models", label: STAGE_LABELS.models, status: modelsStatus, ...(modelsStatus === "failed" ? { message: FAILURE_TEXT.models, short: FAILURE_SHORT.models } : {}) };
 
   let scene: Stage;
-  if (typeof i.scene === "object") scene = { id: "scene", label: STAGE_LABELS.scene, status: "failed", message: FAILURE_TEXT[i.scene.failed] };
+  if (typeof i.scene === "object") scene = { id: "scene", label: STAGE_LABELS.scene, status: "failed", message: FAILURE_TEXT[i.scene.failed], short: FAILURE_SHORT[i.scene.failed] };
   else if (i.models === "none") scene = { id: "scene", label: STAGE_LABELS.scene, status: "skipped" };
   else scene = { id: "scene", label: STAGE_LABELS.scene, status: i.scene === "ready" ? "done" : i.scene === "building" ? "active" : "waiting" };
 

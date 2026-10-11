@@ -204,4 +204,8 @@ Starting the 3D chunk in parallel with the main chunk would need a separate tiny
 - **The boxes:** the loading and failure boxes sit top left with the notice, clear of the crash in the middle. When only the first frame is left (a cached revisit), the loading box waits 300 ms, so it doesn't flash.
 - **Focus:** a step change focuses the new step's title even when its code is still loading (it waits for the title).
 - **Background preload:** Save's code (pdf-lib) loads 2 s after the picture is up, in idle time, and leaving Review cancels it. This keeps its evaluation off a screen the person has already moved to.
+  - **Correction (re-review):** the preload was a contributor to the map.spec:70 failure, not the cause. The reviewer cancelled the preload and the failure still reproduced. The cause was the test's fixed 500 ms wait after "+": the zoom does reach 19, just later under load. The test now polls the zoom and waits for the map's tiles to settle.
+  - **No rIC timeout:** the preload's `requestIdleCallback` no longer has a timeout, which had forced it in the middle of the first visit's approach (+115 ms stall at 4× CPU). It also never starts while the timeline is playing; playing again cancels one that hasn't started.
 - **The stage name:** "3D models" is now "3D view" (it is the code that draws the 3D view).
+- **Failure banner on narrow screens:** under 480 px it says a few words ("3D view didn't load.") with Retry and is docked at the picture's bottom edge, clear of the crash. The full sentence stays for screen readers.
+- **Retry clears `data-ready`** until the new 3D view has drawn.

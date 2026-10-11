@@ -26,6 +26,8 @@ class ViewerBoundary extends Component<{ onError: () => void; children: ReactNod
 export interface SceneViewProps extends ViewerSlotProps {
   /** Phones keep the lines and outlines but show the numbers in the Measure tab, not as pills over the small view. */
   readonly phone: boolean;
+  /** Retry started building the 3D view again: the picture is not ready any more (clears data-ready). */
+  readonly onRebuild?: () => void;
 }
 
 type SceneState = "building" | "ready" | { failed: SceneFailure };
@@ -39,7 +41,7 @@ function readyGate(): ReadyGate {
   return gate;
 }
 
-export const SceneView = forwardRef<ViewerHandle | null, SceneViewProps>(function SceneView({ phone, onSelectVehicle, ...props }, ref) {
+export const SceneView = forwardRef<ViewerHandle | null, SceneViewProps>(function SceneView({ phone, onSelectVehicle, onRebuild, ...props }, ref) {
   const [webgl] = useState(hasWebGL);
   const chunk = useViewerModule();
   useEffect(() => { if (webgl) void loadViewer().catch(() => undefined); }, [webgl]);
@@ -65,8 +67,8 @@ export const SceneView = forwardRef<ViewerHandle | null, SceneViewProps>(functio
   const onBoundary = useCallback(() => setScene({ failed: "webgl" }), []);
   const onLost = useCallback(() => setScene({ failed: "lost" }), []);
   // A retry waits afresh (only if the last wait is over: one still open is the one a save may be holding).
-  const retryScene = useCallback(() => { inner.current = null; if (ready.current?.settled) ready.current = readyGate(); setScene("building"); setAttempt((n) => n + 1); }, []);
-  const retryChunk = useCallback(() => { if (ready.current?.settled) ready.current = readyGate(); void retryViewer().catch(() => undefined); }, []);
+  const retryScene = useCallback(() => { inner.current = null; if (ready.current?.settled) ready.current = readyGate(); onRebuild?.(); setScene("building"); setAttempt((n) => n + 1); }, [onRebuild]);
+  const retryChunk = useCallback(() => { if (ready.current?.settled) ready.current = readyGate(); onRebuild?.(); void retryViewer().catch(() => undefined); }, [onRebuild]);
 
   useImperativeHandle(ref, () => ({
     captureStill: async (t, view, size) => {

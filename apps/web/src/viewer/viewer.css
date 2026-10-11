@@ -134,3 +134,16 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 
 /* The skeleton box shown before the scene exists (the example and its roads are on their way). */
 .viewer-canvas.is-skeleton { min-height: var(--size-viewer-min-h-mobile); }
+
+/* The failure banner: top left with the other boxes on wide screens; on narrow ones it is docked at the picture's
+   bottom edge, in a few words, so the crash and the labels in the middle stay in view. */
+.viewer-failure {
+  position: absolute; left: var(--space-3); top: calc(var(--space-3) + var(--size-touch) + var(--space-4)); z-index: var(--z-controls);
+  box-sizing: border-box; width: min(calc(100% - var(--space-6)), var(--size-panel-w));
+}
+.viewer-words-short { display: none; }
+@media (max-width: 479px) {
+  .viewer-failure { top: auto; bottom: var(--space-2); left: var(--space-2); width: calc(100% - var(--space-4)); }
+  .viewer-words-long { position: absolute; width: var(--size-border); height: var(--size-border); overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .viewer-words-short { display: inline; }
+}

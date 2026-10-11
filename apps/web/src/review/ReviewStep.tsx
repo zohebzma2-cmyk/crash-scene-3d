@@ -153,9 +153,13 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
   /** Set once the 3D view has drawn its first frame (or the 2D fallback is shown): e2e and assistive tech can wait on it. */
   const [viewerReady, setViewerReady] = useState(false);
   const markReady = useCallback(() => setViewerReady(true), []);
+  const markRebuilding = useCallback(() => setViewerReady(false), []);
   // Once the picture is up (or the diagram stands in for it), the next screens' code (save, or back to edit)
   // loads in the background when the page is idle; leaving Review first cancels it.
-  useEffect(() => (viewerReady ? preloadStepsWhenIdle(["export", "vehicles"], NEXT_STEPS_DELAY_MS) : undefined), [viewerReady]);
+  // Never while the timeline plays (the first visit's approach, or the person's own playback): a long module
+  // evaluation would stall it. Playing again cancels a preload that hasn't started yet.
+  const playing = timeline.playing;
+  useEffect(() => (viewerReady && !playing ? preloadStepsWhenIdle(["export", "vehicles"], NEXT_STEPS_DELAY_MS) : undefined), [viewerReady, playing]);
   const [saving, setSaving] = useState(false);
 
   // The export stills are taken here, while the 3D view exists: the moment of impact (Wide camera) and final rest (the Aftermath view).
@@ -207,7 +211,7 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
             showLabels={labels} showMeasurements={measure} showPaths={paths} units={units} reducedMotion={reduced}
             measureGroups={groups} measureTool={twoPoint} measurePoints={points} onMeasurePoint={addPoint}
             onSelectVehicle={(id) => { setSelected(id); setTab("vehicles"); }}
-            onReady={markReady}
+            onReady={markReady} onRebuild={markRebuilding}
           />
           <RadioGroup className="view-controls" aria-label="View" values={shownViews.map((v) => v.id)} value={shownView === "aftermath" ? null : shownView} onChange={chooseView}>
             {shownViews.map((v) => <Radio key={v.id} value={v.id} className="seg">{v.label}</Radio>)}

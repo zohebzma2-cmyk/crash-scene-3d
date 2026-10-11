@@ -457,6 +457,7 @@ Four steps, all reading and writing one shared scene state. Back never loses wor
   - "We couldn't load the 3D view. Check your connection and try again." Retry loads the code again, and reloads the page on a second failure.
   - "The 3D view couldn't start in this browser, so this is the top-down diagram."
   - "The 3D view stopped, so this is the top-down diagram." (the graphics were reset)
+  - Under 480 px the banner is docked at the picture's bottom edge and says a few words ("3D view didn't load.", "3D view couldn't start.", "3D view stopped."), with the full sentence kept for screen readers.
 - **Map data notice.** When the roads can't be loaded, the picture is drawn without roads, and a warning-tint notice (`role="alert"`) says "We couldn't load the map data, so the picture has no roads." with Retry. The vehicle labels keep clear of it.
 - **An example that can't be opened** says "We couldn't open the example. Check your connection and try again." with Retry.
 

@@ -57,7 +57,11 @@ test("@xb shows 'Building the scene…' with its stages before the scene is read
 
 test("@xb the 3D code failing to load says so with Retry over the diagram, and Retry recovers", async ({ page, pageErrors }) => {
   let failing = true;
-  await page.route(VIEWER_CHUNK, (route) => (failing ? route.fulfill({ status: 500, body: "" }) : route.continue()));
+  let release = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  // The first fetch fails; the retry's fetch is held until released, so the rebuilding state can be checked.
+  await page.route(VIEWER_CHUNK, async (route) => { if (failing) return route.fulfill({ status: 500, body: "" }); await gate; return route.continue(); });
+  await page.route(/\/assets\/Viewer-[^/?]+\.js\?retry=/, async (route) => { await gate; return route.continue(); });
   await page.goto(EXAMPLE);
   await expect(failure(page)).toBeVisible();
   await expect(failure(page)).toHaveAttribute("role", "alert");
@@ -66,8 +70,21 @@ test("@xb the 3D code failing to load says so with Retry over the diagram, and R
   await expect(loading(page)).toHaveCount(0);
   // The diagram is the picture now, so the picture counts as ready.
   await expect(page.locator(".viewer-canvas")).toHaveAttribute("data-ready", "true");
+  // Narrow screens: a few words, docked at the picture's bottom edge (the crash in the middle stays in view).
+  if ((page.viewportSize()?.width ?? 1440) < 480) {
+    await expect(failure(page).locator(".viewer-words-short")).toBeVisible();
+    await expect(failure(page).locator(".viewer-words-short")).toHaveText("3D view didn't load.");
+    const banner = (await failure(page).boundingBox())!;
+    const picture = (await page.locator(".viewer-canvas").boundingBox())!;
+    expect(picture.y + picture.height - (banner.y + banner.height)).toBeLessThan(40);
+  } else {
+    await expect(failure(page).locator(".viewer-words-short")).toBeHidden();
+  }
   failing = false;
   await failure(page).getByRole("button", { name: "Retry" }).click();
+  // Building again: the picture is not ready until the new 3D view has drawn.
+  await expect(page.locator(".viewer-canvas")).not.toHaveAttribute("data-ready", "true");
+  release();
   await waitForViewer(page);
   await expect(failure(page)).toHaveCount(0);
   expect(pageErrors()).toEqual([]);

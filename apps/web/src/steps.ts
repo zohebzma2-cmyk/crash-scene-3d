@@ -47,7 +47,8 @@ export function preloadStepsWhenIdle(steps: readonly string[], delayMs: number):
   let idle: number | null = null;
   const run = () => { for (const s of steps) preloadStep(s); };
   const timer = window.setTimeout(() => {
-    if (typeof requestIdleCallback === "function") idle = requestIdleCallback(run, { timeout: delayMs });
+    // No rIC timeout: a forced run could land mid-animation. Without rIC (Safari before 18), after the delay.
+    if (typeof requestIdleCallback === "function") idle = requestIdleCallback(run);
     else run();
   }, delayMs);
   return () => { window.clearTimeout(timer); if (idle !== null) cancelIdleCallback(idle); };

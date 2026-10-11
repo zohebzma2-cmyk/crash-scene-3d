@@ -99,18 +99,23 @@ export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScen
 
   if (!notice && !failure && !showBox) return null;
   return (
+    <>
+    {failure ? (
+      // Its own place: top left like the rest on wide screens, docked at the picture's bottom edge on narrow ones.
+      <div className="viewer-failure">
+        <div className="viewer-status is-error" role="alert" data-testid="viewer-error">
+          <p className="viewer-status-title"><Icon name="warning" className="icon-sm" /><Words s={failure} /></p>
+          <button type="button" className="btn btn-secondary viewer-retry" onClick={() => retry(failure)}><Icon name="restart" className="icon-sm" />Retry</button>
+        </div>
+      </div>
+    ) : null}
+    {notice || showBox ? (
     <div className="viewer-overlays">
       {notice ? (
         <div className="viewer-notice" role="alert" data-testid="viewer-notice">
           <Icon name="warning" className="icon-sm" />
-          <span>{notice.message}</span>
+          <Words s={notice} />
           <button type="button" className="btn btn-quiet viewer-retry" onClick={() => retry(notice)}>Retry</button>
-        </div>
-      ) : null}
-      {failure ? (
-        <div className="viewer-status is-error" role="alert" data-testid="viewer-error">
-          <p className="viewer-status-title"><Icon name="warning" className="icon-sm" />{failure.message}</p>
-          <button type="button" className="btn btn-secondary viewer-retry" onClick={() => retry(failure)}><Icon name="restart" className="icon-sm" />Retry</button>
         </div>
       ) : null}
       {showBox ? (
@@ -125,5 +130,17 @@ export function ViewerStatus({ scene, webgl, exampleLoading = false, onRetryScen
         </div>
       ) : null}
     </div>
+    ) : null}
+    </>
+  );
+}
+
+/** A failure's words: the full sentence, and on narrow screens a short one shown in its place (the full one stays for screen readers). */
+function Words({ s }: { s: Stage }) {
+  return (
+    <span className="viewer-words">
+      <span className="viewer-words-long">{s.message}</span>
+      {s.short ? <span className="viewer-words-short" aria-hidden="true">{s.short}</span> : null}
+    </span>
   );
 }
