@@ -3,7 +3,7 @@
 // formatter; nothing here holds a measurement of its own.
 import {
   DEFAULT_LIMIT_MPH, MPH_TO_MPS, PLACE_WORDS, PRESETS, RANGE_HALF_MPH, ROAD_WORDS, ZONE_WORDS,
-  directionCaption, formatDistance, formatMassLb, formatOccurred, formatSpeed, formatStamp, vehicleName,
+  directionCaption, formatDistance, formatMassLb, formatOccurred, formatSpeed, formatStamp, paintLabel, paintOf, vehicleName,
 } from "@csd/core";
 import type { ExportStamp, Scene, SceneVehicle, SimulationResult, VehicleResult } from "@csd/core";
 import { about } from "./about";
@@ -22,6 +22,8 @@ export interface VehicleRow {
   readonly brakingNote: string | null;
   readonly speedNote: string | null;
   readonly hitOn: string;
+  /** The picked paint (its printable name and hex), or null for Not sure. Fills the body in the pictures and gets a swatch in the PDF table. */
+  readonly paint: { readonly label: string; readonly hex: string } | null;
 }
 
 export interface MeasureRow {
@@ -183,6 +185,7 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
       speed: v.action === "parked" ? formatSpeed(0, { both: true }).text : about(formatSpeed(rv.speedAtImpactMps, { both: true }).text),
       brakingNote: brakingNote(v, rv),
       speedNote: speedNote(v, rv),
+      paint: (() => { const p = paintOf(v); return p ? { label: printable(paintLabel(p)), hex: p.hex.toLowerCase() } : null; })(),
       hitOn: zoneUsed.some((w) => w.vehicleIds.includes(v.id)) ? `${cap(ZONE_WORDS[v.zone])} as entered; the picture uses another side (see notes)` : cap(ZONE_WORDS[v.zone]),
     };
   });
@@ -243,4 +246,11 @@ export function fileClaim(claimNumber: string): string {
   const s = printable(claimNumber).replace(/[^A-Za-z0-9._-]+/g, "-").replace(/\.{2,}/g, ".").replace(/^[-.]+|[-.]+$/g, "");
   // Cut to length, then trim again: the cut can leave a trailing "." or "-" (a name ending in "." would give "..json").
   return s.slice(0, 60).replace(/[-.]+$/, "") || "scene";
+}
+
+/** Each painted vehicle's hex by letter, for the diagram planner (vehicles left as Not sure are absent). */
+export function paintByLetter(model: Pick<ReportModel, "vehicles">): Readonly<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const v of model.vehicles) if (v.paint) out[v.id] = v.paint.hex;
+  return out;
 }
