@@ -30,6 +30,8 @@ export class PdfCanvas {
   readonly extents: Record<Region, Extent> = { header: emptyExtent(), body: emptyExtent(), diagram: emptyExtent(), footer: emptyExtent() };
   /** Text sizes drawn, in points, with the region they belong to. */
   readonly textSizes: Array<{ region: Region; size: number; text: string }> = [];
+  /** Every run of text drawn, with its glyph box (top-left origin, axis-aligned around a rotated run). */
+  readonly texts: Array<{ region: Region; text: string; box: { x: number; y: number; w: number; h: number } }> = [];
   /** Characters the fonts don't have (drawn as "?"). */
   readonly missing = new Set<string>();
   /** Where each picture was shown on the page (its visible box after clipping). */
@@ -154,8 +156,12 @@ export class PdfCanvas {
       const th = (run.rotateDeg * Math.PI) / 180;
       const ux = Math.cos(th), uy = Math.sin(th);
       const corners: Pt[] = [[0, -p.size * 0.75], [w, -p.size * 0.75], [w, p.size * 0.2], [0, p.size * 0.2]].map((c) => [run.x + c[0]! * ux - c[1]! * uy, run.y + c[0]! * uy + c[1]! * ux] as Pt);
-      this.note(Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1])));
-      if (shown.trim()) this.textSizes.push({ region: this.region, size: p.size, text: shown });
+      const [x0, y0, x1, y1] = [Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1]))];
+      this.note(x0, y0, x1, y1);
+      if (shown.trim()) {
+        this.textSizes.push({ region: this.region, size: p.size, text: shown });
+        this.texts.push({ region: this.region, text: shown, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } });
+      }
     }
   }
 

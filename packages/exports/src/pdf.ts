@@ -14,7 +14,7 @@ import { planDiagram, planPinStreetLabels, planRoadOutline, scaleBars, type Box 
 import { thumbnailMetersPerPixel } from "./png-meta";
 import { roundedRectPts, wrapText, type FontKey, type Pt } from "./draw";
 import { WORDMARK, drawMarkPdf, lockup } from "./logo";
-import type { ReportModel } from "./model";
+import { HIT_ON_MARK, type ReportModel } from "./model";
 import { PdfCanvas, type Extent, type PdfFonts, type Region } from "./pdf-canvas";
 import { PX_TO_PT, color, px, vehicleColor } from "./style";
 
@@ -86,6 +86,10 @@ export interface PdfPageReport {
   readonly north?: { readonly arrow: { x: number; y: number; w: number; h: number }; readonly chip: { x: number; y: number; w: number; h: number }; /** The diagram box, and what must stay clear of the chip: vehicles, run-up and impact ring. */ readonly box: { x: number; y: number; w: number; h: number }; readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }> };
   /** The street names drawn at the pin on the map picture or the outline (their boxes include the halo). */
   readonly mapLabels?: ReadonlyArray<{ text: string; rotateDeg: number; box: { x: number; y: number; w: number; h: number } }>;
+  /** Every run of text drawn on the page, with its glyph box. */
+  readonly texts: ReadonlyArray<{ region: Region; text: string; box: { x: number; y: number; w: number; h: number } }>;
+  /** The vehicles table as drawn: its box (header row and rows), the column edges, and the note under it when there is one. */
+  readonly table?: { readonly box: { x: number; y: number; w: number; h: number }; readonly cols: readonly number[]; readonly foot: { x: number; y: number; w: number; h: number } | null };
 }
 
 export interface PdfResult {
@@ -510,8 +514,8 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     },
   };
 
-  /* Vehicles table. */
-  const frac = [0.045, 0.17, 0.16, 0.225, 0.295, 0.105];
+  /* Vehicles table. A hit side the picture couldn't use keeps a short cell ("Front *"); its full wording is a note under the table. */
+  const frac = [0.045, 0.165, 0.155, 0.21, 0.295, 0.13];
   const cw = frac.map((f) => f * CW);
   const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w), a), [M]);
   const padX = px("space-2") * PX_TO_PT * 0.75;
@@ -526,7 +530,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       s.lines(v.typeWeight, cw[2]! - padX * 2, "sans", body),
       s.lines(v.direction, cw[3]! - padX * 2, "sans", body),
       s.lines(v.speed, cw[4]! - padX * 2, "mono", body),
-      s.lines(v.hitOn, cw[5]! - padX * 2, "sans", body),
+      s.lines(v.hitOnShort, cw[5]! - padX * 2, "sans", body),
     ];
     // The notes may run under the one-line "Hit on" value, so they wrap wider.
     const noteW = cw[4]! + (cells[4]!.length === 1 ? cw[5]! : 0) - padX * 2;
@@ -534,8 +538,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const h = Math.max(Math.max(cells[0]!.length, cells[1]!.length, cells[2]!.length, cells[4]!.length) * lh(body), cells[3]!.length * lh(body) + noteLs.length * lh(small)) + padY * 2;
     return { v, cells, noteLs, h: Math.max(h, bs + hair * 2) };
   });
+  const footLs = model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small));
+  const footGap = gapSm * 0.5;
   const table: Block = {
-    h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0), gapBefore: gapBig, kind: "main", name: "Vehicles",
+    h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0) + (footLs.length ? footGap + footLs.length * lh(small) : 0), gapBefore: gapBig, kind: "main", name: "Vehicles",
     draw: (sh, y0) => {
       let y = y0 + heading(sh, "body", M, y0, "Vehicles");
       sh.box("body", M, y, CW, tHeadH, color("color-surface-2"), undefined, 0);
@@ -557,6 +563,9 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
         sh.block("body", cx[5]! + padX, y + padY, r.cells[4]!, "sans", body, color("color-text"));
         y += r.h;
       }
+      if (footLs.length) sh.block("body", M, y + footGap, footLs, "sans", small, color("color-text-tertiary"));
+      const tableBox = { x: M, y: y0 + headingH(), w: CW, h: y - y0 - headingH() };
+      sh.add("body", (c) => { c.marks.table = { box: tableBox, cols: cx, foot: footLs.length ? { x: M, y: y + footGap, w: CW, h: footLs.length * lh(small) } : null }; });
     },
   };
 
@@ -868,6 +877,8 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
       ...(cv.marks.mapOutline ? { mapOutline: cv.marks.mapOutline as NonNullable<PdfPageReport["mapOutline"]> } : {}),
       ...(cv.marks.north ? { north: cv.marks.north as NonNullable<PdfPageReport["north"]> } : {}),
       ...(cv.marks.mapLabels ? { mapLabels: cv.marks.mapLabels as NonNullable<PdfPageReport["mapLabels"]> } : {}),
+      texts: cv.texts,
+      ...(cv.marks.table ? { table: cv.marks.table as NonNullable<PdfPageReport["table"]> } : {}),
     });
   });
   const missing = new Set<string>();

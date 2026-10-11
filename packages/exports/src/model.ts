@@ -21,8 +21,16 @@ export interface VehicleRow {
   /** When the vehicle was braking: the speed it slowed from, at the start of the window. */
   readonly brakingNote: string | null;
   readonly speedNote: string | null;
+  /** The side hit, in full: "Front", or "Front as entered; the picture uses another side (see notes)". */
   readonly hitOn: string;
+  /** The short form for a table cell: the side, with HIT_ON_MARK when the picture uses another side (hitOn then goes under the table). */
+  readonly hitOnShort: string;
+  /** The picture uses another side than the one entered. */
+  readonly hitOnAdjusted: boolean;
 }
+
+/** Marks a table cell whose full wording is a note under the table. */
+export const HIT_ON_MARK = "*";
 
 export interface MeasureRow {
   readonly key: string;
@@ -175,6 +183,8 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
   const zoneUsed = sim.warnings.filter((w) => w.code === "zone-used");
   const vehicles: VehicleRow[] = scene.vehicles.map((v) => {
     const rv = vehicleResult(sim, v.id);
+    const side = cap(ZONE_WORDS[v.zone]);
+    const adjusted = zoneUsed.some((w) => w.vehicleIds.includes(v.id));
     return {
       id: v.id,
       name: vehicleName(v) ?? (v.role === "claimant" ? "Claimant's vehicle" : "Other vehicle"),
@@ -183,7 +193,9 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
       speed: v.action === "parked" ? formatSpeed(0, { both: true }).text : about(formatSpeed(rv.speedAtImpactMps, { both: true }).text),
       brakingNote: brakingNote(v, rv),
       speedNote: speedNote(v, rv),
-      hitOn: zoneUsed.some((w) => w.vehicleIds.includes(v.id)) ? `${cap(ZONE_WORDS[v.zone])} as entered; the picture uses another side (see notes)` : cap(ZONE_WORDS[v.zone]),
+      hitOn: adjusted ? `${side} as entered; the picture uses another side (see notes)` : side,
+      hitOnShort: adjusted ? `${side} ${HIT_ON_MARK}` : side,
+      hitOnAdjusted: adjusted,
     };
   });
 

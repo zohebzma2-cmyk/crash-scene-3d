@@ -452,7 +452,7 @@ All files are generated in the browser and saved with the browser's download. No
    - **Location and time:** the address or place name, coordinates, date and time of the accident.
    - **Map thumbnail** with "© OpenStreetMap contributors".
    - **Top-down diagram** (same as the PNG).
-   - **Vehicles table:** letter, name, type, heading, speed, point of impact. An uncertain speed shows its range plus "Not sure. Around the 30 mph limit the claimant gave. Picture uses 30 mph." If the limit was unknown, it says "around 25 mph, a typical city limit" instead.
+   - **Vehicles table:** letter, name, type, heading, speed, point of impact. An uncertain speed shows its range plus "Not sure. Around the 30 mph limit the claimant gave. Picture uses 30 mph." If the limit was unknown, it says "around 25 mph, a typical city limit" instead. A hit side the picture couldn't use as entered keeps a short cell ("Front *"), and its full wording goes in a note under the table ("* B: Front as entered; the picture uses another side (see notes).") so the column stays one line per vehicle.
    - **Key measurements** in ft and m. Gaps at final rest are listed only for vehicles that touched at impact.
    - **Assumptions used**, each printed with its number:
      - The road condition as entered and the friction used, with the whole table for context ("Road wet, as entered: friction 0.5 for the whole road (dry 0.7 · wet 0.5 · snow 0.25 · ice 0.1)").
