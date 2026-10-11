@@ -194,12 +194,12 @@ describe("a town typed after the comma ('Elm St and Hanover St, Manchester NH')"
 
 describe("far from the claim", () => {
   it("ranks results more than 300 km away, or in another state more than 50 km away, last, in their order", () => {
-    const lowell = place("Main Street", "Lowell, MA", { state: "MA", lat: 42.64, lon: -71.31 });     // ~19 km, another state: near
+    const fitchburg = place("Main Street", "Fitchburg, MA", { state: "MA", lat: 42.58, lon: -71.80 });   // ~33 km, another state: near
     const boston = place("Main Street", "Boston, MA", { state: "MA", lat: 42.36, lon: -71.06 });     // ~56 km, another state: far
     const hanover = place("Main Street", "Hanover, NH", { state: "NH", lat: 43.70, lon: -72.29 });   // ~125 km, same state: near
-    const ranked = rankForClaim([LYONS, boston, lowell, hanover, MAIN_NASHUA], nashua, "NH");
+    const ranked = rankForClaim([LYONS, boston, fitchburg, hanover, MAIN_NASHUA], nashua, "NH");
     expect(ranked.map((r) => [r.place.sub, r.far])).toEqual([
-      ["Lowell, MA", false], ["Hanover, NH", false], ["Nashua, NH", false], ["Lyons, CO", true], ["Boston, MA", true],
+      ["Fitchburg, MA", false], ["Hanover, NH", false], ["Nashua, NH", false], ["Lyons, CO", true], ["Boston, MA", true],
     ]);
     expect(rankForClaim([LYONS], null, null)).toEqual([{ place: LYONS, far: false }]);
   });
