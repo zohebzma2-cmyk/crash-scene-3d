@@ -12,7 +12,7 @@ import { MEDIA_HEADERS, type MediaFallback, type MediaFallbackReason, type Provi
 import { canonicalMake, normMake, slugOf } from "./make-domains";
 import { makeLogoParams, parseQuery, vehicleImageParams, vehicleModelParams } from "./params";
 import type { ProxyDeps, SecretName } from "./types";
-import { BadUpstreamBody, ProxyFailure, QuotaFailure, fetchUpstream, type Ctx, type Entry, type QuotaSpec, type UpstreamCall } from "./upstream";
+import { BadUpstreamBody, ProxyFailure, QuotaFailure, fetchUpstream, type Ctx, type Entry, type QuotaSpec, type UpstreamCall, type UpstreamErrorInfo } from "./upstream";
 
 const DAY_S = 86_400;
 /** Longest a browser keeps a photo, model or logo (our server cache is longer). */
@@ -221,11 +221,69 @@ export interface MediaRoutes {
 /** Printable ASCII, no spaces, a sane length: anything else is treated as "not set" (and never echoed). */
 const SECRET_SHAPE = /^[\x21-\x7e]{8,512}$/;
 
+/* ------------------------------------------------------------------ diagnostics */
+
+/** Distinct log lines one instance writes at most (each line once). */
+const MAX_LOG_LINES = 200;
+/** How much of a provider's error body a log line keeps. */
+const LOG_BODY_CHARS = 300;
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A provider's text made safe to log: our own secrets (as typed and percent-encoded, any case), anything after
+ * "Bearer ", the value of a credential-like parameter or field (api_key=, api_secret=, sig=, token=, key: …), and
+ * key-shaped words (ci_…, sk_…, pk_…) become "<redacted>"; with `longTokens`, so does any run of 24 or more
+ * letters, digits, "_" or "-". Control characters become spaces, so a line stays one line.
+ */
+export function redactForLog(text: string, secrets: readonly string[], longTokens = true): string {
+  let s = text;
+  for (const x of secrets) {
+    if (!x) continue;
+    // As typed, percent-encoded, and as JSON writes it ("\"", "\\", and "\/" for "/").
+    const forms = new Set([x, encodeURIComponent(x), JSON.stringify(x).slice(1, -1), JSON.stringify(x).slice(1, -1).replace(/\//g, "\\/")]);
+    for (const form of forms) s = s.replace(new RegExp(escapeRe(form), "gi"), "<redacted>");
+  }
+  s = s
+    .replace(/\bBearer\s+[^\s"',;]+/gi, "Bearer <redacted>")
+    .replace(/\b(api_key|api_secret|apikey|api-key|x-api-secret|access_token|token|secret|sig|signature|key|password)(["']?\s*[=:]\s*["']?)[^\s"'&,;}]+/gi, "$1$2<redacted>")
+    .replace(/\b(?:ci|sk|pk)_[A-Za-z0-9_-]{3,}/g, "<redacted>");
+  if (longTokens) s = s.replace(/[A-Za-z0-9_-]{24,}/g, "<redacted>");
+  return s.replace(/[\u0000-\u001f\u007f]+/g, " ");
+}
+
+/**
+ * Where a call went, for a log line: scheme, host and path (segments of 32+ characters redacted), plus the names
+ * (never the values) of its query parameters.
+ */
+export function endpointForLog(raw: string, secrets: readonly string[]): string {
+  let u: URL;
+  try { u = new URL(raw); } catch { return "<unreadable URL>"; }
+  const path = u.pathname.split("/").map((seg) => (seg.length >= 32 ? "<redacted>" : seg)).join("/");
+  const names = [...new Set(u.searchParams.keys())].map((k) => k.replace(/[^\w-]/g, "").slice(0, 24)).filter(Boolean);
+  return redactForLog(`${u.protocol}//${u.host}${path}${names.length ? `?${names.join(",")}` : ""}`, secrets, false);
+}
+
+/** The shape of a JSON answer, never its values: field names, types, booleans as they are, a URL as its host. */
+export function shapeForLog(v: unknown, depth = 0): string {
+  if (Array.isArray(v)) return `array(${v.length})${v.length && depth < 2 ? `[${shapeForLog(v[0], depth + 1)}]` : ""}`;
+  if (isObj(v)) {
+    if (depth >= 3) return "object";
+    const keys = Object.keys(v).slice(0, 24);
+    return `{${keys.map((k) => `${k.replace(/[^\w-]/g, "").slice(0, 32)}:${shapeForLog(v[k], depth + 1)}`).join(",")}}`;
+  }
+  if (typeof v === "string") {
+    try { const u = new URL(v); return `url(${u.protocol}//${u.host})`; } catch { return "string"; }
+  }
+  if (typeof v === "boolean" || v === null) return String(v);
+  return typeof v;
+}
+
 export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRequest: (fields: string[]) => Response): MediaRoutes {
   const { carimages: ci, logodev: ld, cacheTtlS: ttl } = config.media;
   const said = new Set<string>();
   const logOnce = (line: string) => {
-    if (said.has(line)) return;
+    if (said.has(line) || said.size >= MAX_LOG_LINES) return;
     said.add(line);
     (deps.log ?? ((l: string) => console.warn(l)))(line);
   };
@@ -246,6 +304,29 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     if (!k) logOnce("proxy: the logo.dev secret key is not set; maker logos skip logo.dev");
     return k;
   };
+  /** Every secret that is set, for redacting log lines (read at log time, never kept). */
+  const knownSecrets = (): string[] =>
+    (["CARIMAGES_API_KEY", "CARIMAGES_API_SECRET", "LOGO_DEV_SECRET_KEY"] as const).map((n) => secret(n)).filter((x): x is string => x !== null);
+
+  /**
+   * One log line per distinct failure of a provider call: the provider, the endpoint (no query values), the HTTP
+   * status (or "no answer") and the start of the error body, all redacted. Request headers are never logged.
+   */
+  const diag = (provider: "carimages" | "logodev") => (info: UpstreamErrorInfo): void => {
+    const secrets = knownSecrets();
+    // A body cut off mid-word may end in part of a secret that no rule recognises: drop that last word.
+    const raw = info.truncated ? info.body.replace(/\S*$/, "") : info.body;
+    const body = raw ? redactForLog(raw, secrets).replace(/\s+/g, " ").trim().slice(0, LOG_BODY_CHARS) : "";
+    const note = info.note ? ` (${redactForLog(info.note, secrets).slice(0, 120)})` : "";
+    logOnce(`proxy: ${provider} ${endpointForLog(info.url, secrets)} -> ${info.status || "no answer"}${note}${body ? ` ${body}` : ""}`);
+  };
+  const ciDiag = diag("carimages");
+  const ldDiag = diag("logodev");
+  /** A 200 whose JSON we could not use: its shape (names and types, never values), once per distinct line. */
+  const shapeDiag = (provider: "carimages" | "logodev", url: string, what: string, body: unknown): void => {
+    const secrets = knownSecrets();
+    logOnce(`proxy: ${provider} ${endpointForLog(url, secrets)} -> 200 ${what}; shape ${redactForLog(shapeForLog(body), secrets).slice(0, 600)}`);
+  };
 
   const daily = (cap: number) => ({ capacity: Math.max(1, cap), refillPerS: Math.max(1, cap) / DAY_S });
   const ciQuota: QuotaSpec = { key: "quota:carimages", limit: daily(ci.dailyCap), perUser: daily(ci.perUserDailyCap), cooldownKey: "media/ci/cooldown", cooldownS: ci.cooldownS };
@@ -257,12 +338,14 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     url: `${ci.apiUrl}${path}`,
     quota: ciQuota,
     init: { redirect: "error", headers: { Authorization: `Bearer ${keys.key}`, "X-Api-Secret": keys.secret, Accept: "application/json" } },
+    onError: ciDiag,
   });
   const ldCall = (path: string, key: string): UpstreamCall => ({
     service: "logodev",
     url: `${ld.apiUrl}${path}`,
     quota: ldQuota,
     init: { redirect: "error", headers: { Authorization: `Bearer ${key}`, Accept: "application/json" } },
+    onError: ldDiag,
   });
 
   /** A JSON answer reshaped to only what we use (`shape`), cached under `cacheKey`. */
@@ -279,7 +362,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     return fetchUpstream(ctx, {
       cacheKey, ttlS, validStored: check,
       // Redirects only to that provider's own asset hosts, https, at most three hops (never an internal address).
-      calls: [{ service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts }],
+      calls: [{ service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts, onError: service === "carimages" ? ciDiag : ldDiag }],
       process: (bytes) => {
         if (!check(bytes)) throw new BadUpstreamBody("not the expected file");
         return { bytes, contentType: "application/octet-stream" };
@@ -308,15 +391,21 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
   async function generations(ctx: Ctx, keys: { key: string; secret: string }, make: NamedSlug, model: NamedSlug): Promise<{ gens: Generation[]; hit: boolean; key: string }> {
     const key = `media/ci/model/${make.slug}/${model.slug}`;
     try {
-      const { value, hit } = await keyedJson(ctx, key, ttl.catalog, ciCall(`/makes/${encodeURIComponent(make.slug)}/models/${encodeURIComponent(model.slug)}`, keys), (body) => {
+      const call = ciCall(`/makes/${encodeURIComponent(make.slug)}/models/${encodeURIComponent(model.slug)}`, keys);
+      const { value, hit } = await keyedJson(ctx, key, ttl.catalog, call, (body) => {
         const gens: Generation[] = [];
         const list = isObj(body) && Array.isArray(body.generations) ? body.generations : isObj(body) && isObj(body.data) && Array.isArray(body.data.generations) ? body.data.generations : [];
+        let unusable: unknown = null;
         for (const g of list) {
           if (!isObj(g)) continue;
           const slug = str(g.slug);
           if (!slug || !/^[a-z0-9][a-z0-9._-]{0,80}$/i.test(slug)) continue;
-          gens.push({ slug, start: yearOf(g.year_start), end: yearOf(g.year_end), image: assetSet(g.images, ci.assetHosts, ciSecrets(keys)) });
+          const image = assetSet(g.images, ci.assetHosts, ciSecrets(keys));
+          if (!image && g.images !== null && g.images !== undefined) unusable ??= g;
+          gens.push({ slug, start: yearOf(g.year_start), end: yearOf(g.year_end), image });
         }
+        if (gens.length === 0) shapeDiag("carimages", call.url, "but no generations we can read", body);
+        else if (unusable) shapeDiag("carimages", call.url, "but a generation's images are unusable (host not allowed?)", unusable);
         return gens;
       });
       return { gens: value, hit, key };
@@ -483,14 +572,19 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       const { entry, extra } = await catalogAsset(ctx, async () => {
         const car = await resolveCar(ctx, keys, p.data.make, p.data.model, year);
         const path = `/vehicles/${encodeURIComponent(car.make.slug)}/${encodeURIComponent(car.model.slug)}/${encodeURIComponent(car.gen.slug)}/model`;
-        const infoKey = `media/ci/glb-info/${car.make.slug}/${car.model.slug}/${car.gen.slug}`;
+        // v2: answers kept by the first deploy (read with the old parser, kept 30 days) are read again.
+        const infoKey = `media/ci/glb-info/v2/${car.make.slug}/${car.model.slug}/${car.gen.slug}`;
         let info: { url: string | null; watermarked: boolean; fallback: boolean };
         let infoHit: boolean;
         try {
-          const got = await keyedJson(ctx, infoKey, ttl.model, ciCall(path, keys), (body) => {
+          const call = ciCall(path, keys);
+          const got = await keyedJson(ctx, infoKey, ttl.model, call, (body) => {
             const b = isObj(body) && isObj(body.data) ? body.data : isObj(body) ? body : {};
             const raw = str(b.url) ?? str(b.model_url) ?? str(b.glb) ?? str(b.glb_url);
-            return { url: safeAssetUrl(raw, ci.assetHosts, ciSecrets(keys)), watermarked: b.watermarked === true, fallback: b.fallback === true };
+            const out = { url: safeAssetUrl(raw, ci.assetHosts, ciSecrets(keys)), watermarked: b.watermarked === true, fallback: b.fallback === true };
+            if (out.fallback) shapeDiag("carimages", call.url, "with fallback: true (no 3D for this car yet)", body);
+            else if (!out.url) shapeDiag("carimages", call.url, "but no model URL we can use", body);
+            return out;
           });
           info = got.value;
           infoHit = got.hit;
@@ -519,14 +613,14 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       // No key: CarImages' public logo endpoint (it redirects to its CDN).
       return fetchUpstream(ctx, {
         cacheKey: `media/logo/ci-brand/${normMake(source.name)}`, ttlS: ttl.logo, validStored: isPng,
-        calls: [{ service: "carimages", url: `${ci.brandLogoUrl}?${new URLSearchParams({ make: source.name })}`, redirectHosts: ci.assetHosts }],
+        calls: [{ service: "carimages", url: `${ci.brandLogoUrl}?${new URLSearchParams({ make: source.name })}`, redirectHosts: ci.assetHosts, onError: ciDiag }],
         process: (bytes) => { if (!isPng(bytes)) throw new BadUpstreamBody("not a PNG"); return { bytes, contentType: "image/png" }; },
       });
     }
     if (source.src === "ci-api") {
       return fetchUpstream(ctx, {
         cacheKey: `media/logo/ci-api/${source.slug}`, ttlS: ttl.logo, validStored: isPng,
-        calls: [{ service: "carimages", url: `${ci.apiUrl}/makes/${encodeURIComponent(source.slug)}/logo`, redirectHosts: ci.assetHosts }],
+        calls: [{ service: "carimages", url: `${ci.apiUrl}/makes/${encodeURIComponent(source.slug)}/logo`, redirectHosts: ci.assetHosts, onError: ciDiag }],
         process: (bytes) => { if (!isPng(bytes)) throw new BadUpstreamBody("not a PNG"); return { bytes, contentType: "image/png" }; },
       });
     }

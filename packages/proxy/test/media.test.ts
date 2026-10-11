@@ -594,3 +594,84 @@ describe("review fixes", () => {
     for (const w of t.written) expect(text(w.value).toLowerCase()).not.toContain(enc.toLowerCase());
   });
 });
+
+describe("upstream diagnostics", () => {
+  it("logs one redacted line per distinct failure: endpoint, status, body start; a body echoing the key never reaches the log", async () => {
+    const echo = `{"error":"bad key ${KEY} secret ${SECRET} Authorization: Bearer ${KEY} url ?api_key=${KEY}&api_secret=${SECRET}&sig=abc123&token=zz9 ${encodeURIComponent(SECRET)}"}`;
+    const t = setup(catalog({ [`${CI}/makes`]: () => new Response(echo, { status: 401, headers: { "content-type": "application/json" } }) }));
+    const r = await t.get(image(F150));
+    expect(r.headers.get(MEDIA_HEADERS.fallback)).toBe("upstream");
+    await t.get(image(F150));
+    await t.get(model(F150));
+    expect(t.logs).toHaveLength(1); // once per distinct line, however many requests hit it
+    const line = t.logs[0]!;
+    expect(line).toMatch(/^proxy: carimages https:\/\/carimagesapi\.com\/api\/v1\/makes -> 401 /);
+    expect(line).toContain('"error":"bad key <redacted>');
+    expect(line).toContain("Bearer <redacted>");
+    expect(line).toContain("sig=<redacted>");
+    expect(line).toContain("token=<redacted>");
+    for (const s of [KEY, SECRET, encodeURIComponent(SECRET), "abc123", "zz9"]) expect(line).not.toContain(s);
+    expect(line.toLowerCase()).not.toContain("x-api-secret:");
+    expect(line.length).toBeLessThan(500);
+  });
+
+  it("a long error body is cut to 300 characters, and a secret cut off at the end of what was read is dropped", async () => {
+    const odd = ["Zq", "9x", "unprefixed", String(START).slice(-5)].join("");
+    // The secret straddles the 1024-byte read: only its first half is read. The long words before it are redacted
+    // to "<redacted>", so what is left of it would land inside the 300 characters kept.
+    const body = `${`${"w".repeat(45)} `.repeat(22)}ab ${odd} ${"y".repeat(400)}`;
+    expect(body.indexOf(odd)).toBe(1015);
+    const t = setup(catalog({ [`${CI}/makes`]: () => new Response(body, { status: 500 }) }), { secrets: { ...SECRETS, CARIMAGES_API_SECRET: odd } });
+    await t.get(image(F150));
+    expect(t.logs.length).toBeGreaterThan(0);
+    for (const l of t.logs) {
+      expect(l).not.toContain(odd.slice(0, 6));
+      expect(l.length).toBeLessThan(450);
+    }
+  });
+
+  it("a refused redirect names only the host it pointed at; a timeout or network error says so", async () => {
+    const t = setup(catalog({ [`${CDN}/v/ford/f-150/p702-400.webp`]: () => new Response(null, { status: 302, headers: { location: `https://evil.example/x?api_key=${KEY}` } }) }));
+    await t.get(image(F150));
+    const line = t.logs.find((l) => l.includes("redirect refused"))!;
+    expect(line).toContain("(redirect refused (to https://evil.example))");
+    expect(line).toContain(`${CDN}/v/ford/f-150/p702-400.webp -> 302`);
+    expect(line).not.toContain(KEY);
+    const n = setup(() => undefined);
+    await n.get(image(F150));
+    expect(n.logs.some((l) => /carimages https:\/\/carimagesapi\.com\/api\/v1\/makes -> no answer \(network error/.test(l))).toBe(true);
+  });
+
+  it("logs the query's parameter names, never their values", async () => {
+    const t = setup(catalog({ [`${CDN}/v/ford/f-150/p702-400.webp`]: () => json({ error: "expired" }, 403) }));
+    await t.get(image(F150));
+    expect(t.logs.some((l) => l.includes(`${CDN}/v/ford/f-150/p702-400.webp -> 403 {"error":"expired"}`))).toBe(true);
+    const t2 = setup(catalog({ [`${CDN}/v/ford/f-150/p552-400.webp`]: () => json({ error: "gone" }, 410) }));
+    await t2.get(image({ ...F150, year: "2017" }));
+    const line = t2.logs.find((l) => l.includes("p552-400.webp"))!;
+    expect(line).toContain("p552-400.webp?sig -> 410");
+    expect(line).not.toContain("sig=a");
+  });
+
+  it("a model answer we can't use logs its shape (names and types, never values)", async () => {
+    const t = setup(catalog({ [`${CI}/vehicles/ford/f-150/p702/model`]: () => json({ model: { href: `${CDN}/3d/x.glb?sig=${KEY}` }, watermarked: true, fallback: false }) }));
+    const r = await t.get(model(F150));
+    expect(await r.json()).toEqual({ fallback: true, reason: "no-model" });
+    const line = t.logs.find((l) => l.includes("/model -> 200"))!;
+    expect(line).toContain("but no model URL we can use");
+    expect(line).toContain("model:{href:url(https://cdn.carimagesapi.com)}");
+    expect(line).toContain("fallback:false");
+    expect(line).not.toContain(KEY);
+    const f = setup();
+    await f.get(model({ year: "2015", make: "Ford", model: "Focus" }));
+    expect(f.logs.some((l) => l.includes("/vehicles/ford/focus/mk3/model -> 200 with fallback: true"))).toBe(true);
+  });
+
+  it("logo.dev failures are logged the same way, redacted", async () => {
+    const t = setup(catalog({ "https://api.logo.dev/v2/brands/logo?domain=kia.com": () => json({ error: `invalid key ${LD_SECRET}` }, 401) }));
+    await t.get(logo("Kia"));
+    const line = t.logs.find((l) => l.startsWith("proxy: logodev"))!;
+    expect(line).toContain("https://api.logo.dev/v2/brands/logo?domain -> 401");
+    expect(line).not.toContain(LD_SECRET);
+  });
+});
