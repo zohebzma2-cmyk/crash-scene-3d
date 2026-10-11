@@ -2,7 +2,7 @@
 // is drawing with (window.__csdViewer.three(), a read-only hook that only fixtures/dev builds install).
 //
 // probeInPage runs inside the browser (page.evaluate), so it is self-contained: no imports, no outside helpers.
-// pixelsInPage measures what actually reaches the screen: the canvas with and without one vehicle (hook.hide).
+// pixelsInPage measures what actually reaches the screen: the canvas with and without the vehicles (hook.hide).
 
 export interface VehicleProbe {
   readonly id: string;
@@ -30,6 +30,8 @@ export interface VehicleProbe {
   readonly uiBy: Readonly<Record<string, number>>;
   /** Share of the on-canvas part of the body outside the browser window (scrolled off). */
   readonly offPageShare: number;
+  /** Where the vehicle is drawn, scene meters east and north of the pin. */
+  readonly at: readonly [number, number];
 }
 
 export interface ProbeResult {
@@ -202,7 +204,7 @@ export function probeInPage(ids: readonly string[]): ProbeResult {
   const vehicles: VehicleProbe[] = [];
   for (const id of ids) {
     const g = groups?.[id];
-    const blank: VehicleProbe = { id, exists: false, drawable: false, notDrawableWhy: "no group", minDepthM: 0, maxDepthM: 0, near: camera.near, inFrameShare: 0, areaPx: 0, hull: [], sinkCenterM: 0, sinkCornerM: 0, occludedShare: 0, occluders: [], uiShare: 0, uiBy: {}, offPageShare: 0 };
+    const blank: VehicleProbe = { id, exists: false, drawable: false, notDrawableWhy: "no group", minDepthM: 0, maxDepthM: 0, near: camera.near, inFrameShare: 0, areaPx: 0, hull: [], sinkCenterM: 0, sinkCornerM: 0, occludedShare: 0, occluders: [], uiShare: 0, uiBy: {}, offPageShare: 0, at: [0, 0] };
     if (!g) { vehicles.push(blank); continue; }
     // Attached and visible all the way up; a usable scale; drawable meshes.
     let why = "";
@@ -291,16 +293,17 @@ export function probeInPage(ids: readonly string[]): ProbeResult {
       inFrameShare: full > 0 ? inArea / full : 0, areaPx: full, hull,
       sinkCenterM: sinkCenter, sinkCornerM: sinkCorner,
       occludedShare: blocked / samples.length, occluders: [...by],
-      uiShare: n ? covered / n : 0, uiBy, offPageShare: n ? off / n : 0,
+      uiShare: n ? covered / n : 0, uiBy, offPageShare: n ? off / n : 0, at: [Math.round(e[12]! * 10) / 10, Math.round(-e[14]! * 10) / 10],
     });
   }
   return { ok: true, canvas: { w: W, h: H, top: cr.top, left: cr.left }, camera: { ortho, near: camera.near, far: camera.far, position: eye }, vehicles };
 }
 
 /**
- * Pixels each vehicle actually puts on screen: the canvas is read with every vehicle shown, then with this one hidden
- * (the hook's hide), and the pixels inside its projected hull that change are counted. A building in front of it,
- * the near plane or anything else that stops it reaching the screen leaves that count near zero.
+ * Pixels each vehicle actually puts on screen: the canvas is read with the vehicles shown, then with all of them hidden
+ * (the hook's hide), and the pixels inside each vehicle's projected hull that change are counted. A building in front
+ * of it, the near plane or anything else that stops it reaching the screen leaves that count near zero. (One hidden
+ * frame for all vehicles keeps the sweep affordable on SwiftShader; where two hulls overlap, both get those pixels.)
  */
 export async function pixelsInPage(arg: { hulls: Record<string, ReadonlyArray<readonly [number, number]>> }): Promise<Record<string, { changed: number; inHull: number }>> {
   const w = window as any;
@@ -322,16 +325,18 @@ export async function pixelsInPage(arg: { hulls: Record<string, ReadonlyArray<re
     }
     return c;
   };
-  await frames(2);
-  const base = grab();
+  const ids = Object.keys(arg.hulls);
   const out: Record<string, { changed: number; inHull: number }> = {};
-  for (const [id, hull] of Object.entries(arg.hulls)) {
+  if (!ids.some((id) => arg.hulls[id]!.length >= 3)) { for (const id of ids) out[id] = { changed: 0, inHull: 0 }; return out; }
+  const base = grab();
+  for (const id of ids) hook.hide(id, true);
+  await frames(2);
+  const img = grab();
+  for (const id of ids) hook.hide(id, false);
+  await frames(2);
+  for (const id of ids) {
+    const hull = arg.hulls[id]!;
     if (hull.length < 3) { out[id] = { changed: 0, inHull: 0 }; continue; }
-    hook.hide(id, true);
-    await frames(2);
-    const img = grab();
-    hook.hide(id, false);
-    await frames(2);
     let bx0 = W, by0 = H, bx1 = 0, by1 = 0;
     for (const p of hull) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); }
     let changed = 0, inHull = 0;
