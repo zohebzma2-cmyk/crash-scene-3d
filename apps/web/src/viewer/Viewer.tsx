@@ -244,7 +244,7 @@ function LabelProjector({ vehicles, measures, ring, showVehicleLabels, sizes, ob
     let same = sig.length === 38;
     const mw = camera.matrixWorldInverse.elements, pm = camera.projectionMatrix.elements;
     for (let i = 0; i < 38; i++) {
-      const v = i < 16 ? mw[i]! : i < 32 ? pm[i - 16]! : [view.w, view.h, ring.center.x, ring.center.y, ring.ground, 0][i - 32]!;
+      const v = i < 16 ? mw[i]! : i < 32 ? pm[i - 16]! : i === 32 ? view.w : i === 33 ? view.h : i === 34 ? ring.center.x : i === 35 ? ring.center.y : i === 36 ? ring.ground : 0;   // no per-frame array
       if (sig[i] !== v) { same = false; sig[i] = v; }
     }
     if (!same) ringCache.current.strips = projectRing(camera, view, ring.center, RING_M.outer, ring.ground).strips;
