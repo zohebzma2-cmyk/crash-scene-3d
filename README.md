@@ -459,6 +459,9 @@ Feature freeze (Zoheb, 2026-10-09): after the impact and aftermath work, new ide
 - **Wider zone fallback for 3–4 vehicles**: when two named vehicles can't be placed, also try changing a third vehicle's zone (a scratch test drew 16 more of 3,000 random multi-vehicle scenes with no regressions).
 - **More one-tap fixes for three or four vehicles** (docs/FIXER-BENCHMARK.md): the fixer now draws about 96% of refused two-vehicle scenes but about 68% (three) and 72% (four) of random multi-vehicle refusals; most of the rest need three or more details changed at once. A bigger work budget reached 88.8% overall but took up to 0.55 s in Node, over the 300 ms target. Also not built: the small top-down sketch of each fix, and speed fixes for typed speeds (only a "not sure" speed is ever changed, inside its range).
 - **Cross-user fixer learning, opt-in only** (docs/decisions/0009-fixer-learning.md): today the fixer learns only from the repo's regression corpus and, on each device, from the kinds of fix picked there. Learning across users would need consent, an anonymised count-only upload, a retention limit and a new proxy route; not built.
+- **Vehicles missing from some camera views** (docs/VISIBILITY-SWEEP.md): found and diagnosed in round A, **not fixed yet**. An opt-in sweep (`SWEEP=1 npx playwright test e2e/visibility-sweep.spec.ts`) checked 15,336 vehicle views over 302 scenes (every camera, start/impact/rest, 1440 and 390). No vehicle mesh was ever missing; the cameras are aimed wrong. Causes, biggest first: Top and Wide frame only impact and rest, so the start is out of frame (1,942 views); Aftermath stays on after scrubbing back (1,177); very long slides shrink the cars to specks and past 900 m the orbit clamp loses them (1,393 views, 92 scenes); driver views show only their own car (814 + 114 behind buildings); the legend, compass and zoom cover a car, almost all on phones, including the highway example's opening picture (645); a few cars sit under the drawn ground at the terrain edge or on slopes (609, cosmetic). At impact and rest, the moments Top and Wide are meant to show, 78 desktop and 174 phone scenes still lose a car. Why not fixed: four of the seven fixes change DESIGN.md §7 (framing rules, driver views), which needs the owner's decision first, and the round ran out of time. Order to fix: fit into the unobstructed view (phones), the 900 m clamp, Aftermath off on scrub, ground height, then the §7 framing decisions; then remove the gate so check.sh runs the sweep.
+- **Fixer review follow-ups** (round A review, none user-visible in normal use): round a "not sure" speed fix to tenths so an imported scene with a limit like 18.6 mph can't be offered 13.5 (outside its range); reword two comments that overclaim (`drawsAsEntered` gives the same verdict as `simulate()`, not the same error text; offered fixes are checked with `checkScene`, not a full `simulate()`); drop the unused per-track bounding boxes in `simulate.ts`; commit a small `simulate()` digest test and an e2e assertion that the fix search really ran in the worker (`data-fixer="worker"`; checked by hand on Chromium and WebKit, not by the suite).
+- **Vehicle picker, maker logos and vehicle colours (round B): not started.** Planned: year/make/model/trim type-ahead from NHTSA vPIC through the proxy with aliases ("chevy", "vw", "f150", typos); maker logos from logo.dev fetched and cached server-side behind `/api/logos/make` with a fallback to the name and our car icon (the browser never talks to logo.dev; keys stay server-side); the chosen colour in 3D, mini map, diagrams, stills and PDF with the A/B/C/D letters kept readable; a photo provider written up as a decision only. Why not built: round A took the time available and the owner chose to close out rather than start it.
 - **Parking example, Driver A at final rest**: B's "Stopped" label can overlap measurement pill 2 (one layout pass, apps/web/src/viewer/Viewer.tsx); the e2e check sets aside only that exact case (test.fixme).
 - **Search box role**: the search field is a `<textarea role="combobox">`, which axe flags as `aria-allowed-role` (minor); make it an `<input>` or a contenteditable combobox (test.fail in e2e/axe-steps.spec.ts).
 - **Search box typing race (to confirm)**: while recording the demo under heavy CPU load, per-key typing into the search box was garbled by late suggestion updates ("Park StMain Street and Park Street..."); a quiet re-test typed fine. Reproduce under load and make the field ignore suggestion updates for older text.
@@ -478,6 +481,13 @@ This was built in one long Claude Code session, steered by Zoheb, from 2026-10-0
 - **Checks.** One command, `./check.sh`, runs typecheck, lint, stylelint, the design-token check, unit and property tests, the build, and Playwright on Chromium and WebKit. The privacy scan and `/release-check` (see Guardrails) come before anything is published.
 - **Decisions.** The real judgment calls are written up in [docs/decisions](docs/decisions/README.md).
 - **Red team.** A fresh agent with only this README and the running build tried to break the app. Its findings are in [docs/RED-TEAM.md](docs/RED-TEAM.md).
+
+**The last round (round A) and the final numbers**
+- **Fixer v2.** Measured first: a fixed benchmark of 573 refused scenes (docs/FIXER-BENCHMARK.md), run against the old code unpacked from git. Before: 59% got a working fix, worst search 2.8 s on the main thread. After: 84% (96% for two vehicles), worst 0.1 s in a Web Worker on Chromium and WebKit. Exact physics speedups (about 4× faster) were checked by an identical `simulate()` digest over 9,168 scenes with warm caches. A regression corpus of 576 cases fails the build if a case loses its fix. What the user picks is remembered only on their device ([ADR 0009](docs/decisions/0009-fixer-learning.md)).
+- **Target missed, said plainly.** The goal was 95% of refusals fixed under 300 ms. The 300 ms target was met; 95% was not. A bigger search budget reached 88.8% but took 0.55 s, so the time limit won. Most of what's left are three- or four-vehicle scenes where nothing meets anything.
+- **Missing vehicles.** The bug was reproduced with an opt-in sweep (15,336 vehicle views over 302 scenes) and traced to camera framing, not to missing meshes (docs/VISIBILITY-SWEEP.md). The fix needs design decisions, so it is written up in "Next version", not shipped.
+- **Cut at close-out.** Round B (vehicle picker, maker logos, vehicle colours) was not started, and the camera-framing fixes wait for a design decision. Both are in "Next version" with where they stand.
+- **Totals.** 1,583 unit and property tests and 353 browser tests, all green; every branch had an Opus review before it merged.
 
 **Retrospective**
 - **What worked.**
@@ -501,12 +511,13 @@ InsurifyAI, the InsurifyAI name and the InsurifyAI logo are trademarks of Insuri
 
 ## Status
 
-Deployed 2026-10-10 to https://crash-scene-3d.netlify.app from this repository's `main`. Checked live at 1440 and 390 wide:
+Deployed to https://crash-scene-3d.netlify.app from this repository's `main` (first deploy 2026-10-10, live fixes and round A the same night). Every deploy is checked against the live site on Chromium and WebKit at 1440 and 390:
+- Search near the claim finds the Nashua crossing and its streets through the proxy, with no request leaving the site's own origin.
 - The three examples draw.
-- A live search goes through the proxy and finds the crossing and its streets, with no request leaving the site's own origin.
 - Save delivers one ZIP whose PDF fingerprint equals the scene file's SHA-256.
+- No CSP violations on any step.
 
-Locally, `./check.sh` passes: 1,531 unit tests and 261 browser tests on Chromium and WebKit. A video clip and a share link are planned, not built (DESIGN.md section 8, "Coming next"). Open items are in "Next version".
+Locally, `./check.sh` passes: 1,583 unit and property tests, and 353 browser tests on Chromium and WebKit (34 skipped: WebKit runs the cross-browser subset, plus the known `test.fixme`/opt-in cases). A video clip and a share link are planned, not built (DESIGN.md section 8, "Coming next"). Open items are in "Next version".
 
 ## Close-out
 
@@ -516,7 +527,8 @@ Locally, `./check.sh` passes: 1,531 unit tests and 261 browser tests on Chromium
   - But some inputs are typical values, not measurements. The contact friction of 0.5 and the 0.3 m crush band are marked UNVERIFIED in the code.
   - Weights are class averages, not the claimant's actual vehicle. The road is treated as flat, and there are no secondary collisions.
 - **Lane placement on real OSM data.** Untagged roads get default lane counts and widths, so a vehicle can sit in a plausible lane that isn't the real one.
-- **The refusal fixes.** About 1 in 5 refused random scenes get only "Edit the details myself" (mostly 3–4 vehicles), and the search can take up to about 1.75 s on the main thread.
+- **Camera framing.** Every vehicle is always in the scene, but a sweep of 302 scenes found camera views where one isn't on screen: the start of the timeline in Top and Wide, very long slides, driver views, and phone overlays covering a car (see "Next version"). That is diagnosed, not yet fixed.
+- **The refusal fixes.** On a fixed benchmark of 573 refused scenes, the fixer now gives a working one-tap fix for 84% (96% of two-vehicle scenes, about 70% of three- and four-vehicle ones), up from 59%. The rest get only "Edit the details myself". The search runs in a Web Worker, worst case about 0.1 s, down from 2.8 s on the main thread.
 - **Production-only behaviour.**
   - The global rate limits depend on Netlify Blobs conditional writes, and there is no load test.
   - The daily cleanup of stored searches hasn't been seen running in production yet.
