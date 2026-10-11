@@ -14,7 +14,7 @@ import { buildPdf, FLOOR_LEVEL, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_T
 import { renderBand, renderDiagramPng, renderStillPng } from "../src/png";
 import { MAX_PNG_SIDE, decodePng } from "../src/png-decode";
 import { color, rgb01 } from "../src/style";
-import { MONO, SANS, brandFonts, brandMeasure, centredMapPng, createSolidPng, latin1, makePng, readPdf, renderPdfPage, saveOutput, syntheticPng, testCanvas, withPngText } from "./helpers";
+import { MONO, SANS, brandFonts, brandMeasure, centredMapPng, createSolidPng, latin1, makePng, readPdf, renderPdfPage, saveOutput, syntheticPng, tableLines, testCanvas, withPngText } from "./helpers";
 import { loadRoads } from "./osm-roads";
 import { fourVehicle, manyShortWarnings, stress, twoVehicle } from "./sim-fixtures";
 // @ts-expect-error plain .mjs without types
@@ -1416,7 +1416,7 @@ describe("a hit side the picture couldn't use as entered (red team, 2026-10-10)"
   it("says so in the PDF table and carries the note for every picture", async () => {
     const { stamp } = await sceneFile(scene, adjusted, CREATED);
     const m = buildModel(scene, adjusted, stamp);
-    expect(m.vehicles.find((v) => v.id === "A")!.hitOn).toMatch(/as entered; the picture uses another side \(see notes\)$/);
+    expect(m.vehicles.find((v) => v.id === "A")!.hitOn).toMatch(/as entered; the picture uses another side \(see Details that may not fit together\)$/);
     expect(m.vehicles.find((v) => v.id === "B")!.hitOn).not.toMatch(/as entered/);
     expect(m.adjustedNotes).toEqual([note.text]);
   });
@@ -1511,6 +1511,24 @@ describe("page 1 fills before the assumptions move on (owner, 2026-10-10)", () =
     for (const a of sim.assumptions) expect(countOf(read.text, norm(a.text))).toBe(1);
     await expectSafePages(r);
   }, 90_000);
+
+  it("never leaves a heading alone at the end of a page, even when the first item under it is taller than a page", async () => {
+    const { scene, sim } = twoVehicle();
+    const huge = Array.from({ length: 160 }, (_, i) => `part ${i + 1} of one very long assumption that keeps going.`).join(" ");
+    const hugeWarning = Array.from({ length: 160 }, (_, i) => `check ${i + 1} of one very long warning that keeps going.`).join(" ");
+    const big: SimulationResult = { ...sim, assumptions: [{ id: "huge", text: huge }, ...sim.assumptions], warnings: [{ code: "huge", text: hugeWarning, vehicleIds: ["A"] }] };
+    const { r, read } = await makePdf(scene, big);
+    expect(r.pages).toBeGreaterThanOrEqual(4);
+    // the page with each list heading (page 1 only says what moved) also has the first item under it
+    const pageWith = (needle: RegExp) => read.pageTexts.findIndex((t, i) => i > 0 && needle.test(t.replace(/ /g, "")));
+    const aHead = pageWith(/ASSUMPTIONSUSED(?!\(CONTINUED\))/);
+    expect(aHead).toBeGreaterThan(0);
+    expect(read.pageTexts[aHead]).toContain("1. part 1 of one");
+    const wHead = pageWith(/DETAILSTHATMAYNOTFITTOGETHER/);
+    expect(wHead).toBeGreaterThan(aHead);
+    expect(read.pageTexts[wHead]).toContain("check 1 of one");
+    await expectSafePages(r);
+  }, 90_000);
 });
 
 describe("the PDF \"Hit on\" column (owner, 2026-10-10)", () => {
@@ -1536,7 +1554,7 @@ describe("the PDF \"Hit on\" column (owner, 2026-10-10)", () => {
     for (const v of adjusted) expect(v.hitOnShort).toMatch(/^[A-Z][a-z ]+ \*$/);
     // the full wording stays, as a note under the table, one per adjusted vehicle
     for (const v of adjusted) {
-      expect(v.hitOn).toMatch(/ as entered; the picture uses another side \(see notes\)$/);
+      expect(v.hitOn).toMatch(/ as entered; the picture uses another side \(see Details that may not fit together\)$/);
       expect(norm(read.pageTexts[0]!)).toContain(`* ${v.id}: ${v.hitOn}.`);
     }
     expect(t.foot).not.toBeNull();
@@ -1566,6 +1584,28 @@ describe("the PDF \"Hit on\" column (owner, 2026-10-10)", () => {
     expect(r.report[0]!.table!.foot).toBeNull();
     expect(read.text).not.toContain("as entered; the picture uses another side");
   });
+
+  it("widens \"Hit on\" only from the speed column; Vehicle, Type and Direction keep their widths", async () => {
+    const { scene, sim } = fixture;
+    const plainSim: SimulationResult = { ...sim, warnings: sim.warnings.filter((w) => w.code !== "zone-used") };
+    const { r: adj } = await makePdf(scene, sim);
+    const { r: plain } = await makePdf(scene, plainSim);
+    const a = adj.report[0]!.table!.cols;
+    const p = plain.report[0]!.table!.cols;
+    for (const i of [0, 1, 2, 3, 4, 6]) expect(a[i], `column edge ${i}`).toBeCloseTo(p[i]!, 6);
+    expect(a[5]).toBeLessThanOrEqual(p[5]! + 1e-6);
+  }, 60_000);
+
+  it("prints the three examples' table text exactly as before the polish (snapshot from 2deab93)", async () => {
+    // test/data/table-text-2deab93.json: tableLines() of each example's PDF made by commit 2deab93's exports code.
+    const before = JSON.parse(readFileSync(new URL("./data/table-text-2deab93.json", import.meta.url), "utf8")) as Record<string, string[]>;
+    const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
+    expect(Object.keys(before).sort()).toEqual(Object.keys(real).sort());
+    for (const [name, { scene, sim }] of Object.entries(real)) {
+      const { read } = await makePdf(scene, sim);
+      expect(tableLines(read), name).toEqual(before[name]);
+    }
+  }, 60_000);
 });
 
 describe("street names at the pin on the PDF map (owner, 2026-10-10)", () => {

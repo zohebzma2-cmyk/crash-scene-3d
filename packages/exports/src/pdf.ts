@@ -307,6 +307,8 @@ interface Block {
   readonly name?: string;
   /** Start a new page before this block (the overflow lists begin on page 2). */
   readonly breakBefore?: boolean;
+  /** A heading: it goes to the next page with the block after it rather than end a page alone. */
+  readonly keepWithNext?: boolean;
   readonly draw: (s: Sheet, y: number) => void;
 }
 
@@ -541,10 +543,18 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   };
 
   /* Vehicles table. A hit side the picture couldn't use keeps a short cell ("Front *"); its full wording is a note under the table. */
-  const frac = [0.045, 0.165, 0.155, 0.21, 0.295, 0.13];
+  const frac = [0.045, 0.17, 0.16, 0.225, 0.295, 0.105];
   const cw = frac.map((f) => f * CW);
-  const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w), a), [M]);
   const padX = px("space-2") * PX_TO_PT * 0.75;
+  // Only when a cell carries the mark does "Hit on" widen, to its longest short value, and only at the expense of the
+  // speed column: Vehicle, Type and Direction keep their widths, so their wrapping never changes.
+  if (model.vehicles.some((v) => v.hitOnAdjusted)) {
+    const need = Math.max(...model.vehicles.map((v) => s.cv.measure("sans", body, v.hitOnShort))) + padX * 2;
+    const more = Math.max(0, need - cw[5]!);
+    cw[5] = cw[5]! + more;
+    cw[4] = cw[4]! - more;
+  }
+  const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w), a), [M]);
   const padY = px("space-2") * PX_TO_PT * 0.5 * pad;
   const headLabels = ["", "Vehicle", "Type, weight", "Direction", "Speed at impact, as entered", "Hit on"];
   const headLs = headLabels.map((t, i) => s.lines(t, cw[i]! - padX * 2, "sansBold", small));
@@ -694,8 +704,9 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const ls = s.lines(text, CW - lead - (kind === "warn" ? gapSm : 0), "sans", body);
     const extra = pad * 1.2 + (kind === "warn" ? pad : 0);
     // An item is never cut between pages, unless it alone is taller than a whole page: then it breaks between lines,
-    // with its number or bullet on the first part.
-    const per = Math.max(1, Math.floor((laterRoom - extra) / lh(body)));
+    // with its number or bullet on the first part. Each part leaves room for a section heading above it (and the
+    // warning panel's top padding), so a heading always has its first item on the same page.
+    const per = Math.max(1, Math.floor((laterRoom - extra - headingH() - gapSm * 0.5 - gapBig) / lh(body)));
     const parts: string[][] = [];
     for (let i = 0; i < ls.length; i += per) parts.push(ls.slice(i, i + per));
     return parts.map((part, j) => ({
@@ -712,7 +723,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     }));
   };
   const headBlock = (text: string, gapBefore: number, kind: "main" | "warn"): Block => ({
-    h: headingH() + (kind === "warn" ? gapSm * 0.5 : 0), gapBefore, kind,
+    h: headingH() + (kind === "warn" ? gapSm * 0.5 : 0), gapBefore, kind, keepWithNext: true,
     draw: (sh, y) => { heading(sh, "body", kind === "warn" ? M + gapSm : M, y + (kind === "warn" ? gapSm * 0.5 : 0), text); },
   });
   const warnBlocks = (w: string) => bulletBlocks(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0);
@@ -787,18 +798,21 @@ interface Placed { readonly block: Block; readonly y: number }
 function paginate(blocks: readonly Block[], top1: number, top2: number, limit: number): Placed[][] {
   const pages: Placed[][] = [[]];
   let y = top1;
-  for (const b of blocks) {
+  blocks.forEach((b, i) => {
     const cur = pages[pages.length - 1]!;
     const gap = cur.length === 0 ? 0 : b.gapBefore;
     const forced = b.breakBefore === true && cur.length > 0 && pages.length === 1;
-    if (cur.length > 0 && (forced || y + gap + b.h > limit)) {
+    const next = blocks[i + 1];
+    // A heading whose next block won't fit after it on this page starts the next page with that block.
+    const orphan = b.keepWithNext === true && next !== undefined && y + gap + b.h + next.gapBefore + next.h > limit;
+    if (cur.length > 0 && (forced || orphan || y + gap + b.h > limit)) {
       pages.push([{ block: b, y: top2 }]);
       y = top2 + b.h;
     } else {
       cur.push({ block: b, y: y + gap });
       y += gap + b.h;
     }
-  }
+  });
   return pages;
 }
 

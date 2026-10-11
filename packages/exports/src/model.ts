@@ -21,7 +21,7 @@ export interface VehicleRow {
   /** When the vehicle was braking: the speed it slowed from, at the start of the window. */
   readonly brakingNote: string | null;
   readonly speedNote: string | null;
-  /** The side hit, in full: "Front", or "Front as entered; the picture uses another side (see notes)". */
+  /** The side hit, in full: "Front", or "Front as entered; the picture uses another side (see Details that may not fit together)". */
   readonly hitOn: string;
   /** The short form for a table cell: the side, with HIT_ON_MARK when the picture uses another side (hitOn then goes under the table). */
   readonly hitOnShort: string;
@@ -193,7 +193,8 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
       speed: v.action === "parked" ? formatSpeed(0, { both: true }).text : about(formatSpeed(rv.speedAtImpactMps, { both: true }).text),
       brakingNote: brakingNote(v, rv),
       speedNote: speedNote(v, rv),
-      hitOn: adjusted ? `${side} as entered; the picture uses another side (see notes)` : side,
+      // The warnings that explain it usually sit on page 2 now, so the note names their section.
+      hitOn: adjusted ? `${side} as entered; the picture uses another side (see Details that may not fit together)` : side,
       hitOnShort: adjusted ? `${side} ${HIT_ON_MARK}` : side,
       hitOnAdjusted: adjusted,
     };
