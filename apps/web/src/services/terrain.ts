@@ -21,13 +21,14 @@ async function pngPixels(bytes: Uint8Array): Promise<Uint8ClampedArray | null> {
 export const loadTerrain: TerrainLoader = async (frame, radiusM, tile) => {
   try {
     const wanted = tilesCovering(frame.origin, radiusM, TERRAIN_ZOOM);
-    const decoded = [];
-    for (const t of wanted) {
+    // All tiles at once (a handful, well inside the proxy's per-user tile burst), not one round trip after another.
+    const decoded = await Promise.all(wanted.map(async (t) => {
       const px = await pngPixels(await tile(t.z, t.x, t.y));
-      if (!px) return null;
-      decoded.push({ ...t, heights: decodeTerrarium(px, TILE_PX, TILE_PX), size: TILE_PX });
-    }
-    return decoded.length ? terrainGrid(decoded, frame, radiusM, TERRAIN_CELL_M) : null;
+      return px ? { ...t, heights: decodeTerrarium(px, TILE_PX, TILE_PX), size: TILE_PX } : null;
+    }));
+    if (decoded.some((d) => d === null)) return null;
+    const tiles = decoded.filter((d): d is NonNullable<typeof d> => d !== null);
+    return tiles.length ? terrainGrid(tiles, frame, radiusM, TERRAIN_CELL_M) : null;
   } catch (e) {
     if (isNotImplemented(e)) return null;
     return null;

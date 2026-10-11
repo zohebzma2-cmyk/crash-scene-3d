@@ -1,10 +1,10 @@
 // Road data for the pin. After the pin is set, the roads around it are loaded (Overpass through
 // the proxy), and the streets at the pin become the direction choices on the vehicles step.
 // Moving the pin a little reuses the loaded roads; moving it far loads new ones.
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { RoadNetwork, StreetsAtPin } from "@csd/core";
 import { useServices } from "../services/context";
-import { ServiceError } from "../services/types";
+import { ServiceError, type RoadsProgress } from "../services/types";
 import { useDoc } from "./DocProvider";
 
 export type RoadsStatus = "idle" | "loading" | "ready" | "none" | "error";
@@ -15,9 +15,15 @@ export interface RoadsValue {
   readonly net: RoadNetwork | null;
   readonly streets: StreetsAtPin | null;
   readonly message: string | null;
+  /** While loading: the terrain tiles that have arrived (null until the roads are in). */
+  readonly progress: RoadsProgress | null;
+  /** The last load's terrain: was there any (false: the ground is drawn flat)? Null before a load. */
+  readonly terrainAvailable: boolean | null;
+  /** Try the roads again after a failure. */
+  readonly retry: () => void;
 }
 
-const Ctx = createContext<RoadsValue>({ status: "idle", net: null, streets: null, message: null });
+const Ctx = createContext<RoadsValue>({ status: "idle", net: null, streets: null, message: null, progress: null, terrainAvailable: null, retry: () => undefined });
 
 /** A pin this close to the loaded area's center reuses the roads. The area is 250 m around its center. */
 export const REUSE_RADIUS_M = 100;
@@ -37,6 +43,7 @@ export function RoadsProvider({ children, debounceMs = LOAD_DEBOUNCE_MS }: { chi
   const located = doc.located;
   const [net, setNet] = useState<RoadNetwork | null>(null);
   const [failed, setFailed] = useState<{ lat: number; lon: number; message: string } | null>(null);
+  const [progress, setProgress] = useState<RoadsProgress | null>(null);
 
   const pin = useMemo(() => ({ lat, lon }), [lat, lon]);
   const reusable = located && net != null && metersBetween(net.frame.origin, pin) < REUSE_RADIUS_M;
@@ -45,14 +52,18 @@ export function RoadsProvider({ children, debounceMs = LOAD_DEBOUNCE_MS }: { chi
   useEffect(() => {
     if (!located || reusable || failedHere) return;
     let cancelled = false;
+    // The debounce is for pin drags. A load for this very pin that is already running (an example's roads,
+    // started at boot) is joined at once.
+    const wait = services.roads.inFlight?.(pin) ? 0 : debounceMs;
     const timer = window.setTimeout(() => {
-      services.roads.load(pin).then(
-        (n) => { if (!cancelled) { setNet(n); setFailed(null); } },
-        (e: unknown) => { if (!cancelled) setFailed({ ...pin, message: e instanceof ServiceError ? e.message : FAILED_MESSAGE }); },
+      services.roads.load(pin, undefined, (p) => { if (!cancelled) setProgress(p); }).then(
+        (n) => { if (!cancelled) { setNet(n); setFailed(null); setProgress(null); } },
+        (e: unknown) => { if (!cancelled) { setFailed({ ...pin, message: e instanceof ServiceError ? e.message : FAILED_MESSAGE }); setProgress(null); } },
       );
-    }, debounceMs);
+    }, wait);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [located, reusable, failedHere, pin, services, debounceMs]);
+  const retry = useCallback(() => setFailed(null), []);
 
   const current = reusable ? net : null;
   const streets = useMemo(() => {
@@ -73,9 +84,13 @@ export function RoadsProvider({ children, debounceMs = LOAD_DEBOUNCE_MS }: { chi
   }, [signature, dispatch]);
 
   const status: RoadsStatus = !located ? "idle" : current ? (current.ways.length > 0 ? "ready" : "none") : failedHere ? "error" : "loading";
+  const loading = status === "loading";
   const value = useMemo<RoadsValue>(
-    () => ({ status, net: current && current.ways.length > 0 ? current : null, streets, message: failedHere ? (failed?.message ?? FAILED_MESSAGE) : null }),
-    [status, current, streets, failedHere, failed],
+    () => ({
+      status, net: current && current.ways.length > 0 ? current : null, streets, message: failedHere ? (failed?.message ?? FAILED_MESSAGE) : null,
+      progress: loading ? progress : null, terrainAvailable: current ? current.terrain != null : null, retry,
+    }),
+    [status, current, streets, failedHere, failed, loading, progress, retry],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -14,7 +14,7 @@ import { createExamplesService } from "./examples";
 import { createFixtureGeo, createFixtureRoads, createFixtureVehicles, fixturesAllowed, fixturesRequested } from "./fixtures";
 import { createGeoService } from "./geo";
 import { createPdfPreviewService } from "./pdfPreview";
-import { createRoadsService } from "./roads";
+import { createRoadsService, shareRoadLoads } from "./roads";
 import { loadTerrain } from "./terrain";
 import type { Services } from "./types";
 import { createFixer, type WorkerLike } from "../fixer/client";
@@ -54,7 +54,7 @@ export function createServices(opts: CreateServicesOptions): Services {
   return {
     mode: fx ? "fixtures" : "live",
     geo: fx ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
-    roads: fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps),
+    roads: shareRoadLoads(fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps)),
     vehicles: fx ? createFixtureVehicles() : createVehiclesService(fetchFn),
     physics,
     fixer: createFixer({ makeWorker, run: (scene, roads, o) => physics.suggestFixes(scene, roads, o) }),

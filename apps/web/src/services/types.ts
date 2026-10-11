@@ -89,9 +89,17 @@ export interface GeoService {
   streetIn(street: string, town: string, opts?: { signal?: AbortSignal }): Promise<StreetInTown | null>;
 }
 
+/** How far a roads load has got: the roads are in and the terrain tiles are arriving. */
+export interface RoadsProgress {
+  readonly terrainDone: number;
+  readonly terrainTotal: number;
+}
+
 export interface RoadsService {
   /** Roads, buildings, parking and terrain around a point (the proxy's Overpass + terrain routes). */
-  load(center: LatLon, radiusM?: number): Promise<RoadNetwork>;
+  load(center: LatLon, radiusM?: number, onProgress?: (p: RoadsProgress) => void): Promise<RoadNetwork>;
+  /** Is a load for exactly this point already running (started early, e.g. at boot for an example)? */
+  inFlight?(center: LatLon, radiusM?: number): boolean;
 }
 
 export interface VehiclesService {
