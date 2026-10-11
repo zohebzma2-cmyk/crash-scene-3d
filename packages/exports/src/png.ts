@@ -28,7 +28,7 @@ const SCALE_BAR_SHARE = 0.16;
 export function pngChipStyle(): ScaleChipStyle {
   const text = px("text-xl");
   return {
-    textSize: text, arrowH: SPACE(8) + SPACE(5), padX: SPACE(5), padY: SPACE(3), gap: SPACE(8), labelGap: SPACE(3),
+    textSize: text, arrowH: SPACE(8) + SPACE(5), padX: SPACE(5), padY: SPACE(3), gap: SPACE(8), labelGap: SPACE(4),
     rowH: text * LEADING + SPACE(2), barLine: SPACE(1), tick: SPACE(2), tickLine: SPACE(1) * 0.75, arrowLine: SPACE(1) * 0.75,
   };
 }
