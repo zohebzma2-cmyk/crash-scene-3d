@@ -2,7 +2,7 @@
 // The keys here are made up at run time; the point of several tests is that they never come back out.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MEDIA_HEADERS, PROXY_ROUTES, type ProviderConfig } from "@csd/core";
-import { createProxy, defaultProviderConfig, memoryStore, type KvStore, type SecretName } from "../src";
+import { createProxy, defaultProviderConfig, isGlb, memoryStore, type KvStore, type SecretName } from "../src";
 import { START, settle } from "./helpers";
 
 beforeEach(() => { vi.useFakeTimers({ now: START }); });
@@ -21,7 +21,8 @@ const WEBP_B = bytes("RIFF", [1, 0, 0, 0], "WEBP", "VP8 car-b");
 const WEBP_SIDE = bytes("RIFF", [1, 0, 0, 0], "WEBP", "VP8 side");
 const PNG = bytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "logo");
 const PNG_LD = bytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "logo.dev");
-const GLB = bytes("glTF", [2, 0, 0, 0, 20, 0, 0, 0], "padding....");
+// A GLB header: magic, version 2, and the total length (24) little-endian.
+const GLB = bytes("glTF", [2, 0, 0, 0, 24, 0, 0, 0], "padding.....");
 
 const CI = "https://carimagesapi.com/api/v1";
 const CDN = "https://cdn.carimagesapi.com";
@@ -372,7 +373,7 @@ describe("maker logos", () => {
     expect(zeta.headers.get(MEDIA_HEADERS.logoSource)).toBe("carimages");
     expect(t.calls.map((c) => c.url)).toEqual([
       "https://carimagesapi.com/brand-logo?make=Zeta+Motors",
-      "https://api.logo.dev/v2/search?q=Zeta+Motors&limit=5",
+      "https://api.logo.dev/v2/search?q=Zeta+Motors&limit=1",
       `${CI}/makes/zeta-motors/logo`,
     ]);
   });
@@ -463,5 +464,133 @@ describe("the keys never leak", () => {
       const host = new URL(c.url).host;
       if (c.headers.get("x-api-secret") || c.headers.get("authorization")) expect(["carimagesapi.com", "api.logo.dev"]).toContain(host);
     }
+  });
+});
+
+const redirect = (location: string, status = 302) => new Response(null, { status, headers: { location } });
+
+describe("redirects (SSRF)", () => {
+  it("a CDN redirect to the cloud metadata address is refused, and that address is never fetched", async () => {
+    const t = setup(catalog({ [`${CDN}/v/ford/f-150/p702-400.webp`]: () => redirect("http://169.254.169.254/latest/meta-data/iam") }));
+    const r = await t.get(image(F150));
+    expect(r.status).toBe(204);
+    expect(r.headers.get(MEDIA_HEADERS.fallback)).toBe("upstream");
+    expect(t.calls.some((c) => c.url.includes("169.254"))).toBe(false);
+    // Downloads are made with manual redirects, so the runtime never follows one on its own.
+    expect(t.calls.filter((c) => c.url.startsWith(CDN)).every((c) => c.redirect === "manual")).toBe(true);
+  });
+
+  it("a /brand-logo redirect to localhost is refused; the logo chain moves on and never serves it", async () => {
+    const t = setup(catalog({ "https://carimagesapi.com/brand-logo?make=Ford": () => redirect("http://127.0.0.1:9001/admin") }));
+    const r = await t.get(logo("Ford"));
+    expect(t.calls.some((c) => c.url.includes("127.0.0.1"))).toBe(false);
+    // Nothing else in this fake has a Ford logo: the answer is the fallback, not the redirect's target, and the
+    // refusal is not remembered as "no logo" (it may be a passing fault).
+    expect(r.status).toBe(204);
+    expect(r.headers.get(MEDIA_HEADERS.fallback)).toBe("upstream");
+    expect((await body(r)).byteLength).toBe(0);
+  });
+
+  it("follows up to three hops on the provider's own https hosts, and refuses a fourth", async () => {
+    const hop = (n: number) => `${CDN}/hop/${n}`;
+    const chain = (hops: number) => catalog({
+      [`${CDN}/v/ford/f-150/p702-400.webp`]: () => redirect(hop(1)),
+      [`${CDN}/hop/`]: (c) => {
+        const n = Number(c.url.split("/").pop());
+        return n < hops ? redirect(hop(n + 1)) : file(WEBP_B);
+      },
+    });
+    const three = setup(chain(3));
+    const ok = await three.get(image(F150));
+    expect(ok.status).toBe(200);
+    expect(await body(ok)).toEqual(WEBP_B);
+    const four = setup(chain(4));
+    const refused = await four.get(image(F150));
+    expect(refused.status).toBe(204);
+    expect(four.calls.some((c) => c.url === hop(4))).toBe(false);
+  });
+
+  it("an http: Location, even on the provider's host, is refused", async () => {
+    const t = setup(catalog({ [`${CDN}/v/ford/f-150/p702-400.webp`]: () => redirect("http://cdn.carimagesapi.com/v/ford/f-150/p702-400.webp") }));
+    const r = await t.get(image(F150));
+    expect(r.status).toBe(204);
+    expect(t.calls.filter((c) => c.url.startsWith("http:"))).toEqual([]);
+  });
+
+  it("a relative redirect on the same allowed host is followed", async () => {
+    const t = setup(catalog({ "https://carimagesapi.com/brand-logo?make=Ford": () => redirect("https://cdn.carimagesapi.com/makes/ford.png?sig=x"), [`${CDN}/makes/ford.png`]: () => file(PNG, "image/png") }));
+    const r = await t.get(logo("Ford"));
+    expect(r.status).toBe(200);
+    expect(r.headers.get(MEDIA_HEADERS.logoSource)).toBe("carimages");
+  });
+});
+
+describe("review fixes", () => {
+  it("logo.dev search: only its top result, and only with the make's exact name ('Geo', 'Eagle' refused)", async () => {
+    const t = setup(catalog({
+      "https://api.logo.dev/v2/search?q=Geo": () => json({ data: [{ name: "The GEO Group", domain: "geogroup.com" }, { name: "Geo", domain: "geo.example" }] }),
+      "https://api.logo.dev/v2/search?q=Eagle": () => json({ data: [{ name: "Eagle Bank", domain: "eaglebankcorp.com" }, { name: "Eagle", domain: "eagle.org" }] }),
+    }));
+    for (const name of ["Geo", "Eagle"]) {
+      const r = await t.get(logo(name));
+      expect(r.status, name).toBe(204);
+    }
+    expect(t.calls.some((c) => /domain=(geogroup|geo\.example|eaglebankcorp|eagle\.org)/.test(c.url))).toBe(false);
+    expect(t.calls.filter((c) => c.url.includes("/v2/search")).every((c) => c.url.includes("limit=1"))).toBe(true);
+  });
+
+  it("GLB check: version 2 and the header's length must match the bytes", () => {
+    expect(isGlb(GLB)).toBe(true);
+    const v = GLB.slice();
+    v[4] = 2; v[5] = 1; // version 0x0102
+    expect(isGlb(v)).toBe(false);
+    const long = GLB.slice();
+    long[8] = 99;
+    expect(isGlb(long)).toBe(false);
+    expect(isGlb(new Uint8Array([...GLB, 0, 0, 0, 0]))).toBe(false);
+  });
+
+  it("one user can't spend the whole daily cap: a second user still gets photos", async () => {
+    const base = defaultProviderConfig();
+    const config: ProviderConfig = { ...base, media: { ...base.media, carimages: { ...base.media.carimages, perUserDailyCap: 3 } } };
+    const t = setup(catalog(), { config });
+    expect((await t.get(image(F150), "heavy")).status).toBe(200); // makes, models, generations: 3 keyed calls
+    const capped = await t.get(image({ year: "2015", make: "Ford", model: "Focus" }), "heavy");
+    expect(capped.status).toBe(204);
+    expect(capped.headers.get(MEDIA_HEADERS.fallback)).toBe("quota");
+    const other = await t.get(image({ year: "2015", make: "Ford", model: "Focus" }), "someone-else");
+    expect(other.status).toBe(200);
+    expect(t.tokenKeys).toContain("user:heavy:quota:carimages");
+  });
+
+  it("a 5xx on a cached catalog's link doesn't refresh the catalog; a 410 does", async () => {
+    for (const [status, refetch] of [[502, false], [504, false], [410, true], [403, true]] as const) {
+      let n = 0;
+      const t = setup(catalog({ [`${CDN}/v/ford/f-150/p702-400.webp`]: () => (++n === 2 ? json({ error: "x" }, status) : file(WEBP_B)) }));
+      await t.get(image(F150));
+      await t.get(image({ ...F150, width: "800" }));
+      const gens = t.calls.filter((c) => c.url === `${CI}/makes/ford/models/f-150`).length;
+      expect(gens, String(status)).toBe(refetch ? 2 : 1);
+    }
+  });
+
+  it("two generations of one model with the same picture are not a placeholder", async () => {
+    const t = setup(catalog({ [`${CDN}/v/ford/f-150/p552-400.webp`]: () => file(WEBP_B) }));
+    expect((await t.get(image({ ...F150, year: "2017" }))).status).toBe(200);
+    expect((await t.get(image(F150))).status).toBe(200);
+    expect((await t.get(image({ ...F150, year: "2017" }))).status).toBe(200);
+  });
+
+  it("a secret with | and { is caught percent-encoded in a catalog link: the link is dropped, never fetched or kept", async () => {
+    const odd = ["sec|ret{x}", String(START).slice(-5)].join("_");
+    const enc = encodeURIComponent(odd);
+    const t = setup(catalog({
+      [`${CI}/makes/ford/models/f-150`]: () => json({ generations: [{ slug: "p702", year_start: 2021, year_end: null, images: { webp: `${CDN}/v/p702.webp?sig=${enc}` } }] }),
+    }), { secrets: { ...SECRETS, CARIMAGES_API_SECRET: odd } });
+    const r = await t.get(image(F150));
+    expect(r.status).toBe(204);
+    expect(r.headers.get(MEDIA_HEADERS.fallback)).toBe("no-image");
+    for (const c of t.calls) expect(c.url.toLowerCase()).not.toContain(enc.toLowerCase());
+    for (const w of t.written) expect(text(w.value).toLowerCase()).not.toContain(enc.toLowerCase());
   });
 });

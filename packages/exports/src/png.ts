@@ -380,12 +380,9 @@ export interface StillLayout {
   readonly band: number;
   /** Where the picture itself sits inside the frame above the band (letterboxed). */
   readonly picture: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
-  /** The vehicles' photo cards along the bottom of the frame (empty without photos). */
+  /** The vehicles' stock photo cards, inside the footer band at its right end (empty without photos). */
   readonly photoCards: readonly Rect[];
 }
-
-/** Photo box on a still's vehicle card: 3:2, the providers' shape. */
-const PHOTO_BOX = { w: px("space-16") * 3, h: px("space-16") * 2 };
 
 /** Draw RGBA pixels over what is already on the canvas (putImageData alone would replace, not blend). */
 function blendPixels(ctx: Ctx, rgba: Uint8ClampedArray, x: number, y: number, w: number, h: number) {
@@ -399,37 +396,44 @@ function blendPixels(ctx: Ctx, rgba: Uint8ClampedArray, x: number, y: number, w:
   ctx.putImageData(under, x, y);
 }
 
-/**
- * One card per vehicle with a photo, left to right along the bottom of the frame: the vehicle's letter
- * in its color and the stock photo. Cards that would run past the logo side are left out.
- */
-async function drawPhotoCards(pen: CanvasPen, model: ReportModel, photos: ReadonlyMap<string, Uint8Array>, frameW: number, frameH: number): Promise<Rect[]> {
-  const cards: Rect[] = [];
-  const pad = SPACE(3);
+/** The text that labels each still photo card (the same words head the PDF's photo cell). */
+export const STILL_PHOTO_LABEL = "Stock photo";
+
+/** One photo card's size in the footer band: the letter over "Stock photo", then the picture (3:2). */
+function photoCardSize(pen: CanvasPen, bandH: number) {
+  const pad = SPACE(2);
+  const h = bandH - SPACE(4) * 2;
+  const photoH = h - pad * 2;
+  const photoW = Math.round(photoH * 1.5);
   const dot = px("size-avatar");
-  const letterSize = px("text-lg");
-  let x = SPACE(8);
-  for (const v of model.vehicles) {
-    const bytes = photos.get(v.id);
-    if (!bytes) continue;
-    let img: Awaited<ReturnType<typeof decodePng>>;
-    try { img = await decodePng(bytes); } catch { continue; }
-    const r: Rect = { x, y: frameH - SPACE(8) - (pad * 2 + PHOTO_BOX.h), w: pad * 3 + dot + PHOTO_BOX.w, h: pad * 2 + PHOTO_BOX.h };
-    if (r.x + r.w > frameW - SPACE(8)) break;
+  const labelSize = px("text-sm");
+  const labelW = Math.max(dot, pen.measure("sans", labelSize, STILL_PHOTO_LABEL));
+  return { pad, h, photoW, photoH, dot, labelSize, labelW, w: pad * 3 + labelW + photoW, gap: SPACE(3) };
+}
+
+/** Draw the cards right-aligned in the band, ending at `right`; returns their rectangles. */
+function drawPhotoCards(pen: CanvasPen, cards: ReadonlyArray<{ id: string; img: Awaited<ReturnType<typeof decodePng>> }>, right: number, bandTop: number, bandH: number): Rect[] {
+  const z = photoCardSize(pen, bandH);
+  const out: Rect[] = [];
+  let x = right - (cards.length * z.w + (cards.length - 1) * z.gap);
+  for (const { id, img } of cards) {
+    const r: Rect = { x, y: bandTop + (bandH - z.h) / 2, w: z.w, h: z.h };
     pen.card(r);
-    const cc: Pt = [r.x + pad + dot / 2, r.y + pad + dot / 2];
-    pen.circle(cc, dot / 2, vehicleColor(v.id));
-    pen.text({ k: "text", at: [cc[0], cc[1] + letterSize * 0.35], text: v.id, font: "sansBold", size: letterSize, color: color("color-text-on-brand"), anchor: "middle" });
-    const k = Math.min(PHOTO_BOX.w / img.width, PHOTO_BOX.h / img.height);
+    const cc: Pt = [r.x + z.pad + z.labelW / 2, r.y + z.pad + z.dot / 2];
+    const letterSize = px("text-lg");
+    pen.circle(cc, z.dot / 2, vehicleColor(id));
+    pen.text({ k: "text", at: [cc[0], cc[1] + letterSize * 0.35], text: id, font: "sansBold", size: letterSize, color: color("color-text-on-brand"), anchor: "middle" });
+    pen.text({ k: "text", at: [cc[0], r.y + z.pad + z.dot + SPACE(1) + z.labelSize], text: STILL_PHOTO_LABEL, font: "sans", size: z.labelSize, color: color("color-text-secondary"), anchor: "middle" });
+    const k = Math.min(z.photoW / img.width, z.photoH / img.height);
     const pw = Math.max(1, Math.round(img.width * k));
     const ph = Math.max(1, Math.round(img.height * k));
-    const x0 = Math.round(r.x + pad * 2 + dot + (PHOTO_BOX.w - pw) / 2);
-    const y0 = Math.round(r.y + pad + (PHOTO_BOX.h - ph) / 2);
+    const x0 = Math.round(r.x + z.pad * 2 + z.labelW + (z.photoW - pw) / 2);
+    const y0 = Math.round(r.y + z.pad + (z.photoH - ph) / 2);
     blendPixels(pen.ctx, scaleTo(img.rgba, img.width, img.height, pw, ph), x0, y0, pw, ph);
-    cards.push(r);
-    x += r.w + SPACE(4);
+    out.push(r);
+    x += z.w + z.gap;
   }
-  return cards;
+  return out;
 }
 
 /**
@@ -448,9 +452,23 @@ export async function renderStillPng(
   const pw = Math.max(1, Math.min(frameW, Math.round(img.width * k)));
   const ph = Math.max(1, Math.min(frameH, Math.round(img.height * k)));
   const pixels = scaleTo(img.rgba, img.width, img.height, pw, ph);
-  // Measure the band on a scratch canvas first so the real canvas gets the right height.
-  const probe = factory.create(frameW, 1);
-  const band = bandLayout(new CanvasPen(getCtx(probe), fam), frameW, model, footerBandHeight());
+  // Measure the band on a scratch canvas first so the real canvas gets the right height. Stock photo cards sit at
+  // the band's right end, never over the picture; the disclaimer and stamp take the rest. Cards that would push the
+  // band past its height are left out (the last first), so a still is always 1920 x 1080.
+  const probePen = new CanvasPen(getCtx(factory.create(frameW, 1)), fam);
+  const cards: Array<{ id: string; img: Awaited<ReturnType<typeof decodePng>> }> = [];
+  for (const v of model.vehicles) {
+    const bytes = photos.get(v.id);
+    if (!bytes) continue;
+    try { cards.push({ id: v.id, img: await decodePng(bytes) }); } catch { /* left out */ }
+  }
+  const z = photoCardSize(probePen, footerBandHeight());
+  const cardsW = (n: number) => (n === 0 ? 0 : n * z.w + (n - 1) * z.gap + SPACE(8));
+  let band = bandLayout(probePen, frameW - cardsW(cards.length), model, footerBandHeight());
+  while (cards.length > 0 && band.h > footerBandHeight()) {
+    cards.pop();
+    band = bandLayout(probePen, frameW - cardsW(cards.length), model, footerBandHeight());
+  }
   const cv = factory.create(frameW, frameH + band.h);
   const ctx = getCtx(cv);
   const pen = new CanvasPen(ctx, fam);
@@ -470,8 +488,8 @@ export async function renderStillPng(
   pen.card(r);
   pen.text({ k: "text", at: [r.x + padX, r.y + padY + size * LEADING * 0.5 + size * 0.35], text: caption, font: "sansBold", size, color: color("color-text") });
   logoCard(pen, frameW - SPACE(8), SPACE(8)).draw();
-  const photoCards = photos.size ? await drawPhotoCards(pen, model, photos, frameW, frameH) : [];
   drawBand(pen, 0, frameH, frameW, band);
+  const photoCards = cards.length ? drawPhotoCards(pen, cards, frameW - SPACE(8), frameH, band.h) : [];
   return { png: await factory.toPng(cv), layout: { width: frameW, height: frameH + band.h, bandTop: frameH, band: band.h, picture: { x: px0, y: py0, w: pw, h: ph }, photoCards } };
 }
 

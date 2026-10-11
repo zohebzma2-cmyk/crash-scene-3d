@@ -2,6 +2,10 @@
 // Keys are normalized: lower case, letters and digits only ("Mercedes-Benz" -> "mercedesbenz").
 // A make missing here is looked up once with logo.dev's search (secret key) and only accepted when the
 // result's name is the make itself; that answer is cached for a year.
+// Only domains that are the maker's own and still live are listed. Left out on purpose (2026-10-11 review): Mercury
+// (mercury.com is a bank), Saab (saab.com is the defence company), and makes that no longer exist or whose domain we
+// can't vouch for (Hummer, Plymouth, Pontiac, Oldsmobile, Saturn, Scion, Fisker): CarImages, then logo.dev's search
+// (top result, exact name) or the fallback icon cover them.
 
 /** Lower case, letters and digits only: how makes are compared everywhere in the media routes. */
 export const normMake = (s: string): string => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
@@ -41,12 +45,10 @@ export const MAKE_DOMAINS: Readonly<Record<string, string>> = Object.freeze({
   dodge: "dodge.com",
   ferrari: "ferrari.com",
   fiat: "fiat.com",
-  fisker: "fiskerinc.com",
   ford: "ford.com",
   genesis: "genesis.com",
   gmc: "gmc.com",
   honda: "honda.com",
-  hummer: "hummer.com",
   hyundai: "hyundai.com",
   infiniti: "infiniti.com",
   isuzu: "isuzu.com",
@@ -63,21 +65,14 @@ export const MAKE_DOMAINS: Readonly<Record<string, string>> = Object.freeze({
   mazda: "mazda.com",
   mclaren: "mclaren.com",
   mercedesbenz: "mercedes-benz.com",
-  mercury: "mercury.com",
   mini: "mini.com",
   mitsubishi: "mitsubishi-motors.com",
   nissan: "nissanusa.com",
-  oldsmobile: "oldsmobile.com",
-  plymouth: "plymouth.com",
   polestar: "polestar.com",
-  pontiac: "pontiac.com",
   porsche: "porsche.com",
   ram: "ramtrucks.com",
   rivian: "rivian.com",
   rollsroyce: "rolls-roycemotorcars.com",
-  saab: "saab.com",
-  saturn: "saturn.com",
-  scion: "scion.com",
   smart: "smart.com",
   subaru: "subaru.com",
   suzuki: "suzuki.com",

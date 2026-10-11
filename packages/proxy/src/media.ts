@@ -57,8 +57,12 @@ export function imageKind(b: Uint8Array): ImageKind | null {
   return null;
 }
 const isPng = (b: Uint8Array) => imageKind(b) === "image/png";
-/** A binary glTF starts with "glTF" and version 2. */
-export const isGlb = (b: Uint8Array) => b.byteLength >= 20 && b[0] === 0x67 && b[1] === 0x6c && b[2] === 0x54 && b[3] === 0x46 && b[4] === 2;
+/** A binary glTF: "glTF", version 2 (a 32-bit little-endian word) and a total length equal to the bytes we hold. */
+export function isGlb(b: Uint8Array): boolean {
+  if (b.byteLength < 20 || b[0] !== 0x67 || b[1] !== 0x6c || b[2] !== 0x54 || b[3] !== 0x46) return false;
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  return dv.getUint32(4, true) === 2 && dv.getUint32(8, true) === b.byteLength;
+}
 const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 /* ------------------------------------------------------------------ asset URLs */
@@ -75,10 +79,13 @@ function safeAssetUrl(raw: unknown, hosts: readonly string[], secrets: readonly 
   if (!s) return null;
   let u: URL;
   try { u = new URL(s); } catch { return null; }
-  if (u.protocol !== "https:" || !hosts.includes(u.hostname) || u.username || u.password) return null;
+  if (u.protocol !== "https:" || !hosts.includes(u.hostname) || u.username || u.password || u.port) return null;
   for (const p of SECRET_PARAMS) u.searchParams.delete(p);
   const out = u.toString();
-  return secrets.some((x) => x && out.includes(x)) ? null : out;
+  // A secret may sit in the URL as typed or percent-encoded (a "|" or "{" in it becomes %7C or %7B).
+  const forms = (x: string) => [x, encodeURIComponent(x), encodeURIComponent(x).toLowerCase()];
+  const lower = out.toLowerCase();
+  return secrets.some((x) => x && forms(x).some((f) => out.includes(f) || lower.includes(f.toLowerCase()))) ? null : out;
 }
 
 /** Photo URLs of one picture, keyed "<format>@<width>" ("webp@400") and "<format>@default". */
@@ -241,8 +248,8 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
   };
 
   const daily = (cap: number) => ({ capacity: Math.max(1, cap), refillPerS: Math.max(1, cap) / DAY_S });
-  const ciQuota: QuotaSpec = { key: "quota:carimages", limit: daily(ci.dailyCap), cooldownKey: "media/ci/cooldown", cooldownS: ci.cooldownS };
-  const ldQuota: QuotaSpec = { key: "quota:logodev", limit: daily(ld.dailyCap), cooldownKey: "media/ld/cooldown", cooldownS: ld.cooldownS };
+  const ciQuota: QuotaSpec = { key: "quota:carimages", limit: daily(ci.dailyCap), perUser: daily(ci.perUserDailyCap), cooldownKey: "media/ci/cooldown", cooldownS: ci.cooldownS };
+  const ldQuota: QuotaSpec = { key: "quota:logodev", limit: daily(ld.dailyCap), perUser: daily(ld.perUserDailyCap), cooldownKey: "media/ld/cooldown", cooldownS: ld.cooldownS };
 
   /** A keyed CarImages API call: key and secret in headers only, redirects refused, one quota token. */
   const ciCall = (path: string, keys: { key: string; secret: string }): UpstreamCall => ({
@@ -271,7 +278,8 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
   function asset(ctx: Ctx, cacheKey: string, ttlS: number, url: string, service: "carimages" | "logodev", check: (b: Uint8Array) => boolean): Promise<Entry> {
     return fetchUpstream(ctx, {
       cacheKey, ttlS, validStored: check,
-      calls: [{ service: `${service}-2`, url }],
+      // Redirects only to that provider's own asset hosts, https, at most three hops (never an internal address).
+      calls: [{ service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts }],
       process: (bytes) => {
         if (!check(bytes)) throw new BadUpstreamBody("not the expected file");
         return { bytes, contentType: "application/octet-stream" };
@@ -354,8 +362,9 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
 
   /**
    * Placeholder guard. The catalog route never asks /image (the endpoint that answers unknown cars and
-   * quota with a placeholder), but if the same bytes ever come back for two different vehicles, they are a
-   * placeholder: remember the hash, drop both copies, and answer the fallback from then on.
+   * quota with a placeholder), but if the same bytes ever come back for two different models (make and model,
+   * not generation: two generations of one model may share a picture), they are a placeholder: remember the
+   * hash, drop both copies, and answer the fallback from then on.
    */
   async function isPlaceholder(ctx: Ctx, bytes: Uint8Array, identity: string, cacheKey: string, fresh: boolean): Promise<boolean> {
     const { store } = ctx.deps;
@@ -386,7 +395,8 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       try {
         return { entry: await asset(ctx, cacheKey(r.extra), ttlS, r.url, "carimages", check), extra: r.extra };
       } catch (e) {
-        const expiredLink = e instanceof ProxyFailure && !(e instanceof QuotaFailure) && e.status !== 429;
+        // Only "this link no longer works" (403, 404, 410) refreshes the catalog; a 5xx or a timeout does not.
+        const expiredLink = e instanceof ProxyFailure && !(e instanceof QuotaFailure) && [403, 404, 410].includes(e.upstreamStatus ?? 0);
         if (attempt === 0 && r.catalogHit && expiredLink) {
           for (const k of r.catalogKeys) await ctx.deps.store.delete(k);
           continue;
@@ -452,7 +462,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
         return { url: set ? pickAsset(set, ci.format, width) : null, catalogHit: hit, catalogKeys: keysUsed, extra: { ...car, served } };
       }, (x) => `media/ci/img/${x.make.slug}/${x.model.slug}/${x.gen.slug}/${x.served}/${width}`, ttl.image, (b) => imageKind(b) !== null);
       const key = `media/ci/img/${extra.make.slug}/${extra.model.slug}/${extra.gen.slug}/${extra.served}/${width}`;
-      if (await isPlaceholder(ctx, entry.bytes, `car/${extra.make.slug}/${extra.model.slug}/${extra.gen.slug}`, key, !entry.hit)) {
+      if (await isPlaceholder(ctx, entry.bytes, `car/${extra.make.slug}/${extra.model.slug}`, key, !entry.hit)) {
         await ctx.deps.store.delete(key);
         return noImage("no-image");
       }
@@ -509,14 +519,14 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       // No key: CarImages' public logo endpoint (it redirects to its CDN).
       return fetchUpstream(ctx, {
         cacheKey: `media/logo/ci-brand/${normMake(source.name)}`, ttlS: ttl.logo, validStored: isPng,
-        calls: [{ service: "carimages", url: `${ci.brandLogoUrl}?${new URLSearchParams({ make: source.name })}` }],
+        calls: [{ service: "carimages", url: `${ci.brandLogoUrl}?${new URLSearchParams({ make: source.name })}`, redirectHosts: ci.assetHosts }],
         process: (bytes) => { if (!isPng(bytes)) throw new BadUpstreamBody("not a PNG"); return { bytes, contentType: "image/png" }; },
       });
     }
     if (source.src === "ci-api") {
       return fetchUpstream(ctx, {
         cacheKey: `media/logo/ci-api/${source.slug}`, ttlS: ttl.logo, validStored: isPng,
-        calls: [{ service: "carimages", url: `${ci.apiUrl}/makes/${encodeURIComponent(source.slug)}/logo` }],
+        calls: [{ service: "carimages", url: `${ci.apiUrl}/makes/${encodeURIComponent(source.slug)}/logo`, redirectHosts: ci.assetHosts }],
         process: (bytes) => { if (!isPng(bytes)) throw new BadUpstreamBody("not a PNG"); return { bytes, contentType: "image/png" }; },
       });
     }
@@ -539,19 +549,21 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     return asset(ctx, cacheKey, ttl.logo, u.toString(), "logodev", isPng);
   }
 
-  /** The make's domain for logo.dev: the table, else logo.dev's search when its top result is this very make. */
+  /**
+   * The make's domain for logo.dev: the table, else logo.dev's search, but only its top result and only when that
+   * result's name is the make itself (letters and digits compared). A lower result with the same name is ignored:
+   * a search for "Geo" or "Eagle" ranks other companies first, and their logos must never stand for the make.
+   */
   async function logoDomain(ctx: Ctx, n: string, name: string): Promise<string | null> {
     const known = ld.makeDomains[n];
     if (known) return known;
     const key = ldKey();
     if (!key) return null;
-    const { value } = await keyedJson(ctx, `media/ld/search/${n}`, ttl.logo, ldCall(`/v2/search?${new URLSearchParams({ q: name, limit: "5" })}`, key), (body) => {
-      for (const r of listOf(body)) {
-        if (!isObj(r)) continue;
-        const domain = str(r.domain);
-        if (domain && normMake(str(r.name) ?? "") === n && /^[a-z0-9.-]{3,80}$/i.test(domain)) return { domain: domain.toLowerCase() };
-      }
-      return { domain: null as string | null };
+    const { value } = await keyedJson(ctx, `media/ld/search/${n}`, ttl.logo, ldCall(`/v2/search?${new URLSearchParams({ q: name, limit: "1" })}`, key), (body) => {
+      const top = listOf(body)[0];
+      const domain = isObj(top) ? str(top.domain) : null;
+      const exact = isObj(top) && normMake(str(top.name) ?? "") === n;
+      return { domain: domain && exact && /^[a-z0-9.-]{3,80}$/i.test(domain) ? domain.toLowerCase() : null as string | null };
     });
     return value.domain;
   }

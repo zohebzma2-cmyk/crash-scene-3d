@@ -45,7 +45,11 @@ const burstOf = (config: ProviderConfig, s: Service) =>
     : s === "carimages" ? config.media.carimages.burst : s === "logodev" ? config.media.logodev.burst : config.tileBurst;
 
 export class ProxyFailure extends Error {
-  constructor(readonly status: number, readonly error: ProxyError, readonly why?: { readonly service: string; readonly limiter: "user" | "global" }) {
+  constructor(
+    readonly status: number, readonly error: ProxyError, readonly why?: { readonly service: string; readonly limiter: "user" | "global" },
+    /** The provider's own 4xx when that is why the call failed (never sent to the browser). */
+    readonly upstreamStatus?: number,
+  ) {
     super(error.message);
   }
 }
@@ -77,6 +81,11 @@ export class QuotaFailure extends ProxyFailure {
 export interface QuotaSpec {
   readonly key: string;
   readonly limit: BucketLimit;
+  /**
+   * Each caller's own share of the daily cap (a rolling bucket kept with the per-user records, which are dated by
+   * UTC day): one person can't spend everyone's quota. Taken first; given back if the shared cap then refuses.
+   */
+  readonly perUser?: BucketLimit;
   readonly cooldownKey: string;
   readonly cooldownS: number;
 }
@@ -121,6 +130,12 @@ export interface UpstreamCall {
    * the key along. The default follows redirects.
    */
   readonly init?: { method?: string; headers?: Record<string, string>; body?: string; redirect?: "follow" | "error" };
+  /**
+   * Redirects are followed by hand, at most MAX_REDIRECT_HOPS, and only to an https URL whose host is in this
+   * list; any other Location (another host, http:, an IP, a fourth hop) fails the call. For downloads whose URL
+   * came from a provider (media), so a redirect can't point the server at an internal address.
+   */
+  readonly redirectHosts?: readonly string[];
   /** Slot service for this URL (fallback hosts get their own). */
   readonly service: Service | `${Service}-${number}`;
   /** This call spends a provider quota (keyed media API calls). */
@@ -227,8 +242,16 @@ async function takeQuota(ctx: Ctx, q: QuotaSpec): Promise<void> {
   const { store, now } = ctx.deps;
   const cooling = await store.get(q.cooldownKey);
   if (cooling && cooling.expiresAt > now()) throw new QuotaFailure(Math.max(1, Math.ceil((cooling.expiresAt - now()) / 1000)));
+  const mine = `user:${ctx.userKey}:${q.key}`;
+  if (q.perUser) {
+    const wait = await store.takeToken(mine, now(), q.perUser);
+    if (wait > 0) throw new QuotaFailure(Math.max(1, Math.ceil(wait / 1000)));
+  }
   const retryInMs = await store.takeToken(q.key, now(), q.limit);
-  if (retryInMs > 0) throw new QuotaFailure(Math.max(1, Math.ceil(retryInMs / 1000)));
+  if (retryInMs > 0) {
+    if (q.perUser) await store.returnToken?.(mine, now(), q.perUser).catch(() => undefined);
+    throw new QuotaFailure(Math.max(1, Math.ceil(retryInMs / 1000)));
+  }
 }
 
 type Attempt =
@@ -237,6 +260,18 @@ type Attempt =
   | { kind: "retry"; timeout: boolean; status?: number }
   | { kind: "fail"; status: number };
 
+/** Most redirects a `redirectHosts` call follows. */
+export const MAX_REDIRECT_HOPS = 3;
+
+/** The next URL of a redirect, or null unless it is https, has no credentials and its host is allowed. */
+export function allowedRedirect(from: string, location: string | null, hosts: readonly string[]): string | null {
+  if (!location) return null;
+  let u: URL;
+  try { u = new URL(location, from); } catch { return null; }
+  if (u.protocol !== "https:" || u.username || u.password || u.port || !hosts.includes(u.hostname)) return null;
+  return u.toString();
+}
+
 async function attempt(ctx: Ctx, call: UpstreamCall, budgetMs: number): Promise<Attempt> {
   const ctrl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -244,13 +279,22 @@ async function attempt(ctx: Ctx, call: UpstreamCall, budgetMs: number): Promise<
     timer = setTimeout(() => { ctrl.abort(); resolve("timeout"); }, budgetMs);
   });
   const work = (async (): Promise<Attempt> => {
-    const res = await ctx.deps.fetch(call.url, {
-      method: call.init?.method ?? "GET",
-      body: call.init?.body,
-      headers: { ...call.init?.headers, "User-Agent": ctx.config.userAgent },
-      signal: ctrl.signal,
-      redirect: call.init?.redirect ?? "follow",
-    });
+    let url = call.url;
+    let res: Response;
+    for (let hop = 0; ; hop++) {
+      res = await ctx.deps.fetch(url, {
+        method: call.init?.method ?? "GET",
+        body: call.init?.body,
+        headers: { ...call.init?.headers, "User-Agent": ctx.config.userAgent },
+        signal: ctrl.signal,
+        redirect: call.redirectHosts ? "manual" : (call.init?.redirect ?? "follow"),
+      });
+      if (!call.redirectHosts || res.status < 300 || res.status >= 400 || res.status === 304) break;
+      const next = hop < MAX_REDIRECT_HOPS ? allowedRedirect(url, res.headers.get("location"), call.redirectHosts) : null;
+      await res.body?.cancel().catch(() => undefined);
+      if (!next) return { kind: "fail", status: 502 };
+      url = next;
+    }
     if (res.status === 304) return { kind: "not-modified", headers: res.headers };
     if (res.status === 429 || res.status >= 500) return { kind: "retry", timeout: false, status: res.status };
     if (!res.ok) return { kind: "fail", status: res.status };
@@ -426,9 +470,9 @@ async function run(ctx: Ctx, spec: UpstreamSpec): Promise<Entry> {
   }
   if (cached) return entryOf(cached, spec.ttlS, { stale: true, hit: true });
   if (sawQuota) throw new QuotaFailure(60);
-  if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE });
+  if (failStatus === 404) throw new ProxyFailure(404, { code: "not-found", message: NOT_FOUND_MESSAGE }, undefined, 404);
   if (sawTimeout && failStatus === null) throw new ProxyFailure(504, { code: "timeout", message: TIMEOUT_MESSAGES[ctx.topic], retryAfterS: 5 });
-  throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGES[ctx.topic], retryAfterS: 5 });
+  throw new ProxyFailure(502, { code: "upstream", message: UPSTREAM_MESSAGES[ctx.topic], retryAfterS: 5 }, undefined, failStatus ?? undefined);
 }
 
 /**

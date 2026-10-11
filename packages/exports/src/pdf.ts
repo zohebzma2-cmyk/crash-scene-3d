@@ -19,6 +19,10 @@ import { PdfCanvas, type Extent, type PdfFonts, type Region } from "./pdf-canvas
 import { PX_TO_PT, color, px, vehicleColor } from "./style";
 
 const OSM_CREDIT = "© OpenStreetMap contributors";
+/** Header of the PDF's photo cell and caption of a still's photo card. */
+export const STOCK_PHOTO_LABEL = "Stock photo";
+/** Under the vehicles table when it shows a photo: what the photos are and whose. */
+export const STOCK_PHOTO_NOTE = "Stock photos are catalog pictures of the model entered (CarImages, carimagesapi.com), not photos of the vehicles involved.";
 /** On the road outline the roads are OpenStreetMap data (not tiles). */
 const OSM_DATA_CREDIT = "Map data © OpenStreetMap contributors";
 /** No printed text below this (pt), except labels inside the diagram. */
@@ -575,7 +579,9 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   };
   const headLabels = ["", "Vehicle", "Type, weight", "Direction", "Speed at impact, as entered", "Hit on"];
   const headLs = headLabels.map((t, i) => s.lines(t, cw[i]! - padX * 2, "sansBold", small));
-  const tHeadH = Math.max(...headLs.map((l) => l.length)) * lh(small) + padY * 2;
+  // The photo cell's header says what it is: a stock photo of the model, never a photo of the vehicle.
+  const photoHeadLs = photoW > 0 ? s.lines(STOCK_PHOTO_LABEL, photoW - padX * 2, "sansBold", small) : [];
+  const tHeadH = Math.max(...headLs.map((l) => l.length), photoHeadLs.length) * lh(small) + padY * 2;
   const bs = Math.min(cw[0]! - padX, px("space-5") * PX_TO_PT * Math.min(1, 0.6 + pad * 0.4));
   const rows = model.vehicles.map((v) => {
     const cells = [
@@ -592,7 +598,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const photo = photos.get(v.id) ?? null;
     return { v, cells, noteLs, photo, h: Math.max(h, bs + hair * 2, photo ? photoBoxH + padY * 2 : 0) };
   });
-  const footLs = model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small));
+  const footLs = [
+    ...model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small)),
+    ...(rows.some((r) => r.photo) ? s.lines(STOCK_PHOTO_NOTE, CW, "sans", small) : []),
+  ];
   const footGap = gapSm * 0.5;
   const table: Block = {
     h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0) + (footLs.length ? footGap + footLs.length * lh(small) : 0), gapBefore: gapBig, kind: "main", name: "Vehicles",
@@ -600,6 +609,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       let y = y0 + heading(sh, "body", M, y0, "Vehicles");
       sh.box("body", M, y, CW, tHeadH, color("color-surface-2"), undefined, 0);
       headLs.forEach((ls, i) => sh.block("body", cx[i]! + padX, y + padY, ls, "sansBold", small, color("color-text-secondary")));
+      if (photoHeadLs.length) sh.block("body", M + cw[0]! + padX, y + padY, photoHeadLs, "sansBold", small, color("color-text-secondary"));
       y += tHeadH;
       for (const r of rows) {
         const rowY = y;

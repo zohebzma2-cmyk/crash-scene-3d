@@ -256,6 +256,8 @@ export interface MediaLimits {
    * size refilled at this many per day, kept in Blobs). Past it the routes answer the fallback at once.
    */
   readonly dailyCap: number;
+  /** Each caller's share of it per rolling day (keyed calls), so one person can't spend everyone's quota. */
+  readonly perUserDailyCap: number;
   /** After the provider answers 429, how long (s) we stop asking it and answer the fallback. */
   readonly cooldownS: number;
 }
@@ -276,7 +278,6 @@ export interface MediaConfig {
     readonly format: "webp" | "png" | "jpg";
     /** Largest GLB we relay (bytes). */
     readonly maxModelBytes: number;
-    readonly attribution: string;
   };
   readonly logodev: MediaLimits & {
     /** API base (secret key, Bearer header), e.g. https://api.logo.dev. */

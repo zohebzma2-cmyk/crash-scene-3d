@@ -50,6 +50,11 @@ describe("PDF vehicles table photo cell", () => {
     expect(cells[1]!.y).toBeGreaterThan(cells[0]!.y + cells[0]!.h - 0.5);
     expect(p.bodyBottom).toBeLessThan(p.footerTop);
     const read = await readPdf(r.bytes);
+    // The cell is headed "Stock photo" and a note under the table says whose photos these are and what they show.
+    expect(read.text).toContain("Stock photo");
+    expect(read.text.replace(/\s+/g, " ")).toContain("not photos of the vehicles involved");
+    const plain = await readPdf((await pdf(scene, sim)).bytes);
+    expect(plain.text).not.toContain("Stock photo");
     // Every vehicle's text is still in the table.
     for (const v of scene.vehicles) expect(read.text).toContain(v.make);
   });
@@ -62,41 +67,55 @@ describe("PDF vehicles table photo cell", () => {
 });
 
 describe("still photo cards", () => {
-  it("one card per vehicle with a photo along the bottom of the frame, letter and picture, clear of the band", async () => {
-    const { scene, sim } = twoVehicle();
+  async function still(photos: ReadonlyMap<string, Uint8Array>, vehicles = twoVehicle()) {
+    const { scene, sim } = vehicles;
     const { stamp } = await sceneFile(scene, sim, CREATED);
     const tc = testCanvas();
     const fam = await tc.factory.registerFonts(brandFonts());
+    const out = await renderStillPng(syntheticPng(960, 492, "impact"), "Moment of impact", buildModel(scene, sim, stamp), tc.factory, fam, photos);
+    return { ...out, tc, scene };
+  }
+
+  it("sit in the footer band, never over the picture, labelled 'Stock photo', and the still stays 1920 x 1080", async () => {
     const photo = syntheticPng(600, 400, "photo");
-    const { layout, png } = await renderStillPng(syntheticPng(960, 492, "impact"), "Moment of impact", buildModel(scene, sim, stamp), tc.factory, fam, new Map([["A", photo], ["B", photo]]));
+    const { layout, png, tc } = await still(new Map([["A", photo], ["B", photo]]));
     saveOutput("still-with-photos.png", png);
+    expect([layout.width, layout.height]).toEqual([1920, 1080]);
     expect(layout.photoCards).toHaveLength(2);
     for (const c of layout.photoCards) {
-      expect(c.y + c.h).toBeLessThanOrEqual(layout.bandTop);
-      expect(c.x).toBeGreaterThanOrEqual(0);
+      expect(c.y).toBeGreaterThanOrEqual(layout.bandTop);
+      expect(c.y + c.h).toBeLessThanOrEqual(layout.bandTop + layout.band);
       expect(c.x + c.w).toBeLessThanOrEqual(layout.width);
     }
     expect(layout.photoCards[1]!.x).toBeGreaterThan(layout.photoCards[0]!.x + layout.photoCards[0]!.w);
-    // The letters are drawn on the cards.
-    for (const id of ["A", "B"]) {
-      const t = tc.drawn.find((d) => d.text === id && d.y > layout.photoCards[0]!.y && d.y < layout.bandTop);
-      expect(t, id).toBeDefined();
+    const first = Math.min(...layout.photoCards.map((c) => c.x));
+    for (const id of ["A", "B"]) expect(tc.drawn.find((d) => d.text === id && d.y > layout.bandTop), id).toBeDefined();
+    const labels = tc.drawn.filter((d) => d.text === "Stock photo");
+    expect(labels).toHaveLength(2);
+    // The disclaimer and the stamp stay left of the cards.
+    for (const d of tc.drawn.filter((t) => t.y > layout.bandTop && !["A", "B", "Stock photo"].includes(t.text))) {
+      expect(d.x + d.width, d.text).toBeLessThanOrEqual(first);
     }
-    // The photo's own pixels are there (its background color, not the card's white), in the card's right part.
+    // The photo's own pixels are in the card's right part.
     const out = await decodePng(png);
     const c = layout.photoCards[0]!;
     const at = (x: number, y: number) => Array.from(out.rgba.subarray((Math.round(y) * out.width + Math.round(x)) * 4, (Math.round(y) * out.width + Math.round(x)) * 4 + 3));
-    expect(at(c.x + c.w - 40, c.y + 20)).toEqual(at(c.x + c.w - 60, c.y + 30));
     const photoPixel = await decodePng(photo);
-    expect(at(c.x + c.w - 40, c.y + 20)).toEqual(Array.from(photoPixel.rgba.subarray(0, 3)));
+    expect(at(c.x + c.w - 20, c.y + 15)).toEqual(Array.from(photoPixel.rgba.subarray(0, 3)));
+  });
+
+  it("four vehicles: cards that would push the band taller are left out, the still stays 1920 x 1080", async () => {
+    const { fourVehicle } = await import("./sim-fixtures");
+    const four = fourVehicle();
+    const photo = syntheticPng(600, 400, "photo");
+    const { layout } = await still(new Map(four.scene.vehicles.map((v) => [v.id, photo] as const)), four);
+    expect([layout.width, layout.height]).toEqual([1920, 1080]);
+    expect(layout.photoCards.length).toBeGreaterThan(0);
+    for (const c of layout.photoCards) expect(c.y).toBeGreaterThanOrEqual(layout.bandTop);
   });
 
   it("without photos: no cards", async () => {
-    const { scene, sim } = twoVehicle();
-    const { stamp } = await sceneFile(scene, sim, CREATED);
-    const tc = testCanvas();
-    const fam = await tc.factory.registerFonts(brandFonts());
-    const { layout } = await renderStillPng(syntheticPng(960, 492, "impact"), "Final rest", buildModel(scene, sim, stamp), tc.factory, fam);
+    const { layout } = await still(new Map());
     expect(layout.photoCards).toEqual([]);
   });
 });
