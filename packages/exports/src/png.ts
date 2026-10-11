@@ -3,11 +3,11 @@
 // fonts registered through the CanvasFactory.
 import { DISCLAIMER_SHORT } from "@csd/core";
 import type { RoadNetwork, SimulationResult } from "@csd/core";
-import { planDiagram, scaleBars, type Rect } from "./diagram";
+import { planDiagram, rectsTouch, scaleBars, type Rect } from "./diagram";
 import { layoutText, roundedRectPts, wrapText, type FontKey, type Measure, type Prim, type Pt, type Stroke } from "./draw";
 import type { CanvasFactory, CanvasLike } from "./canvas-types";
 import type { ReportModel } from "./model";
-import { northArrow, northArrowSize } from "./north";
+import { scaleChip, scaleChipPrims, type ScaleChipStyle } from "./north";
 import { WORDMARK, drawMarkCanvas, lockup } from "./logo";
 import { decodePng } from "./png-decode";
 import { color, px } from "./style";
@@ -20,6 +20,18 @@ const LEADING = px("leading-snug");
 const SPACE = (n: 1 | 2 | 3 | 4 | 5 | 6 | 8) => px(`space-${n}`);
 /** Width every still is fitted to, so the band and captions read the same on every picture. */
 export const STILL_MIN_WIDTH = px("size-png-3d-w");
+
+/** Longest a scale bar may be, as a share of the diagram's width. */
+const SCALE_BAR_SHARE = 0.16;
+
+/** The north arrow and scale card on the PNG diagram, in px. */
+export function pngChipStyle(): ScaleChipStyle {
+  const text = px("text-xl");
+  return {
+    textSize: text, arrowH: SPACE(8) + SPACE(5), padX: SPACE(5), padY: SPACE(3), gap: SPACE(8), labelGap: SPACE(3),
+    rowH: text * LEADING + SPACE(2), barLine: SPACE(1), tick: SPACE(2), tickLine: SPACE(1) * 0.75, arrowLine: SPACE(1) * 0.75,
+  };
+}
 
 /** Height of the footer band when the stamp sits beside the disclaimer: padding plus the three stamp lines. */
 export function footerBandHeight(): number {
@@ -211,6 +223,10 @@ export interface DiagramPngLayout {
   /** The north arrow with its "N" (inside the scale card), and the scale card itself. */
   readonly north: Rect;
   readonly scaleCard: Rect;
+  /** The legend card of numbered measurements, when there is one. */
+  readonly legend: Rect | null;
+  /** Each scale bar (line, caps and end ticks) and its label, as drawn. */
+  readonly bars: ReadonlyArray<{ readonly bar: Rect; readonly label: Rect }>;
 }
 
 export async function renderDiagramPng(input: DiagramPngInput, factory: CanvasFactory, fam: Families): Promise<{ png: Uint8Array; layout: DiagramPngLayout }> {
@@ -284,57 +300,46 @@ export async function renderDiagramPng(input: DiagramPngInput, factory: CanvasFa
       });
     }
   }
-  // The diagram is fitted into what the cards leave free, then the scale card (whose bars depend on the scale) is placed.
-  const maxCardH = Math.max(0, ...cards.filter((c) => c.y > S / 2).map((c) => c.h));
-  const scaleSize = px("text-xl");
-  const northH = SPACE(8) + SPACE(5);
-  const northSize = northArrowSize(northH, scaleSize, pen.measure);
-  const scaleH = SPACE(3) * 2 + Math.max(northSize.h, 2 * scaleSize * LEADING + SPACE(2));
+  // The diagram is fitted into what the cards leave free, then the scale card (whose bars depend on the scale) is placed,
+  // bottom right. If it would come within a gap of the legend, the scale card goes above the legend instead and the
+  // diagram is fitted again with room for both, so the two never overlap.
+  const legend = cards.find((c) => c.y > S / 2) ?? null;
+  const maxCardH = legend?.h ?? 0;
+  const chipStyle = pngChipStyle();
+  // The card's height doesn't depend on the scale, only its width does.
+  const scaleH = scaleChip([0, 0], [{ label: "", px: 0 }, { label: "", px: 0 }], chipStyle, pen.measure).rect.h;
   const titleBottom = Math.max(...cards.filter((c) => c.y < S / 2).map((c) => c.y + c.h));
-  const bottomInset = Math.max(maxCardH, scaleH) + edge + SPACE(4);
-  const plan = planDiagram(sim, roads, {
-    box: { x: 0, y: 0, w: S, h: area }, letters: true, markers: true, streetLabels: true, ghosts: true,
-    minTextSize: px("text-base"), minLine: 2, minTagRadius: px("text-lg"),
-    insets: { top: titleBottom + SPACE(4), bottom: bottomInset, left: SPACE(4), right: SPACE(4) },
-  }, pen.measure);
+  const fit = (stacked: boolean) => {
+    const bottomInset = (stacked ? maxCardH + SPACE(4) + scaleH : Math.max(maxCardH, scaleH)) + edge + SPACE(4);
+    const plan = planDiagram(sim, roads, {
+      box: { x: 0, y: 0, w: S, h: area }, letters: true, markers: true, streetLabels: true, ghosts: true,
+      minTextSize: px("text-base"), minLine: 2, minTagRadius: px("text-lg"),
+      insets: { top: titleBottom + SPACE(4), bottom: bottomInset, left: SPACE(4), right: SPACE(4) },
+    }, pen.measure);
+    // The north arrow, then two bars, each exact in its own unit, with a clear gap and a divider between them.
+    const bars = scaleBars(plan.scale, S * SCALE_BAR_SHARE);
+    const barList = [bars.metric, bars.us];
+    const size = scaleChip([0, 0], barList, chipStyle, pen.measure).rect;
+    const at: Pt = [S - edge - size.w, stacked && legend ? legend.y - SPACE(4) - size.h : area - edge - size.h];
+    return { plan, chip: scaleChip(at, barList, chipStyle, pen.measure) };
+  };
+  let fitted = fit(false);
+  if (legend && rectsTouch(fitted.chip.rect, legend, SPACE(4))) fitted = fit(true);
+  const { plan, chip } = fitted;
   pen.poly([[0, 0], [S, 0], [S, S], [0, S]], true, color("color-surface"));
   pen.replay(plan.prims);
-
-  let scaleCard: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  let northRect: Rect = scaleCard;
-  // Scale card, bottom right: north arrow and two bars, each exact in its own unit.
-  {
-    const padY = SPACE(3);
-    const padX = SPACE(5);
-    const bars = scaleBars(plan.scale, S * 0.16);
-    const arrow = northSize.w;
-    const labW = Math.max(pen.measure("mono", scaleSize, bars.metric.label), pen.measure("mono", scaleSize, bars.us.label));
-    const barW = Math.max(bars.metric.px, bars.us.px);
-    const w = padX * 2 + arrow + SPACE(5) + barW + SPACE(3) + labW;
-    const h = scaleH;
-    const r: Rect = { x: S - edge - w, y: area - edge - h, w, h };
-    scaleCard = r;
-    cards.push(r);
-    const ink = color("color-text");
-    const north = northArrow([r.x + padX, r.y + padY], northH, scaleSize, ink, 3, pen.measure);
-    northRect = north.rect;
-    draws.push(() => {
-      pen.card(r);
-      pen.replay(north.prims);
-      const bx = r.x + padX + arrow + SPACE(5);
-      [bars.metric, bars.us].forEach((b, i) => {
-        const rowTop = r.y + padY + i * (scaleSize * LEADING + SPACE(2));
-        const by = rowTop + scaleSize * LEADING * 0.5;
-        pen.poly([[bx, by], [bx + b.px, by]], false, undefined, { color: ink, width: SPACE(1), cap: "round" });
-        pen.poly([[bx, by - 7], [bx, by + 7]], false, undefined, { color: ink, width: 3 });
-        pen.poly([[bx + b.px, by - 7], [bx + b.px, by + 7]], false, undefined, { color: ink, width: 3 });
-        pen.text({ k: "text", at: [bx + barW + SPACE(3), by + scaleSize * 0.35], text: b.label, font: "mono", size: scaleSize, color: ink });
-      });
-    });
-  }
+  const scaleCard: Rect = chip.rect;
+  cards.push(scaleCard);
+  draws.push(() => {
+    pen.card(scaleCard);
+    pen.replay(scaleChipPrims(chip, chipStyle, color("color-text"), color("color-border"), pen.measure));
+  });
   for (const d of draws) d();
   drawBand(pen, 0, area, S, band);
-  return { png: await factory.toPng(cv), layout: { cards, keep: plan.keep, safe: plan.safe, band: band.h, north: northRect, scaleCard } };
+  return {
+    png: await factory.toPng(cv),
+    layout: { cards, keep: plan.keep, safe: plan.safe, band: band.h, north: chip.arrow, scaleCard, legend, bars: chip.bars.map((b) => ({ bar: b.box, label: b.labelBox })) },
+  };
 }
 
 export async function buildDiagramPng(input: DiagramPngInput, factory: CanvasFactory, fam: Families): Promise<Uint8Array> {

@@ -9,7 +9,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFName, PDFString, type PDFImage } from "pdf-lib";
 import { DISCLAIMER_LONG, DISCLAIMER_SHORT, toLocal } from "@csd/core";
 import type { BrandFonts, RoadNetwork, Scene, SimulationResult } from "@csd/core";
-import { northArrow, northArrowSize } from "./north";
+import { scaleChip, scaleChipPrims, type ScaleChipStyle } from "./north";
 import { planDiagram, planPinStreetLabels, planRoadOutline, scaleBars, type Box } from "./diagram";
 import { thumbnailMetersPerPixel } from "./png-meta";
 import { roundedRectPts, wrapText, type FontKey, type Pt } from "./draw";
@@ -30,8 +30,22 @@ const THUMB_RING_IMAGE_PX = 3;
 const MIN_OUTLINE_SPAN_M = 80;
 /** The diagram is at least this share of the room between the header and the footer (0.3 keeps the real examples on one page). */
 export const MIN_DIAGRAM_FRACTION = 0.3;
+/** Longest a scale bar may be, as shares of the diagram's width, tried in turn until the chip fits a clear corner. */
+const CHIP_BAR_SHARES = [0.3, 0.24, 0.18, 0.12] as const;
 /** Diagram labels (street names, letters, marker numbers, scale) stay at least this large (pt). */
 export const MIN_DIAGRAM_TEXT_PT = MIN_TEXT_PT;
+
+/**
+ * The north arrow and scale chip in the PDF diagram, in pt. Its spacing comes from the tokens and doesn't shrink
+ * with the page's fit level, so the bars keep clear of the arrow at every size.
+ */
+export function pdfChipStyle(textPt: number, lineH: number, hair: number): ScaleChipStyle {
+  return {
+    textSize: textPt, arrowH: textPt * 3.2, padX: px("space-2") * PX_TO_PT * 0.75, padY: px("space-1") * PX_TO_PT,
+    gap: px("space-3") * PX_TO_PT, labelGap: px("space-2") * PX_TO_PT, rowH: lineH * 1.15,
+    barLine: hair * 2, tick: textPt * 0.25, tickLine: hair * 1.2, arrowLine: hair * 1.3,
+  };
+}
 
 interface Level { readonly textPx: number; readonly pad: number; readonly gap: number; readonly leading: number }
 const LEVELS: readonly Level[] = [
@@ -83,7 +97,15 @@ export interface PdfPageReport {
     readonly captionBox: { x: number; y: number; w: number; h: number };
   };
   /** The north arrow (with its "N") and the chip it shares with the scale bars, in the diagram, as drawn. */
-  readonly north?: { readonly arrow: { x: number; y: number; w: number; h: number }; readonly chip: { x: number; y: number; w: number; h: number }; /** The diagram box, and what must stay clear of the chip: vehicles, run-up and impact ring. */ readonly box: { x: number; y: number; w: number; h: number }; readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }> };
+  readonly north?: {
+    readonly arrow: { x: number; y: number; w: number; h: number };
+    readonly chip: { x: number; y: number; w: number; h: number };
+    /** The diagram box, and what must stay clear of the chip: vehicles, run-up and impact ring. */
+    readonly box: { x: number; y: number; w: number; h: number };
+    readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
+    /** Each scale bar (line, caps and end ticks) and its label, as drawn. */
+    readonly bars: ReadonlyArray<{ bar: { x: number; y: number; w: number; h: number }; label: { x: number; y: number; w: number; h: number } }>;
+  };
   /** The street names drawn at the pin on the map picture or the outline (their boxes include the halo). */
   readonly mapLabels?: ReadonlyArray<{ text: string; rotateDeg: number; box: { x: number; y: number; w: number; h: number } }>;
   /** The pin (with its ring) and the credit chip on the map, when street names were placed around them. */
@@ -413,24 +435,28 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       // picture is planned again with the chip as an obstacle so street names and markers keep clear of it.
       const plan0 = planDiagram(input.sim, input.roads, diaOpts, sh.cv.measure);
       const cs = MIN_DIAGRAM_TEXT_PT;
-      const bars = scaleBars(plan0.scale, colW * 0.3);
-      const nsz = northArrowSize(cs * 3.2, cs, sh.cv.measure);
-      const rowH = lh(cs) * 1.15;
-      const labW = Math.max(sh.cv.measure("mono", cs, bars.metric.label), sh.cv.measure("mono", cs, bars.us.label));
-      const barW = Math.max(bars.metric.px, bars.us.px);
-      const chipW = gapSm * 2.5 + nsz.w + barW + gapSm + labW;
-      const chipH = Math.max(nsz.h, rowH * 2) + gapSm;
+      const chipStyle = pdfChipStyle(cs, lh(cs), hair);
       const inset = gapSm * 0.5;
-      const corners = [
-        { x: diaBox.x + inset, y: diaBox.y + diaBox.h - chipH - inset },
-        { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + diaBox.h - chipH - inset },
-        { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + inset },
-        { x: diaBox.x + inset, y: diaBox.y + inset },
-      ].map((c) => ({ ...c, w: chipW, h: chipH }));
       const clash = (c: { x: number; y: number; w: number; h: number }) => plan0.keep.some((k) => k.x < c.x + c.w + inset && c.x < k.x + k.w + inset && k.y < c.y + c.h + inset && c.y < k.y + k.h + inset);
-      const chip = corners.find((c) => !clash(c)) ?? corners[0]!;
+      // When no corner is clear, shorter bars make a narrower chip (each bar stays exact in its unit).
+      let found: { chip: { x: number; y: number; w: number; h: number }; barList: Array<{ label: string; px: number }> } | null = null;
+      for (const share of CHIP_BAR_SHARES) {
+        const bars = scaleBars(plan0.scale, colW * share);
+        const barList = [bars.metric, bars.us];
+        const { w: chipW, h: chipH } = scaleChip([0, 0], barList, chipStyle, sh.cv.measure).rect;
+        const corners = [
+          { x: diaBox.x + inset, y: diaBox.y + diaBox.h - chipH - inset },
+          { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + diaBox.h - chipH - inset },
+          { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + inset },
+          { x: diaBox.x + inset, y: diaBox.y + inset },
+        ].map((c) => ({ ...c, w: chipW, h: chipH }));
+        const clear = corners.find((c) => !clash(c));
+        if (clear || !found) found = { chip: clear ?? corners[0]!, barList };
+        if (clear) break;
+      }
+      const { chip, barList } = found!;
       const plan = planDiagram(input.sim, input.roads, { ...diaOpts, obstacles: [chip] }, sh.cv.measure);
-      const north = northArrow([chip.x + gapSm, chip.y + gapSm * 0.5], cs * 3.2, cs, color("color-text"), hair * 1.3, sh.cv.measure);
+      const chipLayout = scaleChip([chip.x, chip.y], barList, chipStyle, sh.cv.measure);
       const mapBox: Box = { x: M, y: ky + gapSm * 0.5, w: colW, h: mapH };
       sh.add("body", (c) => {
         const { x, y: by, w, h } = mapBox;
@@ -502,20 +528,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       });
       sh.add("diagram", (c) => {
         c.replay(plan.prims);
-        // Two scale bars (exact meters, exact feet) and the north arrow on a small chip.
+        // Two scale bars (exact meters, exact feet) and the north arrow on a small chip, side by side with a gap between.
         c.poly(roundedRectPts(chip.x, chip.y, chip.w, chip.h, radius * 0.5, 3), true, color("color-surface"), { color: color("color-border"), width: hair });
-        const ink = color("color-text");
-        c.replay(north.prims);
-        c.marks.north = { arrow: north.rect, chip, box: diaBox, keep: plan.keep };
-        const cy = chip.y;
-        const bx = chip.x + gapSm * 1.5 + nsz.w;
-        [bars.metric, bars.us].forEach((b, i) => {
-          const by = cy + gapSm * 0.5 + rowH * i + rowH * 0.45;
-          c.poly([[bx, by], [bx + b.px, by]], false, undefined, { color: ink, width: hair * 2, cap: "round" });
-          c.poly([[bx, by - 2], [bx, by + 2]], false, undefined, { color: ink, width: hair * 1.2 });
-          c.poly([[bx + b.px, by - 2], [bx + b.px, by + 2]], false, undefined, { color: ink, width: hair * 1.2 });
-          c.text({ k: "text", at: [bx + barW + gapSm, by + cs * 0.35], text: b.label, font: "mono", size: cs, color: ink });
-        });
+        c.replay(scaleChipPrims(chipLayout, chipStyle, color("color-text"), color("color-border"), c.measure));
+        c.marks.north = { arrow: chipLayout.arrow, chip, box: diaBox, keep: plan.keep, bars: chipLayout.bars.map((b) => ({ bar: b.box, label: b.labelBox })) };
         c.poly(roundedRectPts(diaBox.x, diaBox.y, diaBox.w, diaBox.h, radius, 5), true, undefined, { color: color("color-border"), width: hair });
       });
       sh.block("body", M, diaBox.y + diaH + gapSm * 0.4, capLines, "sans", small, color("color-text-secondary"));
