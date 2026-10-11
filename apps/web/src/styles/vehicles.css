@@ -16,6 +16,8 @@
 /* Year, make and model are type-ahead lists (VehicleCombobox): the shared .combo-pop under each field, rows at least --size-touch tall. */
 .vcombo .combo-option { align-items: center; }
 .vcombo .combo-option.is-free .r-main { font-weight: var(--weight-regular); color: var(--color-text-secondary); }
+/* A hairline sets "Use 'X' as typed" apart from vPIC's names. */
+.vcombo .combo-option + .combo-option.is-free { border-top: var(--size-border) solid var(--color-border); }
 .vcombo .combo-note { border-top: none; }
 .vcombo .combo-list + .combo-note { border-top: var(--size-border) solid var(--color-border); }
 .lookup { font-size: var(--text-sm); color: var(--color-text-secondary); display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-6); }

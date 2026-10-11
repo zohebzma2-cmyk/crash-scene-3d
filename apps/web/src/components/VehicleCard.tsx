@@ -2,7 +2,7 @@
 // doing, direction, speed and where it was hit. Editing vehicle A never changes the claim header.
 import { useEffect, useId, useMemo, useRef, useState, type ComponentType, type RefObject } from "react";
 import {
-  ACTIONS, FIRST_VPIC_YEAR, MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, PRESETS, VEHICLE_TYPES, modelYears, normName, rankNames, rankYears, resolveName, vehicleName,
+  ACTIONS, FIRST_VPIC_YEAR, MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, PRESETS, VEHICLE_TYPES, makeAndAliases, modelYears, normName, rankNames, rankYears, resolveName, vehicleName,
   type Action, type SceneVehicle, type VehicleModelResult, type VehicleType,
 } from "@csd/core";
 import { RadioGroup } from "../a11y/roving";
@@ -42,6 +42,11 @@ export const BRAKING_LABEL = "Braking just before the crash";
 export const LOOKUP_DEBOUNCE_MS = 450;
 export { FIRST_VPIC_YEAR };
 export const MAKE_LIST_LIMIT = 40;
+/** How a typed make is matched to vPIC's list: aliases, and a popular make wins a tie ("harley" is Harley-Davidson). */
+const MAKE_MATCH = { aliases: MAKE_ALIASES, popular: POPULAR_MAKES } as const;
+/** The proxy accepts makes up to 60 characters; model names are kept to 80. */
+export const MAKE_MAX_CHARS = 60;
+export const MODEL_MAX_CHARS = 80;
 export const MODEL_LIST_LIMIT = 60;
 export const MAKES_LOADING_TEXT = "Loading the makes…";
 /**
@@ -67,8 +72,17 @@ type Lookup =
   | { key: string; state: "warn"; text: string; reason: string; models: VehicleModelResult[] };
 
 const focusSoon = (ref: RefObject<HTMLInputElement | null>) => window.setTimeout(() => ref.current?.focus(), 0);
+/** One names array per model list, so core's matcher normalizes each list once (it caches by array). */
+const NAMES_OF = new WeakMap<readonly VehicleModelResult[], readonly string[]>();
+const namesOf = (models: readonly VehicleModelResult[]): readonly string[] => {
+  let names = NAMES_OF.get(models);
+  if (!names) { names = models.map((m) => m.name); NAMES_OF.set(models, names); }
+  return names;
+};
+/** A model typed after its make, or one of the make's everyday names ("chevy silverado"), is the model. */
+const stripFor = (make: string | null) => (make ? { stripPrefix: makeAndAliases(make) } : {});
 const findModel = (models: readonly VehicleModelResult[], text: string, make: string | null) => {
-  const name = resolveName(text, models.map((m) => m.name), { aliases: MODEL_ALIASES, ...(make ? { stripPrefix: make } : {}) });
+  const name = resolveName(text, namesOf(models), { aliases: MODEL_ALIASES, ...stripFor(make) });
   return name == null ? undefined : models.find((m) => m.name === name);
 };
 
@@ -102,7 +116,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   const years = useMemo(() => modelYears(), []);
   const lastYear = years[0] ?? FIRST_VPIC_YEAR;
   const makeNames = makes.status === "ok" ? makes.names : null;
-  const resolvedMake = makeNames ? resolveName(v.make, makeNames, { aliases: MAKE_ALIASES }) : null;
+  const resolvedMake = makeNames ? resolveName(v.make, makeNames, MAKE_MATCH) : null;
   // Models are asked for under the makes list's spelling when the text is one of vPIC's makes (typed exactly, by a
   // common name like "chevy", or picked). Anything else is asked for as typed once typing stops (vPIC may know a
   // make outside the list): the service waits longer for it, and the next keystroke drops that wait, so half a
@@ -116,7 +130,8 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   useEffect(() => { keyRef.current = key; });
   const yearOk = v.year != null && v.year >= FIRST_VPIC_YEAR && v.year <= lastYear;
   const badYear = v.year != null && !yearOk;
-  const askable = yearOk && lookupMake != null;
+  // Two of vPIC's ~2,100 makes are longer than the proxy takes (60 characters): no request it would refuse.
+  const askable = yearOk && lookupMake != null && lookupMake.length <= MAKE_MAX_CHARS;
   const current = lookup && lookup.key === key ? lookup : null;
 
   // vPIC models for this year and make, once the make is known: one request per make and year, cached for the
@@ -190,7 +205,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
 
   // ---- make ----
   const makeItems: ComboItem[] = useMemo(() => {
-    const out: ComboItem[] = (makeNames ? rankNames(v.make, makeNames, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES, limit: MAKE_LIST_LIMIT }) : [])
+    const out: ComboItem[] = (makeNames ? rankNames(v.make, makeNames, { ...MAKE_MATCH, limit: MAKE_LIST_LIMIT }) : [])
       .map((r, i) => ({ id: `${ids}-mk${i}`, value: r.name, main: r.name, lead: MakeLogo ? <MakeLogo make={r.name} /> : undefined }));
     const typed = v.make.trim();
     if (typed && !makeNames?.some((n) => normName(n) === normName(typed))) out.push({ id: `${ids}-mk-typed`, value: typed, main: asTypedText(typed), free: true });
@@ -202,7 +217,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   const modelItems: ComboItem[] = useMemo(() => {
     const models = current?.state === "ok" ? current.models : [];
     const byName = new Map(models.map((m) => [m.name, m]));
-    const out: ComboItem[] = rankNames(v.model, models.map((m) => m.name), { aliases: MODEL_ALIASES, limit: MODEL_LIST_LIMIT, ...(lookupMake ? { stripPrefix: lookupMake } : {}) })
+    const out: ComboItem[] = rankNames(v.model, namesOf(models), { aliases: MODEL_ALIASES, limit: MODEL_LIST_LIMIT, ...stripFor(lookupMake) })
       .map((r, i) => {
         const t = byName.get(r.name)?.type;
         return { id: `${ids}-md${i}`, value: r.name, main: r.name, sub: t ? PRESETS[t].label : "Pick the type yourself" };
@@ -242,7 +257,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
           <p className="group-label">Vehicle</p>
           <div className="ymm">
             <VehicleCombobox
-              id={`${ids}-year`} label="Year" className="field-year" inputClassName="num" inputMode="numeric" maxLength={4}
+              id={`${ids}-year`} label="Year" className="field-year" inputClassName="num" inputMode="numeric" maxLength={4} announce
               value={yearText} items={yearItems} status={yearStatus}
               onType={(text) => {
                 const y = text.replace(/\D/g, "").slice(0, 4);
@@ -256,7 +271,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
               }}
             />
             <VehicleCombobox
-              id={`${ids}-make`} label="Make" inputRef={makeRef}
+              id={`${ids}-make`} label="Make" inputRef={makeRef} maxLength={MAKE_MAX_CHARS} announce
               value={v.make} items={makeItems} status={makeStatus}
               onType={(text) => { patch({ make: text }); setMakeDone(false); }}
               onPick={(item) => {
@@ -268,12 +283,12 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
               onCommit={() => {
                 const now = latest.current.make;
                 setMakeDone(now.trim() !== "");
-                const name = makeNames ? resolveName(now, makeNames, { aliases: MAKE_ALIASES }) : null;
+                const name = makeNames ? resolveName(now, makeNames, MAKE_MATCH) : null;
                 if (name && name !== now) patch({ make: name });
               }}
             />
             <VehicleCombobox
-              id={`${ids}-model`} label="Model" inputRef={modelRef}
+              id={`${ids}-model`} label="Model" inputRef={modelRef} maxLength={MODEL_MAX_CHARS}
               value={v.model} items={modelItems} status={modelStatus}
               onType={(text) => {
                 patch({ model: text });

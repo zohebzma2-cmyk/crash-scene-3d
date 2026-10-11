@@ -31,6 +31,8 @@
   /* On phones the year/make list sits in the page flow and pushes Model down, so an open list never covers the next field. */
   .ymm { align-items: start; }
   .vcombo .combo-pop { position: static; margin-top: var(--space-1); box-shadow: none; }
+  /* The fixed action bar (below) is this tall: a row reached with the arrow keys, or anything scrolled into view, stops above it. */
+  html { scroll-padding-bottom: calc(var(--size-button-h) + var(--space-3) + var(--space-3) + var(--size-border) + env(safe-area-inset-bottom)); }
   .zones { grid-template-columns: repeat(3, minmax(var(--space-0), 1fr)); }
   .actions { position: fixed; left: var(--space-0); right: var(--space-0); bottom: var(--space-0); z-index: var(--z-sheet); padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); background: var(--color-surface); border-top: var(--size-border) solid var(--color-border); box-shadow: var(--shadow-lg); flex-wrap: nowrap; }
   .actions .btn-primary { flex: 1; }

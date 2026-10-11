@@ -39,14 +39,20 @@ export interface VehicleComboboxProps {
   readonly inputRef?: Ref<HTMLInputElement>;
   /** Extra name for the rows' list, read by screen readers ("Suggestions" when not given). */
   readonly listLabel?: string;
+  /** Say how many suggestions there are (a polite live region, after typing settles). */
+  readonly announce?: boolean;
 }
+
+/** The count is announced this long after the list last changed, so it isn't read on every keystroke. */
+export const ANNOUNCE_DELAY_MS = 600;
+export const suggestionsCount = (n: number) => (n === 0 ? "No suggestions." : `${n} ${n === 1 ? "suggestion" : "suggestions"}. Use the arrow keys.`);
 
 export const SUGGESTIONS_LABEL = "Suggestions";
 /** The list closes this long after the field loses focus (the address search uses the same pause). */
 export const BLUR_CLOSE_MS = 120;
 
 export function VehicleCombobox({
-  id, label, value, items, onType, onPick, onCommit, status = null, inputMode = "text", maxLength, className = "", inputClassName = "", inputRef, listLabel = SUGGESTIONS_LABEL,
+  id, label, value, items, onType, onPick, onCommit, status = null, inputMode = "text", maxLength, className = "", inputClassName = "", inputRef, listLabel = SUGGESTIONS_LABEL, announce = false,
 }: VehicleComboboxProps) {
   const uid = useId();
   const listId = `${uid}-list`;
@@ -62,6 +68,16 @@ export function VehicleCombobox({
   useEffect(() => {
     if (activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: "nearest" });
   }, [activeId]);
+
+  // The live region is always in the page (a region added with its text is often not read); its text follows the
+  // list once typing settles, and empties when the list closes.
+  const matches = items.filter((i) => !i.free).length;
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    if (!announce) return;
+    const timer = window.setTimeout(() => setSaid(visible ? suggestionsCount(matches) : ""), ANNOUNCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [announce, visible, matches]);
 
   const pick = (item: ComboItem) => {
     setOpen(false);
@@ -156,6 +172,7 @@ export function VehicleCombobox({
           ) : null}
         </div>
       ) : null}
+      {announce ? <span className="visually-hidden" aria-live="polite" data-testid="combo-count">{said}</span> : null}
     </div>
   );
 }

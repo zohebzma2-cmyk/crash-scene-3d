@@ -47,7 +47,9 @@ type VpicKind = (typeof VPIC_KINDS)[number];
 /** Store key of the makes index: normalized make name -> the vPIC kinds it is listed under. */
 const MAKE_KINDS_KEY = "vehicles/make-kinds";
 /** vPIC spells makes in capitals; these don't title-case on their own. */
-const MAKE_CASE: Readonly<Record<string, string>> = { KIA: "Kia", RAM: "Ram", MCLAREN: "McLaren", "MERCEDES-AMG": "Mercedes-AMG", DELOREAN: "DeLorean" };
+/** Words that stay in capitals inside a make's name. */
+const KEEP_UPPER: ReadonlySet<string> = new Set(["BMW", "GMC", "KTM", "AMG", "LLC", "USA", "UK", "II", "III", "IV", "EV", "RV", "MV", "SRT", "CNG", "LTD"]);
+const MAKE_CASE: Readonly<Record<string, string>> = { KIA: "Kia", RAM: "Ram", "TH!NK": "TH!NK", MCLAREN: "McLaren", "MERCEDES-AMG": "Mercedes-AMG", DELOREAN: "DeLorean" };
 
 function errorResponse(status: number, error: ProxyError): Response {
   const headers: Record<string, string> = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" };
@@ -431,11 +433,28 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
         return { bytes, contentType: ct };
       },
     });
-    return { rows: (parseJsonBody(entry.bytes) as { Results: Record<string, unknown>[] }).Results, stale: entry.stale, fetchedAt: entry.fetchedAt };
+    // Only plain objects are rows: a null, a string or an array in Results is skipped (the cached body is the same
+    // either way, and it is filtered again on every read), so it can never throw below.
+    const results = (parseJsonBody(entry.bytes) as { Results: unknown[] }).Results;
+    const rows = results.filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null && !Array.isArray(r));
+    return { rows, stale: entry.stale, fetchedAt: entry.fetchedAt };
   }
 
-  const titleCase = (s: string) =>
-    MAKE_CASE[s.toUpperCase()] ?? (s.length <= 3 ? s.toUpperCase() : s.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bBmw\b/, "BMW").replace(/\bGmc\b/, "GMC"));
+  /**
+   * vPIC's capitals as a name: "HARLEY-DAVIDSON" -> "Harley-Davidson", "BUELL (EBR)" -> "Buell (EBR)" (a short
+   * part in brackets stays an acronym), "JASPER'S HOT RODS LLC" -> "Jasper's Hot Rods LLC" (nothing capitalised
+   * after an apostrophe; known acronyms stay).
+   */
+  const titleCase = (s: string): string => {
+    const fixed = MAKE_CASE[s.toUpperCase()];
+    if (fixed) return fixed;
+    if (s.length <= 3) return s.toUpperCase();
+    return s.replace(/\(([^)]*)\)|[A-Za-z0-9]+(?:'[A-Za-z]+)?/g, (part: string, inBrackets: string | undefined) => {
+      if (inBrackets !== undefined) return inBrackets.length <= 5 ? `(${inBrackets.toUpperCase()})` : `(${titleCase(inBrackets)})`;
+      const upper = part.toUpperCase();
+      return KEEP_UPPER.has(upper) ? upper : upper.charAt(0) + part.slice(1).toLowerCase();
+    });
+  };
 
   async function makes(ctx: Ctx, url: URL): Promise<Response> {
     const p = parseQuery(url, noParams);
@@ -456,7 +475,12 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
         }
       }
       // Which vehicle kinds each make is listed under, so a models lookup asks vPIC only about those.
-      await deps.store.set(MAKE_KINDS_KEY, json(kinds).bytes, "application/json; charset=utf-8", config.cacheTtlS.vehicles);
+      // Best effort: without the index a models lookup asks about all four kinds, so a failed write never fails this.
+      try {
+        await deps.store.set(MAKE_KINDS_KEY, json(kinds).bytes, "application/json; charset=utf-8", config.cacheTtlS.vehicles);
+      } catch {
+        console.warn("proxy: the vPIC make-kinds index wasn't stored");
+      }
       return { ...json([...names.values()].sort((x, y) => x.localeCompare(y))), stale, ...(fetchedAt !== undefined ? { fetchedAt } : {}) };
     });
     return dataResponse(entry, config.cacheTtlS.vehicles);

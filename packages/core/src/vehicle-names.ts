@@ -22,7 +22,7 @@ export const MAKE_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   caddy: "cadillac", caddie: "cadillac", olds: "oldsmobile", alfa: "alfaromeo", aston: "astonmartin",
   infinity: "infiniti", mitsu: "mitsubishi", subie: "subaru", subi: "subaru", lambo: "lamborghini",
   rolls: "rollsroyce", jag: "jaguar", minicooper: "mini",
-  dodgeram: "ram", ramtrucks: "ram", hyundia: "hyundai", hundai: "hyundai", nissian: "nissan", datsun: "nissan",
+  dodgeram: "ram", ramtrucks: "ram", hyundia: "hyundai", hundai: "hyundai", nissian: "nissan",
   porshe: "porsche", chrystler: "chrysler", lexis: "lexus", acrua: "acura", gm: "gmc",
 });
 
@@ -67,8 +67,11 @@ export interface RankOptions {
   readonly aliases?: Readonly<Record<string, string>>;
   /** Normalized names that go first within a kind of match, in this order. */
   readonly popular?: readonly string[];
-  /** Also try the text with this prefix removed ("ram 1500" for make Ram is "1500"). */
-  readonly stripPrefix?: string;
+  /**
+   * Also try the text with this prefix removed ("ram 1500" for make Ram is "1500"); several are allowed (a make and
+   * its everyday names: "chevy silverado" for Chevrolet is "silverado"). See makeAndAliases.
+   */
+  readonly stripPrefix?: string | readonly string[];
   /** At most this many results (default all). */
   readonly limit?: number;
 }
@@ -106,14 +109,51 @@ const wordsOf = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLow
 
 interface Scored { name: string; kind: MatchKind; dist: number; pop: number; len: number }
 
-function matchOne(q: string, qWords: readonly string[], name: string, key: string, aliasesTo: ReadonlyMap<string, readonly string[]>): { kind: MatchKind; dist: number } | null {
+/** A names list prepared once: each name's normalized key and words, and key -> first name. */
+interface NamesIndex { readonly keys: readonly string[]; readonly words: readonly (readonly string[])[]; readonly byKey: ReadonlyMap<string, string> }
+const INDEXES = new WeakMap<readonly string[], NamesIndex>();
+/** The same array (the makes list, one model list) is normalized once, not on every keystroke or render. */
+function indexOf(names: readonly string[]): NamesIndex {
+  let idx = INDEXES.get(names);
+  if (!idx) {
+    const keys = names.map(normName);
+    const byKey = new Map<string, string>();
+    keys.forEach((k, i) => { if (!byKey.has(k)) byKey.set(k, names[i] as string); });
+    idx = { keys, words: names.map(wordsOf), byKey };
+    INDEXES.set(names, idx);
+  }
+  return idx;
+}
+
+/** The text with any of these prefixes (normalized) taken off the front: the rest, and its words. */
+function stripped(text: string, q: string, prefixes: readonly string[]): Array<{ q: string; words: string[] }> {
+  const out: Array<{ q: string; words: string[] }> = [];
+  for (const strip of prefixes) {
+    if (!strip || q.length <= strip.length || !q.startsWith(strip)) continue;
+    // The words left once the prefix's own words are taken off the front.
+    const all = wordsOf(text);
+    let taken = "";
+    let i = 0;
+    while (i < all.length && taken.length < strip.length) taken += all[i++];
+    out.push({ q: q.slice(strip.length), words: taken === strip ? all.slice(i) : [] });
+  }
+  return out;
+}
+const prefixesOf = (p: RankOptions["stripPrefix"]): string[] => (p === undefined ? [] : typeof p === "string" ? [p] : [...p]).map(normName).filter(Boolean);
+
+/** A make and the everyday names that stand for it ("Chevrolet" -> Chevrolet, chevy, chevrolette), to strip from a model. */
+export function makeAndAliases(make: string): string[] {
+  const key = normName(make);
+  return [make, ...Object.keys(MAKE_ALIASES).filter((a) => MAKE_ALIASES[a] === key)];
+}
+
+function matchOne(q: string, qWords: readonly string[], nameWords: readonly string[], key: string, aliasesTo: ReadonlyMap<string, readonly string[]>): { kind: MatchKind; dist: number } | null {
   if (!key) return null;
   if (key === q) return { kind: "exact", dist: 0 };
   const aliasKeys = aliasesTo.get(key) ?? [];
   if (aliasKeys.includes(q)) return { kind: "exact", dist: 0 };
   if (key.startsWith(q)) return { kind: "prefix", dist: 0 };
   // "rover" finds "Land Rover"; "glide" finds "Street Glide".
-  const nameWords = wordsOf(name);
   if (qWords.length > 0 && nameWords.length > 1) {
     const joined = qWords.join("");
     for (let i = 1; i < nameWords.length; i++) if (nameWords.slice(i).join("").startsWith(joined)) return { kind: "word", dist: 0 };
@@ -149,32 +189,25 @@ export function rankNames(text: string, names: readonly string[], opts: RankOpti
     if (list) list.push(alias); else aliasesTo.set(target, [alias]);
   }
   const q = normName(text);
-  const queries: Array<{ q: string; words: string[] }> = [{ q, words: wordsOf(text) }];
-  const strip = opts.stripPrefix ? normName(opts.stripPrefix) : "";
-  if (strip && q.length > strip.length && q.startsWith(strip)) {
-    // The words left once the make's own words are taken off the front.
-    const all = wordsOf(text);
-    let taken = "";
-    let i = 0;
-    while (i < all.length && taken.length < strip.length) taken += all[i++];
-    queries.push({ q: q.slice(strip.length), words: taken === strip ? all.slice(i) : [] });
-  }
+  const queries: Array<{ q: string; words: string[] }> = [{ q, words: wordsOf(text) }, ...stripped(text, q, prefixesOf(opts.stripPrefix))];
+  const idx = indexOf(names);
   const out: Scored[] = [];
   const seen = new Set<string>();
-  for (const name of names) {
-    const key = normName(name);
-    if (seen.has(name)) continue;
+  names.forEach((name, i) => {
+    const key = idx.keys[i] as string;
+    if (seen.has(name)) return;
     seen.add(name);
     const pop = popular.get(key) ?? Number.POSITIVE_INFINITY;
-    if (!q) { out.push({ name, kind: "prefix", dist: 0, pop, len: name.length }); continue; }
+    if (!q) { out.push({ name, kind: "prefix", dist: 0, pop, len: name.length }); return; }
     let best: { kind: MatchKind; dist: number } | null = null;
     for (const { q: qq, words } of queries) {
-      const m = matchOne(qq, words, name, key, aliasesTo);
+      const m = matchOne(qq, words, idx.words[i] ?? [], key, aliasesTo);
       if (m && (!best || KIND_ORDER[m.kind] < KIND_ORDER[best.kind] || (m.kind === best.kind && m.dist < best.dist))) best = m;
     }
     if (best) out.push({ name, kind: best.kind, dist: best.dist, pop, len: name.length });
-  }
-  out.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.dist - b.dist || a.pop - b.pop || a.len - b.len || a.name.localeCompare(b.name));
+  });
+  // Plain code-unit order for the last tie: stable across locales and much cheaper than localeCompare.
+  out.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.dist - b.dist || a.pop - b.pop || a.len - b.len || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const limited = opts.limit !== undefined ? out.slice(0, opts.limit) : out;
   return limited.map(({ name, kind }) => ({ name, kind }));
 }
@@ -182,22 +215,30 @@ export function rankNames(text: string, names: readonly string[], opts: RankOpti
 /**
  * The one name the text stands for exactly: the same letters and digits ("f150" = "F-150"), or a full alias
  * ("chevy" = "Chevrolet", "ram 1500" = "1500" with stripPrefix "Ram"). Null when there is none.
+ * When the text is both a name and an alias of a popular name, the popular one wins: vPIC lists a make "HARLEY",
+ * but "harley" means Harley-Davidson (the same tie rankNames breaks by popularity).
  */
-export function resolveName(text: string, names: readonly string[], opts: Pick<RankOptions, "aliases" | "stripPrefix"> = {}): string | null {
+export function resolveName(text: string, names: readonly string[], opts: Pick<RankOptions, "aliases" | "stripPrefix" | "popular"> = {}): string | null {
   const q = normName(text);
   if (!q) return null;
-  const strip = opts.stripPrefix ? normName(opts.stripPrefix) : "";
-  const tries = [q, ...(strip && q.length > strip.length && q.startsWith(strip) ? [q.slice(strip.length)] : [])];
+  const { byKey } = indexOf(names);
+  const tries = [q, ...stripped(text, q, prefixesOf(opts.stripPrefix)).map((s) => s.q)];
+  const popular = new Set(opts.popular ?? []);
+  const viaAlias = (t: string) => {
+    const target = opts.aliases?.[t];
+    return target ? byKey.get(target) ?? null : null;
+  };
   for (const t of tries) {
-    const byKey = names.find((n) => normName(n) === t);
-    if (byKey) return byKey;
+    const alias = viaAlias(t);
+    if (alias && popular.has(normName(alias))) return alias;
   }
   for (const t of tries) {
-    const target = opts.aliases?.[t];
-    if (target) {
-      const hit = names.find((n) => normName(n) === target);
-      if (hit) return hit;
-    }
+    const exact = byKey.get(t);
+    if (exact) return exact;
+  }
+  for (const t of tries) {
+    const alias = viaAlias(t);
+    if (alias) return alias;
   }
   return null;
 }

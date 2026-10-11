@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, editDistance, maxTypos, modelYears, normName, rankNames, rankYears, resolveName, typeFromVpic,
+  MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, editDistance, makeAndAliases, maxTypos, modelYears, normName, rankNames, rankYears, resolveName, typeFromVpic,
 } from "../src";
 
 // Makes as the proxy serves them (vPIC names, title-cased), with some of the obscure ones that share prefixes.
@@ -14,7 +14,8 @@ const make = (q: string) => rankNames(q, MAKES, { aliases: MAKE_ALIASES, popular
 const CHEVY_2019 = ["Blazer", "Bolt EV", "Camaro", "Colorado", "Corvette", "Equinox", "Express", "Silverado", "Silverado HD", "Silverado LD", "Suburban", "Tahoe"];
 const FORD = ["Escape", "Explorer", "F-150", "F-250", "Mustang", "Ranger"];
 const HONDA = ["Accord", "Civic", "CR-V", "HR-V", "Odyssey", "Pilot"];
-const model = (q: string, names: readonly string[], mk?: string) => rankNames(q, names, { aliases: MODEL_ALIASES, ...(mk ? { stripPrefix: mk } : {}) }).map((r) => r.name);
+const model = (q: string, names: readonly string[], mk?: string, strip?: readonly string[]) =>
+  rankNames(q, names, { aliases: MODEL_ALIASES, ...(strip ? { stripPrefix: strip } : mk ? { stripPrefix: mk } : {}) }).map((r) => r.name);
 
 describe("normName", () => {
   it("keeps only letters and digits, lower case, without accents", () => {
@@ -93,7 +94,38 @@ describe("makes: aliases and typos", () => {
   });
 });
 
+describe("makes: a rare exact name against a popular alias", () => {
+  // vPIC lists both "HARLEY" and "HARLEY-DAVIDSON", and "DATSUN" is a make of its own.
+  const LIST = ["Datsun", "Harley", "Harley-Davidson", "Honda", "Nissan"];
+  it("harley is Harley-Davidson (popular), in resolveName as in rankNames", () => {
+    expect(resolveName("harley", LIST, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toBe("Harley-Davidson");
+    expect(rankNames("harley", LIST, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })[0]?.name).toBe("Harley-Davidson");
+    // Without the popular list, the exact name still comes first.
+    expect(resolveName("harley", LIST, { aliases: MAKE_ALIASES })).toBe("Harley");
+  });
+  it("datsun is Datsun, not an alias of Nissan", () => {
+    expect(MAKE_ALIASES.datsun).toBeUndefined();
+    expect(resolveName("datsun", LIST, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toBe("Datsun");
+  });
+  it("ties after popularity and length go by plain code-unit order", () => {
+    expect(rankNames("", ["ab", "Ab", "AB"]).map((r) => r.name)).toEqual(["AB", "Ab", "ab"]);
+  });
+  it("normalizes each names array once and still answers for a new array with the same names", () => {
+    const names = [...MAKES];
+    const first = rankNames("chevy", names, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES });
+    expect(rankNames("chevy", names, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toEqual(first);
+    expect(rankNames("chevy", [...MAKES], { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toEqual(first);
+    expect(resolveName("vw", names, { aliases: MAKE_ALIASES })).toBe("Volkswagen");
+  });
+});
+
 describe("models: spelling variants, nicknames and typos", () => {
+  it("the make or one of its everyday names in front of the model is ignored (chevy silverado)", () => {
+    expect(makeAndAliases("Chevrolet")).toEqual(expect.arrayContaining(["Chevrolet", "chevy"]));
+    expect(model("chevy silverado", CHEVY_2019, undefined, makeAndAliases("Chevrolet"))[0]).toBe("Silverado");
+    expect(resolveName("chevy silverado", CHEVY_2019, { aliases: MODEL_ALIASES, stripPrefix: makeAndAliases("Chevrolet") })).toBe("Silverado");
+    expect(resolveName("vw jetta", ["Golf", "Jetta"], { aliases: MODEL_ALIASES, stripPrefix: makeAndAliases("Volkswagen") })).toBe("Jetta");
+  });
   it("f150 is F-150, crv is CR-V, hrv is HR-V", () => {
     expect(model("f150", FORD)[0]).toBe("F-150");
     expect(model("F 150", FORD)[0]).toBe("F-150");

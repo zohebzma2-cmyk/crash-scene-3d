@@ -205,6 +205,55 @@ describe("vehicle picker: free text", () => {
   });
 });
 
+describe("vehicle picker: details", () => {
+  it("year and make say how many suggestions there are, in a live region that is always there", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { services } = makeServices({ vehicles: createFixtureVehicles() });
+    app = await renderApp(services, { hash: "#vehicles", storage: located() });
+    await settle();
+    const live = (input: HTMLInputElement) => input.closest(".vcombo")?.querySelector<HTMLElement>("[aria-live=polite]") ?? null;
+    const make = field("B", "make");
+    expect(live(make)).not.toBeNull();
+    expect(live(make)?.textContent).toBe("");
+    expect(live(field("B", "year"))).not.toBeNull();
+    expect(live(field("B", "model"))).toBeNull();   // the model list has its own status line
+    await typeLikeAPerson(make, "chevy");
+    expect(live(make)?.textContent).toBe("");        // not on every keystroke
+    await settle(700);
+    expect(live(make)?.textContent).toBe("1 suggestion. Use the arrow keys.");
+    key(make, "Escape");
+    await settle(700);
+    expect(live(make)?.textContent).toBe("");
+  });
+
+  it("make and model take at most 60 and 80 characters", async () => {
+    const { services } = makeServices({ vehicles: createFixtureVehicles() });
+    app = await renderApp(services, { hash: "#vehicles", storage: located() });
+    expect(field("B", "make").maxLength).toBe(60);
+    expect(field("B", "model").maxLength).toBe(80);
+    expect(field("B", "year").maxLength).toBe(4);
+  });
+
+  it("'chevy silverado' typed in Model finds Silverado 1500, and 'harley' in Make is Harley-Davidson", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { services } = makeServices({ vehicles: createFixtureVehicles() });
+    app = await renderApp(services, { hash: "#vehicles", storage: located() });
+    await settle();
+    await typeLikeAPerson(field("B", "year"), "2019");
+    await typeLikeAPerson(field("B", "make"), "chevy");
+    key(field("B", "make"), "Enter");
+    await settle(800);
+    const model = field("B", "model");
+    await typeLikeAPerson(model, "chevy silverado");
+    expect(rowNames(model)[0]).toBe("Silverado 1500");
+    key(model, "Enter");
+    expect(model.value).toBe("Silverado 1500");
+    expect(get("radio", /^Pickup/, card("B")).getAttribute("aria-checked")).toBe("true");
+    await typeLikeAPerson(field("B", "make"), "harley");
+    expect(rowNames(field("B", "make"))[0]).toBe("Harley-Davidson");
+  });
+});
+
 describe("vehicle picker: requests", () => {
   /** The real service over a fake /api that answers like the proxy and counts what it is asked. */
   function countingFetch() {

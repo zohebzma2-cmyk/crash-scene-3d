@@ -2,7 +2,8 @@
 // (test/fixtures/vpic; the motorcycle makes list trimmed to a few dozen of its ~1,700 names).
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAKE_ALIASES, POPULAR_MAKES, PROXY_ROUTES, rankNames, type VehicleModelResult } from "@csd/core";
+import { MAKE_ALIASES, POPULAR_MAKES, PROXY_ROUTES, rankNames, resolveName, type VehicleModelResult } from "@csd/core";
+import { MAKE_MAX_CHARS, VEHICLE_MAKE } from "../src/params";
 import { START, jsonResponse, settle, setup, type Call } from "./helpers";
 
 beforeEach(() => { vi.useFakeTimers({ now: START }); });
@@ -138,5 +139,85 @@ describe("/api/vehicles/models", () => {
       expect((await settle(t.get(`${PROXY_ROUTES.models}?${q}`))).status, q).toBe(400);
     }
     expect(t.calls).toHaveLength(0);
+  });
+});
+
+describe("vPIC names the picker can send back", () => {
+  it("every make in the fixtures passes the models route's make pattern (TH!NK, (SCG), ', LLC')", () => {
+    const names: string[] = [];
+    for (const k of ["car", "mpv", "truck", "motorcycle"]) {
+      for (const row of (fixture(`makes-${k}.json`) as { Results: Array<{ MakeName: string }> }).Results) names.push(row.MakeName.trim());
+    }
+    expect(names.length).toBeGreaterThan(400);
+    const refused = names.filter((n) => !(VEHICLE_MAKE.test(n) && n.length <= MAKE_MAX_CHARS));
+    expect(refused).toEqual([]);
+  });
+
+  it("a make with brackets, commas or an exclamation mark gets its models (no 400)", async () => {
+    const t = setup(vpic);
+    for (const make of ["TH!NK", "Scuderia Cameron Glickenhaus (SCG)", "Hunter Design Group, LLC", "Jasper's Hot Rods LLC"]) {
+      vi.setSystemTime(Date.now() + 5000);
+      const res = await settle(t.get(`${PROXY_ROUTES.models}?${new URLSearchParams({ make, year: "2019" })}`, `u-${make}`));
+      expect(res.status, make).toBe(200);
+    }
+  });
+
+  it("title-cases vPIC's capitals without breaking acronyms in brackets or words after an apostrophe", async () => {
+    const t = setup(vpic);
+    const makes = (await (await settle(t.get(PROXY_ROUTES.makes))).json()) as string[];
+    for (const name of ["Buell (EBR)", "Jasper's Hot Rods LLC", "Hunter Design Group, LLC", "Scuderia Cameron Glickenhaus (SCG)", "TH!NK", "Harley-Davidson", "Mercedes-Benz", "Ram", "Kia"]) {
+      expect(makes, name).toContain(name);
+    }
+    expect(makes.some((m) => /'S\b/.test(m))).toBe(false);
+  });
+
+  it("'harley' is Harley-Davidson in the real list, though vPIC also lists a make called HARLEY", async () => {
+    const t = setup(vpic);
+    const makes = (await (await settle(t.get(PROXY_ROUTES.makes))).json()) as string[];
+    expect(makes).toEqual(expect.arrayContaining(["Harley", "Harley-Davidson"]));
+    expect(resolveName("harley", makes, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toBe("Harley-Davidson");
+    expect(resolveName("Harley-Davidson", makes, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toBe("Harley-Davidson");
+    expect(resolveName("datsun", ["Datsun", "Nissan"], { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toBe("Datsun");
+  });
+});
+
+describe("odd vPIC bodies", () => {
+  it("skips rows that aren't objects (null, strings, arrays) instead of failing with a 500", async () => {
+    const t = setup((c) => {
+      if (c.url.includes("GetMakesForVehicleType/car")) return jsonResponse({ Results: [null, "HONDA", [1], { MakeName: "HONDA" }] });
+      if (c.url.includes("GetMakesForVehicleType")) return jsonResponse({ Results: [null] });
+      // Honda is listed under cars only here, so the make-kinds index sends the models lookup to the car list.
+      if (c.url.includes("/vehicletype/car")) return jsonResponse({ Results: [null, 7, { Model_Name: "Ridgeline", VehicleTypeName: "Truck" }] });
+      return jsonResponse({ Results: [null] });
+    });
+    const makes = await settle(t.get(PROXY_ROUTES.makes, "u1"));
+    expect(makes.status).toBe(200);
+    expect(await makes.json()).toEqual(["Honda"]);
+    vi.setSystemTime(START + 5000);
+    const models = await settle(t.get(`${PROXY_ROUTES.models}?make=Honda&year=2020`, "u2"));
+    expect(models.status).toBe(200);
+    expect(await models.json()).toEqual([{ name: "Ridgeline", vpicType: "Truck", type: "pickup" }]);
+    // And again from the cache: the stored bodies are filtered on every read.
+    vi.setSystemTime(START + 10_000);
+    const again = await settle(t.get(`${PROXY_ROUTES.models}?make=Honda&year=2020`, "u3"));
+    expect(again.headers.get("x-proxy-cache")).toBe("hit");
+    expect(await again.json()).toEqual([{ name: "Ridgeline", vpicType: "Truck", type: "pickup" }]);
+  });
+
+  it("the makes list still answers when the make-kinds index can't be stored", async () => {
+    const t = setup(vpic);
+    const set = t.store.set.bind(t.store);
+    t.store.set = (k, v, c, ttl, m) => (k === "vehicles/make-kinds" ? Promise.reject(new Error("store down")) : set(k, v, c, ttl, m));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const res = await settle(t.get(PROXY_ROUTES.makes));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as string[])).toContain("Chevrolet");
+    expect(warn).toHaveBeenCalledWith("proxy: the vPIC make-kinds index wasn't stored");
+    warn.mockRestore();
+    // Without the index, a models lookup asks about all four kinds.
+    const before = t.calls.length;
+    vi.setSystemTime(START + 5000);
+    await settle(t.get(`${PROXY_ROUTES.models}?make=Chevrolet&year=2019`));
+    expect(t.calls.slice(before).map(kindOf)).toEqual(["car", "mpv", "truck", "motorcycle"]);
   });
 });

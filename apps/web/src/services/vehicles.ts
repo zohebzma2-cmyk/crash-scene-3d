@@ -7,7 +7,7 @@
 //    and the wait is dropped when the claimant types on (the caller's signal).
 //  - Model lists are cached for the session (memory and sessionStorage); the model box filters them locally.
 //  - A "busy" answer is tried again after its Retry-After, up to 2.5 s in all, before the card says so.
-import { MAKE_ALIASES, PROXY_ROUTES, normName, resolveName, type VehicleModelResult } from "@csd/core";
+import { MAKE_ALIASES, POPULAR_MAKES, PROXY_ROUTES, normName, resolveName, type VehicleModelResult } from "@csd/core";
 import { abortableSleep, getJsonRetrying, type FetchLike } from "./http";
 import { ServiceError, type ModelsOptions, type VehiclesService } from "./types";
 
@@ -33,7 +33,7 @@ const squash = normName;
  */
 export function resolveMake(text: string, makes: readonly string[]): string | null {
   if (normName(text).length < 2) return null;
-  return resolveName(text, makes, { aliases: MAKE_ALIASES });
+  return resolveName(text, makes, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES });
 }
 
 const STORE_PREFIX = "csd.vpic.v1.";
