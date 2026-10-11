@@ -11,6 +11,7 @@ import {
 import type { ExportInput, Services, StreetInTown, TownPlace } from "../src/services/types";
 import { createFixer } from "../src/fixer/client";
 import { createFixMemory } from "../src/fixer/memory";
+import { createMediaService } from "../src/services/media";
 
 export const tbone: Scene = (() => {
   const p = parseScene(tboneScene);
@@ -56,6 +57,8 @@ export function makeServices(over: Omit<Partial<Services>, "roads"> & { roads?: 
       town: vi.fn(async (_t: string, _o?: unknown): Promise<TownPlace | null> => null), streetIn: vi.fn(async (_s: string, _t: string, _o?: unknown): Promise<StreetInTown | null> => null),
     },
     vehicles: { makes, models },
+    // Every media call answers the fallback unless a test passes its own.
+    media: createMediaService(async () => new Response(null, { status: 204 })),
     physics: { toLocal: fakeToLocal, toLatLon: fakeToLatLon, streetsAtPin: fakeStreetsAtPin, placeVehicles: fakePlaceVehicles, simulate: fakeSimulate, poseAt: fakePoseAt, checkScene, suggestFixes: fakeSuggestFixes },
     exports: { build },
     pdf: { open: vi.fn(async (_bytes: Uint8Array) => ({ numPages: 1, renderPage: vi.fn(async () => undefined), destroy: vi.fn() })) },

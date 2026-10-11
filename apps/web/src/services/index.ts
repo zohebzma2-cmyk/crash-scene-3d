@@ -20,6 +20,8 @@ import type { Services } from "./types";
 import { createFixer, type WorkerLike } from "../fixer/client";
 import { createFixMemory } from "../fixer/memory";
 import { createVehiclesService } from "./vehicles";
+import { createMediaService } from "./media";
+import { createFixtureMediaFetch, fixtureMediaMode } from "./media-fixtures";
 
 export * from "./types";
 export { fixturesAllowed, fixturesRequested };
@@ -27,6 +29,8 @@ export { fixturesAllowed, fixturesRequested };
 export interface CreateServicesOptions {
   readonly fixtures: boolean;
   readonly fetch?: typeof globalThis.fetch;
+  /** The page's query string, for fixtures mode's ?media= switch (defaults to the window's). */
+  readonly search?: string;
 }
 
 export function createServices(opts: CreateServicesOptions): Services {
@@ -51,8 +55,11 @@ export function createServices(opts: CreateServicesOptions): Services {
   const makeWorker = typeof Worker === "function"
     ? () => new Worker(new URL("../fixer/fixer.worker.ts", import.meta.url), { type: "module", name: "fixer" }) as unknown as WorkerLike
     : null;
+  const search = opts.search ?? (typeof window !== "undefined" ? window.location.search : "");
+  const media = createMediaService(fx ? createFixtureMediaFetch(fixtureMediaMode(search)) : fetchFn);
   return {
     mode: fx ? "fixtures" : "live",
+    media,
     geo: fx ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
     roads: fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps),
     vehicles: fx ? createFixtureVehicles() : createVehiclesService(fetchFn),

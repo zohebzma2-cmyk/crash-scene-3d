@@ -11,6 +11,8 @@ import { useDoc } from "../state/DocProvider";
 import { useRoads } from "../state/Roads";
 import { DirectionPicker } from "./DirectionPicker";
 import { ImpactZones } from "./ImpactZones";
+import { MakeLogo } from "./MakeLogo";
+import { VehiclePhoto } from "./VehiclePhoto";
 import { SpeedInput } from "./SpeedInput";
 import { Tile } from "./Tile";
 
@@ -114,6 +116,8 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
 
   const sameAsClaim = v.id === "A" && v.year === claim.year && v.make === claim.make && v.model === claim.model;
   const sub = [vehicleName(v), v.id === "A" ? (sameAsClaim ? "from your claim" : "changed from your claim") : null].filter(Boolean).join(" · ") || "Year, make and model if you know them";
+  // A photo is asked for only once a model from the vPIC list is picked (never per keystroke).
+  const modelPicked = current?.state === "ok" && current.models.some((m) => m.name.toLowerCase() === v.model.trim().toLowerCase());
   const modelsListId = `${ids}-models`;
   const titleId = `${ids}-title`;
 
@@ -123,8 +127,9 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove }: V
         <span className="badge-letter">{v.id}</span>
         <div className="vehicle-title">
           <h2 id={titleId}>{roleName(v)}</h2>
-          <p className="vehicle-sub">{sub}</p>
+          <p className="vehicle-sub">{v.make.trim() ? <MakeLogo make={v.make} showName={false} /> : null}<span>{sub}</span></p>
         </div>
+        <VehiclePhoto vehicle={v} ready={modelPicked} />
         {canRemove ? <button className="btn btn-quiet btn-sm" type="button" aria-label={`Remove vehicle ${v.id}`} onClick={onRemove}><Icon name="trash" className="icon-sm" /><span>Remove</span></button> : null}
       </header>
 
