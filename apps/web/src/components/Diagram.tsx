@@ -6,6 +6,8 @@ import type { Building, RoadNetwork, RoadWay, Scene, SimulationResult, Vec2, Veh
 import { offsetPolyline } from "../lib/geometry";
 import { templateAxes } from "../lib/streets";
 import type { PoseFn, ViewBox } from "../lib/diagramView";
+import { paintVars } from "../lib/paint";
+import { paintMap } from "@csd/core";
 
 const BIG = 400;
 /** Half the width of the template road (two lanes). */
@@ -142,6 +144,8 @@ export interface ActorsProps {
   /** Lines along each approach ("Travel paths"). */
   readonly travel?: boolean;
   readonly anchors?: ReadonlyArray<Vec2>;
+  /** Picked paint by vehicle letter (`paintMap(scene.vehicles)`): fills the body; the outline and letter stay in the token colour. */
+  readonly paint?: Readonly<Record<string, string>>;
 }
 
 const vcls = (id: string) => `v-${id.toLowerCase()}`;
@@ -152,7 +156,7 @@ function pathPoints(v: VehicleResult, sim: SimulationResult, from: "approach" | 
   return slice.filter((_, i) => i % 3 === 0 || i === slice.length - 1).map((p) => `${p.xM.toFixed(2)},${(-p.yM).toFixed(2)}`).join(" ");
 }
 
-export function Actors({ sim, poseAt, timeS, showPaths, measure, travel = false, tags = false, markers = false, anchors = [] }: ActorsProps) {
+export function Actors({ sim, poseAt, timeS, showPaths, measure, travel = false, tags = false, markers = false, anchors = [], paint = {} }: ActorsProps) {
   const rows = sim.vehicles;
   return (
     <g>
@@ -193,7 +197,7 @@ export function Actors({ sim, poseAt, timeS, showPaths, measure, travel = false,
       {rows.map((v) => {
         const p = poseAt(sim, v, timeS);
         return (
-          <g key={v.id} className={`${vcls(v.id)} d-veh`} data-veh={v.id} transform={`translate(${p.xM.toFixed(2)} ${(-p.yM).toFixed(2)}) rotate(${deg(p.headingRad).toFixed(1)})`}>
+          <g key={v.id} className={`${vcls(v.id)} d-veh${paint[v.id] ? " is-painted" : ""}`} data-veh={v.id} data-paint={paint[v.id] ?? ""} style={paint[v.id] ? paintVars(paint[v.id]!) : undefined} transform={`translate(${p.xM.toFixed(2)} ${(-p.yM).toFixed(2)}) rotate(${deg(p.headingRad).toFixed(1)})`}>
             <VehicleShape type={v.type} length={v.lengthM} width={v.widthM} cls="d-veh-body" />
             {tags ? (
               <>
@@ -218,7 +222,7 @@ export function Diagram({ scene, roads, vb, title = "Top-down picture of the veh
     <svg className="diagram" viewBox={`${vb.x.toFixed(2)} ${vb.y.toFixed(2)} ${vb.w.toFixed(2)} ${vb.h.toFixed(2)}`} preserveAspectRatio="xMidYMid meet" role="img">
       <title>{title}</title>
       <Ground scene={scene} roads={roads} vb={vb} />
-      <Actors {...actors} />
+      <Actors {...actors} paint={actors.paint ?? paintMap(scene.vehicles)} />
     </svg>
   );
 }
