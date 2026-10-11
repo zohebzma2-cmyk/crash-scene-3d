@@ -15,10 +15,21 @@ async function openLocation(page: Page): Promise<string[]> {
   });
   page.on("request", (r) => { if (!/^(data|blob):/.test(r.url()) && !/^https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(r.url())) foreign.push(r.url()); });
   await page.goto("/?example=t-bone-intersection#review");
-  await page.getByRole("heading", { level: 1 }).first().waitFor();
-  await page.waitForTimeout(500);
+  // Loaded means the picture is up (the heading shows with the loading box, before the roads are in).
+  await page.locator('.viewer-canvas[data-ready="true"]').waitFor({ timeout: 30_000 });
   await page.evaluate(() => { location.hash = "#location"; });
   await page.locator("img.leaflet-tile-loaded").first().waitFor({ state: "attached" });
+  // Settled: every fixture tile is drawn (none still loading) and the set of tiles has stopped changing.
+  let last = "";
+  await expect.poll(async () => {
+    const now = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll("img.leaflet-tile")];
+      return tiles.every((t) => t.classList.contains("leaflet-tile-loaded")) ? `${tiles.length}` : "loading";
+    });
+    const settled = now !== "loading" && now === last;
+    last = now;
+    return settled;
+  }, { intervals: [150], timeout: 30_000 }).toBe(true);
   return foreign;
 }
 
@@ -73,8 +84,8 @@ test("the keyboard pans and zooms the focused map", async ({ page, isMobile }) =
   await page.locator(".leaflet-container").focus();
   const z0 = await zoomOf(page);
   await page.keyboard.press("+");
-  await page.waitForTimeout(500);
-  expect(await zoomOf(page)).toBeGreaterThan(z0);
+  // The zoom animates and is written when it ends: wait for it rather than a fixed time (slower under load).
+  await expect.poll(() => zoomOf(page), { timeout: 10_000 }).toBeGreaterThan(z0);
 });
 
 test("the attribution is visible and nothing covers it", async ({ page }) => {

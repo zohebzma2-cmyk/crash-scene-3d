@@ -5,12 +5,13 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@csd/core": r("./packages/core/src/index.ts"),
-      "@csd/mapdata": r("./packages/mapdata/src/index.ts"),
-      "@csd/exports": r("./packages/exports/src/index.ts"),
-      "@csd/proxy": r("./packages/proxy/src/index.ts"),
-    },
+    // Exact matches: a subpath (@csd/exports/png-meta) resolves through the package's own "exports" map.
+    alias: [
+      { find: /^@csd\/core$/, replacement: r("./packages/core/src/index.ts") },
+      { find: /^@csd\/mapdata$/, replacement: r("./packages/mapdata/src/index.ts") },
+      { find: /^@csd\/exports$/, replacement: r("./packages/exports/src/index.ts") },
+      { find: /^@csd\/proxy$/, replacement: r("./packages/proxy/src/index.ts") },
+    ],
   },
   test: {
     include: ["packages/*/test/**/*.test.ts", "apps/web/test/**/*.test.{ts,tsx}", "scripts/test/**/*.test.mjs"],

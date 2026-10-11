@@ -3,7 +3,7 @@
 // network works without it (the viewer then draws flat ground).
 import { PROXY_ROUTES, type LatLon, type LocalFrame, type RoadNetwork, type TerrainGrid } from "@csd/core";
 import { getBytes, getJsonRetrying, retryBusy, type FetchLike } from "./http";
-import type { RoadsService } from "./types";
+import type { RoadsProgress, RoadsService } from "./types";
 
 export type TileBytes = (z: number, x: number, y: number) => Promise<Uint8Array>;
 
@@ -40,16 +40,79 @@ export function tilesCovering(center: LatLon, radiusM: number, z: number): Array
   return out;
 }
 
+/** Wraps a tile source so each tile that arrives reports progress (the roads are in by then). */
+export function countingTiles(center: LatLon, radiusM: number, tile: TileBytes, onProgress?: (p: RoadsProgress) => void): TileBytes {
+  if (!onProgress) return tile;
+  const total = tilesCovering(center, radiusM, TERRAIN_ZOOM).length;
+  let done = 0;
+  onProgress({ terrainDone: 0, terrainTotal: total });
+  return async (z, x, y) => {
+    const bytes = await tile(z, x, y);
+    done += 1;
+    onProgress({ terrainDone: done, terrainTotal: total });
+    return bytes;
+  };
+}
+
 export function createRoadsService(fetchFn: FetchLike, deps: RoadsDeps): RoadsService {
   return {
-    async load(center, radiusM = ROAD_RADIUS_M) {
+    async load(center, radiusM = ROAD_RADIUS_M, onProgress) {
       const q = new URLSearchParams({ lat: center.lat.toFixed(6), lon: center.lon.toFixed(6), radius: String(radiusM) });
       // A busy answer is tried again after its Retry-After (up to 2.5 s in all) before it counts as a failure.
       const json = await getJsonRetrying<unknown>(fetchFn, `${PROXY_ROUTES.overpass}?${q}`);
       const frame: LocalFrame = { origin: center };
       const net = deps.parseOverpass(json, frame, radiusM, new Date().toISOString());
-      const terrain = await deps.terrain(frame, radiusM, (z, x, y) => retryBusy(() => getBytes(fetchFn, `${PROXY_ROUTES.terrain}/${z}/${x}/${y}.png`)));
+      const tile = countingTiles(center, radiusM, (z, x, y) => retryBusy(() => getBytes(fetchFn, `${PROXY_ROUTES.terrain}/${z}/${x}/${y}.png`)), onProgress);
+      const terrain = await deps.terrain(frame, radiusM, tile);
       return terrain ? { ...net, terrain } : net;
     },
+  };
+}
+
+/** How long a finished load is handed out again for the same place. */
+export const RECENT_MS = 30_000;
+
+const loadKey = (c: LatLon, radiusM: number) => `${c.lat.toFixed(6)},${c.lon.toFixed(6)},${radiusM}`;
+
+/**
+ * One request per place at a time: a second load of the same point while the first is running joins it (and is
+ * told the progress so far). This is what lets an example's roads start at boot and the Roads provider pick
+ * them up without waiting for its pin-drag debounce.
+ */
+export function shareRoadLoads(inner: RoadsService, keepMs = RECENT_MS, now: () => number = () => Date.now()): RoadsService {
+  const running = new Map<string, { promise: Promise<RoadNetwork>; last: RoadsProgress | null; listeners: Set<(p: RoadsProgress) => void> }>();
+  // A load that just finished is handed to whoever asks next (the Roads provider can ask a moment after an
+  // early load is done): no second request for the same place.
+  const recent = new Map<string, { net: RoadNetwork; at: number }>();
+  const fresh = (key: string) => {
+    const r = recent.get(key);
+    if (r && now() - r.at <= keepMs) return r.net;
+    if (r) recent.delete(key);
+    return null;
+  };
+  return {
+    load(center, radiusM = ROAD_RADIUS_M, onProgress) {
+      const key = loadKey(center, radiusM);
+      const done = running.has(key) ? null : fresh(key);
+      if (done) return Promise.resolve(done);
+      let entry = running.get(key);
+      if (!entry) {
+        const e = { promise: null as unknown as Promise<RoadNetwork>, last: null as RoadsProgress | null, listeners: new Set<(p: RoadsProgress) => void>() };
+        e.promise = inner.load(center, radiusM, (p) => { e.last = p; for (const l of e.listeners) l(p); });
+        running.set(key, e);
+        const clear = () => { if (running.get(key) === e) running.delete(key); };
+        e.promise.then((net) => { clear(); recent.clear(); recent.set(key, { net, at: now() }); }, clear);
+        entry = e;
+      }
+      if (onProgress) {
+        const listeners = entry.listeners;
+        listeners.add(onProgress);
+        if (entry.last) onProgress(entry.last);
+        const off = () => { listeners.delete(onProgress); };
+        entry.promise.then(off, off);
+      }
+      return entry.promise;
+    },
+    inFlight: (center, radiusM = ROAD_RADIUS_M) => running.has(loadKey(center, radiusM)) || fresh(loadKey(center, radiusM)) !== null,
   };
 }

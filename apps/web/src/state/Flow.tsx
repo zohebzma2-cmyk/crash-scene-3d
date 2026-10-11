@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { canonicalJson, parseScene, type PlainMessage, type Scene, type SceneVehicle, type VehicleId } from "@csd/core";
 import { useServices } from "../services/context";
+import { focusStepTitle } from "../lib/focusTitle";
 import type { Doc } from "./doc";
 import { useDoc } from "./DocProvider";
 import { useRoads } from "./Roads";
@@ -19,6 +20,8 @@ export const STEPS = [
 export type StepKey = (typeof STEPS)[number]["key"];
 export const stepIndex = (k: StepKey): number => STEPS.findIndex((s) => s.key === k);
 const isStep = (s: string): s is StepKey => STEPS.some((x) => x.key === s);
+/** How long a step change waits for a lazily loaded step's title to appear, to focus it. */
+const TITLE_WAIT_MS = 10_000;
 
 /**
  * What kind of problem it is, so the warning reads right: a detail not given yet ("missing": no pin, a direction not
@@ -158,9 +161,8 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     hideToast();
     window.scrollTo?.(0, 0);
     if (firstRender.current) { firstRender.current = false; return; }
-    const h1 = document.querySelector<HTMLElement>("main h1");
-    h1?.setAttribute("tabindex", "-1");
-    h1?.focus({ preventScroll: true });
+    // The new title takes focus, even if the step's code is still loading (see lib/focusTitle).
+    return focusStepTitle(document, TITLE_WAIT_MS);
   }, [step, hideToast]);
 
   const go = useCallback((target: StepKey) => {

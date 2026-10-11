@@ -24,6 +24,13 @@ import { STILL_SIZE, keepStills } from "./stills";
 import { Tips } from "../tips/Tips";
 import { CompactWarnings } from "../components/Warnings";
 import { RefusalFixes } from "./RefusalFixes";
+import { ViewerStatus } from "./ViewerStatus";
+import { hasWebGL, loadViewer } from "../viewer/load-viewer";
+import { prepareRoadArt } from "../lib/roadArt";
+import { preloadStepsWhenIdle } from "../steps";
+
+/** How long after the picture is up the next screens' code starts loading (in idle time). */
+const NEXT_STEPS_DELAY_MS = 2000;
 
 const VIEWS: ReadonlyArray<{ id: CameraView; label: string }> = [
   { id: "top", label: "Top" },
@@ -39,12 +46,34 @@ const VIEW_KEYS: Record<string, CameraView> = { "1": "top", "2": "wide", "3": "d
 let approachPlayed = false;
 export const resetApproachPlayed = (): void => { approachPlayed = false; };
 
+/**
+ * The picture's box before there is a scene to draw (an example's scene file and its roads on their way):
+ * the same place and size as the picture, with the loading status in it. The 3D code starts loading now.
+ */
+export function ReviewSkeleton({ exampleLoading = false }: { exampleLoading?: boolean }) {
+  const [webgl] = useState(hasWebGL);
+  useEffect(() => { if (webgl) void loadViewer().catch(() => undefined); }, [webgl]);
+  return (
+    <div className="viewer-layout" data-testid="review-skeleton">
+      <div className="viewer">
+        <div className="viewer-canvas is-skeleton">
+          <ViewerStatus scene="waiting" webgl={webgl} exampleLoading={exampleLoading} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ReviewStep() {
   const { doc } = useDoc();
   const flow = useFlow();
   const scene = doc.scene;
   const outcome = useSimulation(scene);
   const roads = useRoads();
+  // The road art is the heaviest step before the first 3D frame: build it while the 3D code downloads
+  // (only when there will be a 3D picture of this scene).
+  const draws = outcome?.ok === true;
+  useEffect(() => (draws && hasWebGL() ? prepareRoadArt(roads.net) : undefined), [draws, roads.net]);
 
   return (
     <section aria-labelledby="h-review">
@@ -53,7 +82,7 @@ export function ReviewStep() {
         {outcome?.ok ? <ReviewWarnings sim={outcome.result} problems={flow.problems} onEdit={() => flow.go("vehicles")} /> : null}
         {outcome?.ok ? <Tips step="review" /> : null}
       </div>
-      {outcome == null ? <p className="review-wait" role="status">Loading the road layout…</p> : null}
+      {outcome == null ? <ReviewSkeleton /> : null}
       {outcome && !outcome.ok ? <RefusalFixes scene={scene} roads={roads.net} errors={outcome.errors} /> : null}
       {outcome?.ok ? <ReviewBody scene={scene} sim={outcome.result} /> : null}
     </section>
@@ -124,6 +153,13 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
   /** Set once the 3D view has drawn its first frame (or the 2D fallback is shown): e2e and assistive tech can wait on it. */
   const [viewerReady, setViewerReady] = useState(false);
   const markReady = useCallback(() => setViewerReady(true), []);
+  const markRebuilding = useCallback(() => setViewerReady(false), []);
+  // Once the picture is up (or the diagram stands in for it), the next screens' code (save, or back to edit)
+  // loads in the background when the page is idle; leaving Review first cancels it.
+  // Never while the timeline plays (the first visit's approach, or the person's own playback): a long module
+  // evaluation would stall it. Playing again cancels a preload that hasn't started yet.
+  const playing = timeline.playing;
+  useEffect(() => (viewerReady && !playing ? preloadStepsWhenIdle(["export", "vehicles"], NEXT_STEPS_DELAY_MS) : undefined), [viewerReady, playing]);
   const [saving, setSaving] = useState(false);
 
   // The export stills are taken here, while the 3D view exists: the moment of impact (Wide camera) and final rest (the Aftermath view).
@@ -175,7 +211,7 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
             showLabels={labels} showMeasurements={measure} showPaths={paths} units={units} reducedMotion={reduced}
             measureGroups={groups} measureTool={twoPoint} measurePoints={points} onMeasurePoint={addPoint}
             onSelectVehicle={(id) => { setSelected(id); setTab("vehicles"); }}
-            onReady={markReady}
+            onReady={markReady} onRebuild={markRebuilding}
           />
           <RadioGroup className="view-controls" aria-label="View" values={shownViews.map((v) => v.id)} value={shownView === "aftermath" ? null : shownView} onChange={chooseView}>
             {shownViews.map((v) => <Radio key={v.id} value={v.id} className="seg">{v.label}</Radio>)}

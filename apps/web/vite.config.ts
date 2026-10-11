@@ -28,11 +28,12 @@ function examples(): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: [react(), examples()],
   resolve: {
-    alias: {
-      "@csd/core": r("../../packages/core/src/index.ts"),
-      "@csd/mapdata": r("../../packages/mapdata/src/index.ts"),
-      "@csd/exports": r("../../packages/exports/src/index.ts"),
-    },
+    // Exact matches: a subpath (@csd/exports/png-meta) resolves through the package's own "exports" map.
+    alias: [
+      { find: /^@csd\/core$/, replacement: r("../../packages/core/src/index.ts") },
+      { find: /^@csd\/mapdata$/, replacement: r("../../packages/mapdata/src/index.ts") },
+      { find: /^@csd\/exports$/, replacement: r("../../packages/exports/src/index.ts") },
+    ],
   },
   server: { fs: { allow: ["../.."] } },
   build: { sourcemap: mode === "development" || process.env.VITE_FIXTURES === "1", target: "es2022" },

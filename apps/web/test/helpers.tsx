@@ -4,10 +4,14 @@ import { createRoot } from "react-dom/client";
 import { vi } from "vitest";
 import type { Services } from "../src/services/types";
 import { App } from "../src/App";
+import { loadAllSteps } from "../src/steps";
 import { STORAGE_KEY } from "../src/state/doc";
 import { TIPS_STORAGE_KEY } from "../src/tips/storage";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// Steps 1, 2 and 4 are lazy chunks in the app; here they are loaded up front so mounting stays synchronous.
+await loadAllSteps();
 
 if (typeof window !== "undefined") window.scrollTo = (() => undefined) as typeof window.scrollTo;
 

@@ -104,6 +104,36 @@ for (const theme of THEMES) {
       expect(await axe(page, "refusal")).toEqual([]);
     });
 
+    // Review's loading and failure states (docs/VIEWER-LOAD.md), each in a fresh page so the 3D code is really fetched.
+    const viewerChunk = /\/assets\/Viewer-[^/?]+\.js$/;
+    test(`Review while it loads (${theme})`, async ({ page }) => {
+      // The 3D code is held back so the status box stays up.
+      let release = () => {};
+      const gate = new Promise<void>((r) => { release = r; });
+      await page.route(viewerChunk, async (route) => { await gate; await route.continue(); });
+      await page.goto("/?example=t-bone-intersection#review", { waitUntil: "commit" });
+      await expect(page.getByTestId("viewer-loading")).toBeVisible();
+      const found = await axe(page, "review (loading)");
+      release();
+      await waitForViewer(page);
+      expect(found).toEqual([]);
+    });
+
+    test(`Review when the 3D view can't load (${theme})`, async ({ page }) => {
+      await page.route(viewerChunk, (route) => route.fulfill({ status: 500, body: "" }));
+      await page.goto("/?example=t-bone-intersection#review");
+      await expect(page.getByTestId("viewer-error")).toBeVisible();
+      expect(await axe(page, "review (3D view failed)")).toEqual([]);
+    });
+
+    test(`Review when the map data can't load (${theme})`, async ({ page }) => {
+      await page.route(/\/assets\/osm-[^/]+\.js/, (route) => route.fulfill({ status: 500, body: "" }));
+      await page.goto("/?example=t-bone-intersection#review");
+      await expect(page.getByTestId("viewer-notice")).toBeVisible({ timeout: 30_000 });
+      await waitForViewer(page);
+      expect(await axe(page, "review (map data failed)")).toEqual([]);
+    });
+
     test(`the three examples on Review (${theme})`, async ({ page }) => {
       const found: string[] = [];
       for (const name of EXAMPLES) {

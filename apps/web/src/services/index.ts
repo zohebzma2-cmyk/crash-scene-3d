@@ -2,7 +2,11 @@
 // The lead can swap any piece here; nothing else in the app imports @csd/mapdata or @csd/exports.
 import { checkScene, placeVehicles, poseAt, simulate, streetsAtPin, suggestFixes, toLatLon, toLocal } from "@csd/core";
 import { mergeSearchResults, parseOverpass, splitCrossingQuery } from "@csd/mapdata";
-import { buildExports } from "@csd/exports";
+import type { CanvasFactory } from "@csd/exports";
+import type { ExportRequest } from "@csd/core";
+
+/** pdf-lib and the exports are a lazy chunk: only a save needs them (the save step starts it early). */
+const buildExports = (req: ExportRequest, canvas: CanvasFactory) => import("@csd/exports").then((m) => m.buildExports(req, canvas));
 import { createBrowserCanvasFactory, loadBrandFonts } from "../exports/browser-canvas";
 import { createExportsService } from "./exports";
 import {
@@ -14,7 +18,7 @@ import { createExamplesService } from "./examples";
 import { createFixtureGeo, createFixtureRoads, createFixtureVehicles, fixturesAllowed, fixturesRequested } from "./fixtures";
 import { createGeoService } from "./geo";
 import { createPdfPreviewService } from "./pdfPreview";
-import { createRoadsService } from "./roads";
+import { createRoadsService, shareRoadLoads } from "./roads";
 import { loadTerrain } from "./terrain";
 import type { Services } from "./types";
 import { createFixer, type WorkerLike } from "../fixer/client";
@@ -78,7 +82,7 @@ export function createServices(opts: CreateServicesOptions): Services {
     mode: fx ? "fixtures" : "live",
     media,
     geo: fx ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
-    roads: fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps),
+    roads: shareRoadLoads(fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps)),
     vehicles: fx && !opts.vehiclesFromProxy ? createFixtureVehicles() : createVehiclesService(fetchFn),
     physics,
     fixer: createFixer({ makeWorker, run: (scene, roads, o) => physics.suggestFixes(scene, roads, o) }),

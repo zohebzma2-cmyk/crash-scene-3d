@@ -7,7 +7,12 @@ import { all, click, flush, get, maybe, renderApp } from "./helpers";
 import { makeServices, tbone } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
-beforeEach(() => { Object.defineProperty(navigator, "webdriver", { value: true, configurable: true }); });
+beforeEach(() => {
+  Object.defineProperty(navigator, "webdriver", { value: true, configurable: true });
+  // The roads load at once, so Save's previews are built within the wait; jsdom has no object URLs for their bytes.
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+  vi.spyOn(URL, "revokeObjectURL").mockReturnValue(undefined);
+});
 afterEach(() => { app?.unmount(); app = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const example = docFromScene(tbone, tbone.location.label);

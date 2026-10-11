@@ -3,7 +3,8 @@
 // fits the picture into its map box around the picture's center, so the place shown is the pin's,
 // not wherever the map view happened to be panned. The picture also says how big one of its pixels is
 // (a PNG text chunk), so the PDF can put street names along the roads at the pin on top of it.
-import { PNG_METERS_PER_PIXEL_KEY } from "@csd/exports";
+// The one constant, from its own entry: the main @csd/exports entry would pull pdf-lib into the map's chunk.
+import { PNG_METERS_PER_PIXEL_KEY } from "@csd/exports/png-meta";
 export interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 export interface Point { readonly x: number; readonly y: number }
 

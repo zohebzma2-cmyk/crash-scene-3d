@@ -8,7 +8,7 @@ import { dist, nearestOnPolyline, polylineCrossings } from "../lib/geometry";
 import { fakeToLatLon, fakeToLocal } from "./fakes";
 import { exampleName, loadAllExamples } from "./examples";
 import type { GeoService, RoadsService, VehiclesService } from "./types";
-import type { RoadsDeps } from "./roads";
+import { countingTiles, type RoadsDeps } from "./roads";
 import { townLookups } from "./towns";
 import { ServiceError } from "./types";
 import { resolveMake } from "./vehicles";
@@ -56,7 +56,7 @@ async function nearestExample(p: LatLon): Promise<string | null> {
 
 export function createFixtureRoads(deps: RoadsDeps): RoadsService {
   return {
-    async load(center, radiusM = 250) {
+    async load(center, radiusM = 250, onProgress) {
       const name = await nearestExample(center);
       const frame = { origin: center };
       const key = name ? Object.keys(osmModules).find((k) => exampleName(k) === name) : undefined;
@@ -64,13 +64,13 @@ export function createFixtureRoads(deps: RoadsDeps): RoadsService {
       if (!name || !loader) return deps.parseOverpass({ elements: [] }, frame, radiusM, new Date().toISOString());
       const osm = (await loader()) as FixtureOsm;
       const net = deps.parseOverpass(osm, frame, radiusM, osm.fetchedAt ?? new Date().toISOString());
-      const terrain = await deps.terrain(frame, radiusM, async (z, x, y) => {
+      const terrain = await deps.terrain(frame, radiusM, countingTiles(center, radiusM, async (z, x, y) => {
         const tkey = Object.keys(terrainModules).find((k) => exampleName(k) === name && k.endsWith(`/${z}-${x}-${y}.png`));
         const url = tkey ? await (terrainModules[tkey] as () => Promise<string>)() : null;
         if (!url) throw new ServiceError("No cached terrain tile.", "not-found");
         const res = await fetch(url);
         return new Uint8Array(await res.arrayBuffer());
-      });
+      }, onProgress));
       return terrain ? ({ ...net, terrain } satisfies RoadNetwork) : net;
     },
   };
