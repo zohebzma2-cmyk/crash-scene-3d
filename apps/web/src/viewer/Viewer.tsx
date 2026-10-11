@@ -364,6 +364,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   // Notes about catalog models: a watermarked preview, and a model that keeps the catalog's paint (it can't be tinted).
   const watermarked = [...catalog.values()].some((m) => m.watermarked);
   const untinted = props.scene.vehicles.filter((v) => catalog.get(v.id)?.plan.kind === "none");
+  const noteKey = `${watermarked}|${untinted.map((v) => v.id).join()}`;
 
   // Everything the still capture needs, read at capture time so it is always current.
   const latest = useRef({ props, colors, terrain });
@@ -447,8 +448,12 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
     const ro = new ResizeObserver(measureObstacles);
     ro.observe(root);
     for (const el of [...root.querySelectorAll(OBSTACLES), ...(root.parentElement?.querySelectorAll(OBSTACLES) ?? [])]) ro.observe(el);
+    // The HUD column grows when an item joins it (the catalog-model note), which moves the legend without resizing it.
+    const hud = root.querySelector(".viewer3d-hud");
+    if (hud) ro.observe(hud);
     return () => { ro.disconnect(); window.removeEventListener("scroll", measureObstacles); };
-  }, [measureObstacles, props.showPaths, props.view]);
+    // `noteKey`: the model note mounts later (when a catalog model arrives), so it must be measured and observed then.
+  }, [measureObstacles, props.showPaths, props.view, noteKey]);
 
   // Real label sizes, measured from the DOM after each layout, replace the estimates.
   useLayoutEffect(() => {

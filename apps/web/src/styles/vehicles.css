@@ -95,7 +95,8 @@
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: var(--size-icon); height: var(--size-icon); border-radius: var(--radius-full);
   background-color: var(--swatch, var(--color-surface)); color: var(--paint-ink, var(--color-text));
-  border: var(--size-border) solid var(--color-border-strong);
+  /* In dark mode the plain border vanishes against Black and Dark blue: the dots take the stronger tertiary text colour there. */
+  border: var(--size-border) solid light-dark(var(--color-border-strong), var(--color-text-tertiary));
 }
 .paint-dot.is-unsure { border-style: dashed; }
 .paint-dot .icon { width: var(--size-icon-sm); height: var(--size-icon-sm); }

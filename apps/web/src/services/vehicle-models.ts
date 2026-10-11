@@ -38,21 +38,33 @@ export const modelKey = (q: VehicleModelQuery): string => `${q.year ?? ""}|${q.m
 const isGlb = (b: ArrayBuffer): boolean => b.byteLength >= 20 && new DataView(b).getUint32(0, true) === 0x46546c67;   // "glTF"
 const truthy = (v: string | null): boolean => v != null && /^(1|true|yes)$/i.test(v.trim());
 
-export function createVehicleModelsService(fetchFn: FetchLike, timeoutMs = API_TIMEOUT_MS * 2): VehicleModelsService {
+/** How long a "no catalog model" answer is remembered in this session. */
+export const NO_MODEL_TTL_MS = 30 * 60_000;
+
+export function createVehicleModelsService(fetchFn: FetchLike, timeoutMs = API_TIMEOUT_MS * 2, now: () => number = () => Date.now()): VehicleModelsService {
   const cache = new Map<string, Promise<VehicleModelAsset | null>>();
+  const noModel = new Map<string, number>();
   return {
     load(q, signal) {
       if (!askable(q)) return Promise.resolve(null);
       if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
       const key = modelKey(q);
+      const none = noModel.get(key);
+      if (none !== undefined && now() - none < NO_MODEL_TTL_MS) return Promise.resolve(null);
       let p = cache.get(key);
       if (!p) {
-        p = fetchModel(fetchFn, q, timeoutMs);
+        const answer = fetchModel(fetchFn, q, timeoutMs);
+        p = answer.then((a) => a.asset);
         cache.set(key, p);
         // A few models are kept for the session (a viewer reopened, two vehicles of the same model); older ones go.
         while (cache.size > CACHE_MODELS) cache.delete(cache.keys().next().value!);
-        // A failure isn't remembered: the next viewer opening asks again.
-        void p.then((r) => { if (!r) cache.delete(key); });
+        void answer.then((a) => {
+          if (a.asset) return;
+          cache.delete(key);
+          // "No model for this vehicle" is remembered for a while, so each viewer opening doesn't ask again;
+          // an error (network, timeout, a 5xx) isn't, so the next opening tries again.
+          if (a.noModel) noModel.set(key, now());
+        });
       }
       if (!signal) return p;
       return new Promise((resolve, reject) => {
@@ -64,22 +76,30 @@ export function createVehicleModelsService(fetchFn: FetchLike, timeoutMs = API_T
   };
 }
 
-async function fetchModel(fetchFn: FetchLike, q: VehicleModelQuery, timeoutMs: number): Promise<VehicleModelAsset | null> {
+interface Answer { readonly asset: VehicleModelAsset | null; /** The route said there is no model (not an error). */ readonly noModel: boolean }
+
+async function fetchModel(fetchFn: FetchLike, q: VehicleModelQuery, timeoutMs: number): Promise<Answer> {
   const params = new URLSearchParams({ year: q.year == null ? "" : String(q.year), make: q.make.trim(), model: q.model.trim() });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const none = (noModel: boolean): Answer => ({ asset: null, noModel });
   try {
     const res = await fetchFn(`${MODEL_ROUTE}?${params}`, { signal: ctrl.signal, credentials: "omit", headers: { Accept: "model/gltf-binary, application/json" } });
-    if (!res.ok) return null;
+    if (res.status === 404) return none(true);
+    if (!res.ok) return none(false);
     const type = res.headers.get("content-type") ?? "";
-    if (/json/i.test(type)) return null;            // {"fallback": true} or a ProxyError: our own model
+    if (/json/i.test(type)) {
+      // {"fallback": true}: no catalog model for this vehicle. Any other JSON (a ProxyError) is an error.
+      const body = (await res.json().catch(() => null)) as { fallback?: unknown } | null;
+      return none(body?.fallback === true);
+    }
     const len = Number(res.headers.get("content-length") ?? "0");
-    if (len > MAX_MODEL_BYTES) return null;
+    if (len > MAX_MODEL_BYTES) return none(true);
     const bytes = await res.arrayBuffer();
-    if (bytes.byteLength > MAX_MODEL_BYTES || !isGlb(bytes)) return null;
-    return { bytes, watermarked: truthy(res.headers.get("watermarked")) || truthy(res.headers.get("x-watermarked")) };
+    if (bytes.byteLength > MAX_MODEL_BYTES || !isGlb(bytes)) return none(true);
+    return { asset: { bytes, watermarked: truthy(res.headers.get("watermarked")) || truthy(res.headers.get("x-watermarked")) }, noModel: false };
   } catch {
-    return null;
+    return none(false);
   } finally {
     clearTimeout(timer);
   }

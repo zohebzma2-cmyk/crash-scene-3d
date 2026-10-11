@@ -7,7 +7,7 @@
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { FACTORY_COLORS } from "@csd/core";
-import { exampleSceneFile, expect, fillDefaultClaim, isPhone, openExample, pdfText, saveFiles, test, toReview, waitForViewer, watchCsp } from "./helpers";
+import { boxes, crossIntersections, exampleSceneFile, expect, fillDefaultClaim, isPhone, openExample, pdfText, saveFiles, test, toReview, waitForViewer, watchCsp } from "./helpers";
 
 const RED = FACTORY_COLORS.find((c) => c.name === "Red")!;
 const BLUE = FACTORY_COLORS.find((c) => c.name === "Blue")!;
@@ -208,4 +208,27 @@ test("@xb the colour picker passes axe (keyboard, names, contrast) with a near-w
   }
   // Every swatch is a 44 px target.
   for (const b of await picker.getByRole("radio").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+});
+
+test("@xb the catalog-model note is kept clear: no vehicle label over it (Top and Wide, start, impact and final rest)", async ({ page }) => {
+  test.setTimeout(150_000);
+  await openSceneFile(page, (f) => {
+    Object.assign(f.vehicles[0]!, { make: "Synthetic", model: "Box car" });
+  });
+  await expect.poll(async () => (await models(page)).A?.tint, { timeout: 30_000 }).toBe("material");
+  const note = page.locator(".viewer3d-model-note");
+  await expect(note).toBeVisible();
+  const clear = async (where: string) => {
+    await expect.poll(async () => crossIntersections(await boxes(page, ".viewer3d-label", "label"), await boxes(page, ".viewer3d-model-note", "model note")), { timeout: 10_000, message: where }).toEqual([]);
+  };
+  await page.locator(".viewer-canvas").focus();
+  for (const view of ["1", "2"]) {
+    await page.keyboard.press(view);
+    for (const k of ["Home", "i", "End"]) {
+      await page.locator(".viewer-canvas").focus();
+      await page.keyboard.press(k === "i" ? "I" : k);
+      await page.waitForTimeout(300);
+      await clear(`view ${view}, ${k}`);
+    }
+  }
 });

@@ -126,10 +126,11 @@ const VehicleSchema = z.object({
    * letters and outlines stay in the token colour. Absent keys are left out of the canonical JSON, so
    * a scene without a paint keeps the fingerprint it always had.
    */
+  // Normalised as it is read: name trimmed, hex lower case, null the same as absent, so equal paints give equal canonical bytes.
   color: z.object({
-    name: text("The colour name", MAX_PAINT_NAME).min(1, { error: "The colour needs a name." }),
-    hex: z.string({ error: "The colour should look like #b3151b." }).regex(PAINT_HEX, { error: "The colour should look like #b3151b." }),
-  }, { error: "The colour isn't readable." }).nullable().optional(),
+    name: text("The colour name", MAX_PAINT_NAME).trim().min(1, { error: "The colour needs a name." }),
+    hex: z.string({ error: "The colour should look like #b3151b." }).regex(PAINT_HEX, { error: "The colour should look like #b3151b." }).toLowerCase(),
+  }, { error: "The colour isn't readable." }).nullable().transform((c) => c ?? undefined).optional(),
 }, { error: "Each vehicle needs its details filled in." });
 
 const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;

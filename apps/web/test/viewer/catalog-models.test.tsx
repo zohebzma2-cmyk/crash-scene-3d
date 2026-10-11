@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Box3, Vector3, type Mesh } from "three";
 import type { Scene, SimulationResult } from "@csd/core";
-import { createFixtureVehicleModels, createVehicleModelsService, MODEL_ROUTE, type VehicleModelAsset } from "../../src/services/vehicle-models";
+import { createFixtureVehicleModels, createVehicleModelsService, MODEL_ROUTE, NO_MODEL_TTL_MS, type VehicleModelAsset } from "../../src/services/vehicle-models";
 import { parseGlb } from "../../src/viewer/glb-loader";
 import { normalise, planTint } from "../../src/viewer/glb-model";
 import { catalogWants, useCatalogModels, type ModelLoader } from "../../src/viewer/catalog-models";
@@ -41,16 +41,24 @@ describe("the vehicle models service (/api/vehicles/model)", () => {
   });
 
   it.each([
-    ["the route says fallback", () => new Response(JSON.stringify({ fallback: true }), { headers: { "content-type": "application/json" } })],
-    ["the route errors", () => new Response("no", { status: 502 })],
-    ["the body isn't a GLB", () => new Response("hello", { headers: { "content-type": "model/gltf-binary" } })],
-    ["the network fails", () => { throw new TypeError("offline"); }],
-  ])("falls back to our model (null) when %s, and asks again next time", async (_label, answer) => {
+    ["the route says fallback", () => new Response(JSON.stringify({ fallback: true }), { headers: { "content-type": "application/json" } }), 1],
+    ["the route has no such model (404)", () => new Response("", { status: 404 }), 1],
+    ["the body isn't a GLB", () => new Response("hello", { headers: { "content-type": "model/gltf-binary" } }), 1],
+    ["the route errors (502)", () => new Response("no", { status: 502 }), 2],
+    ["the proxy answers an error as JSON", () => new Response(JSON.stringify({ code: "busy", message: "Busy" }), { status: 200, headers: { "content-type": "application/json" } }), 2],
+    ["the network fails", () => { throw new TypeError("offline"); }, 2],
+  ] as const)("falls back to our model (null) when %s; asks again next time only after an error", async (_label, answer, calls) => {
     const fetchFn = vi.fn(async () => answer());
-    const s = createVehicleModelsService(fetchFn);
+    let t = 0;
+    const s = createVehicleModelsService(fetchFn, 1000, () => t);
     expect(await s.load(Q)).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
     expect(await s.load(Q)).toBeNull();
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn).toHaveBeenCalledTimes(calls);
+    // "No model" is remembered for NO_MODEL_TTL_MS only.
+    t += NO_MODEL_TTL_MS + 1;
+    await s.load(Q);
+    expect(fetchFn).toHaveBeenCalledTimes(calls + 1);
   });
 
   it("never asks without a make and a model", async () => {

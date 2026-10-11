@@ -59,6 +59,11 @@ export function normalise(root: Object3D, target: Footprint): Group {
   root.updateMatrixWorld(true);
   // Precise: the box of the vertices themselves, not of rotated node boxes (which would leave the model short of its footprint).
   const box = new Box3().setFromObject(root, true);
+  const size = box.getSize(new Vector3()), centre = box.getCenter(new Vector3());
+  // A file with no geometry (or broken numbers) would put the vehicle at y = -Infinity: refuse it, our model stays.
+  if (box.isEmpty() || ![size.x, size.y, size.z, centre.x, centre.y, centre.z].every(Number.isFinite) || size.x <= 0 || size.y <= 0 || size.z <= 0) {
+    throw new Error("The catalog model has no usable geometry.");
+  }
   const n = planNormalisation(box, target);
   const yaw = new Group();
   yaw.rotation.y = n.yawRad;

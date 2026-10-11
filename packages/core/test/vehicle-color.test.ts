@@ -18,14 +18,16 @@ describe("vehicle colour in the scene schema", () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.vehicles[0]!.color).toEqual({ name: "Red", hex: "#b3151b" });
-      expect(r.value.vehicles[1]!.color?.hex).toBe("#ABCDEF");
+      expect(r.value.vehicles[1]!.color?.hex).toBe("#abcdef");   // normalised to lower case as it is read
     }
   });
 
   it("accepts null (Not sure) and a missing colour (older v3 files)", () => {
-    const s = sampleScene();
+    const s = sampleScene() as unknown as { vehicles: Array<Record<string, unknown>> };
     s.vehicles[0]!.color = null;
-    expect(parseScene(s).ok).toBe(true);
+    const n = parseScene(s);
+    expect(n.ok).toBe(true);
+    if (n.ok) expect(n.value.vehicles[0]!.color).toBeUndefined();
     const old = sampleScene();
     expect("color" in old.vehicles[0]!).toBe(false);
     const r = parseScene(old);
@@ -59,6 +61,22 @@ describe("vehicle colour in the scene schema", () => {
       // Parsing adds no colour key, so the canonical JSON (the fingerprint's input) is what it was before round B.
       expect(canonicalJson(r.value)).not.toContain("\"color\"");
     }
+  });
+
+  it("normalises as it reads: the same paint gives the same canonical bytes (hex case, name spaces); null is the same as absent", async () => {
+    const bytes = async (color: unknown) => {
+      const s = sampleScene() as unknown as { vehicles: Array<Record<string, unknown>> };
+      if (color !== "absent") s.vehicles[0]!.color = color;
+      const r = parseScene(s);
+      if (!r.ok) throw new Error(r.errors.join("; "));
+      return sha256Hex(canonicalJson(r.value));
+    };
+    expect(await bytes({ name: "Red", hex: "#B3151B" })).toBe(await bytes({ name: " Red ", hex: "#b3151b" }));
+    expect(await bytes(null)).toBe(await bytes("absent"));
+    expect(await bytes(null)).not.toBe(await bytes({ name: "Red", hex: "#b3151b" }));
+    const s = sampleScene() as unknown as { vehicles: Array<Record<string, unknown>> };
+    s.vehicles[0]!.color = { name: "   ", hex: "#b3151b" };
+    expect(parseScene(s).ok).toBe(false);   // a name of spaces is no name
   });
 
   it("the canonical JSON (and so the fingerprint) includes a picked colour", async () => {

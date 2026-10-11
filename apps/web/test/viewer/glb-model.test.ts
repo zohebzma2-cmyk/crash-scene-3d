@@ -45,6 +45,15 @@ describe("fitting a catalog model to the illustration's footprint", () => {
     expect(b.min.y).toBeCloseTo(0, 5);
   });
 
+  it("a model with no meshes (or broken numbers) is refused, so our own model stays", () => {
+    expect(() => normalise(new Group(), FOOT)).toThrow(/no usable geometry/);
+    const nan = new Group();
+    const m = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    m.position.x = Number.NaN;
+    nan.add(m);
+    expect(() => normalise(nan, FOOT)).toThrow(/no usable geometry/);
+  });
+
   it("a glTF model's front (+z) ends at the viewer's front (-z, north at heading 0)", () => {
     const root = new Group();
     const nose = new Mesh(new BoxGeometry(0.1, 0.1, 0.1), new MeshStandardMaterial()); nose.position.z = 0.45;
