@@ -31,7 +31,8 @@ export function VehiclePhoto({ vehicle: v, ready }: VehiclePhotoProps) {
   const current = url !== null && shown?.url === url ? shown : null;
   const loading = url !== null && current === null;
   const src = current?.src ?? null;
-  const state = loading ? "loading" : src ? "photo" : "icon";
+  // "none": not asked (no model picked yet); "icon": asked, and there is no photo to show.
+  const state = url === null ? "none" : loading ? "loading" : src ? "photo" : "icon";
   return (
     <div className="vehicle-photo" data-photo={state} aria-busy={loading || undefined}>
       {src ? <img src={src} alt={`Stock photo of a ${vehicleName(v) ?? "vehicle"}`} /> : <Icon name={PRESETS[v.type].icon} className="icon-lg" />}

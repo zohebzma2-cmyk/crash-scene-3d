@@ -23,6 +23,9 @@ async function fileBytes(name: string): Promise<Uint8Array | null> {
   const key = Object.keys(files).find((k) => k.endsWith(`/${name}`));
   const url = key ? await (files[key] as () => Promise<string>)() : null;
   if (!url) return null;
+  // Vite inlines small files as data: URLs, and fetching one would break connect-src 'self': decode it here.
+  const inline = /^data:[^;,]*;base64,(.*)$/.exec(url);
+  if (inline) return Uint8Array.from(atob(inline[1] ?? ""), (c) => c.charCodeAt(0));
   const res = await fetch(url);
   return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
 }
