@@ -21,6 +21,7 @@
     "e2e:xb": "playwright test --grep @xb",
     "e2e:live": "playwright test -c playwright.live.config.ts",
     "check": "./check.sh",
+    "fixer:bench": "node scripts/fixer-bench.mjs",
     "verify:headers": "node scripts/verify-headers.mjs",
     "functions:build": "npx -y netlify-cli@27.9.0 functions:build --filter @csd/web --src netlify/functions --functions .netlify/functions-build"
   },
