@@ -42,8 +42,16 @@
    4. ground height.
 
    After those come the DESIGN §7 decisions (C1 start framing, C3 driver views). Then remove the sweep's opt-in gate so check.sh runs it.
-3. **Round B:** the vehicle picker (vPIC type-ahead with aliases), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
+3. **Round B:** the vehicle picker (vPIC type-ahead with aliases): **done on branch `roundB/picker` (2026-10-11), not merged or deployed** (status below), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
 4. **The fixer review follow-ups and the rest of README "Next version".**
+
+## roundB/picker (2026-10-11, not merged)
+- Year, make and model are WAI-ARIA comboboxes (`VehicleCombobox`), with aliases, typo tolerance and popular-first ranking from `packages/core/src/vehicle-names.ts`. Free text always works. `MakeLogo` renders in each make row once round B's images branch adds it.
+- The proxy routes are unchanged in shape. The makes route also stores a make → vPIC kinds index, and the models route asks vPIC only about those kinds (Chevrolet 3 calls, Harley-Davidson 1, otherwise 4). The limiter is untouched (owned by polish/proxy-busy).
+- vPIC has no trims and no makes-by-year list.
+- "2019 chevy silverado" costs 1 makes request per session plus 1 models request (Chevrolet 2019) from the browser. Live vPIC calls 2019 Chevrolet pickups "Silverado" / "Silverado HD" / "Silverado LD"; the fixtures use "Silverado 1500".
+- Tests: core `vehicle-names.test.ts`, proxy `vehicles.test.ts` (captured vPIC bodies in `test/fixtures/vpic`), web `vehicle-picker.test.tsx`, and e2e `vehicle-picker.spec.ts` (@xb, with axe on the lists open).
+- To do on merge: merge `live/integ` after polish/proxy-busy lands and reconcile.
 
 ## Open risks
 - **Camera framing:**
