@@ -13,7 +13,8 @@ afterEach(() => { app?.unmount(); app = null; vi.restoreAllMocks(); });
 const input = () => document.querySelector<HTMLTextAreaElement>("form[role=search] textarea")!;
 const sug = (main: string, sub: string, extra: Partial<Suggestion> = {}): Suggestion => ({ label: `${main}, ${sub}`, main, sub, lat: 42.76, lon: -71.46, kind: "road", ...extra });
 const options = () => all("option");
-const type = async (t: string, wait = 350) => { setValue(input(), t); await flush(wait); };
+// The first keystroke looks up the claim's town; suggestions wait for it, so let that answer land (one more act) first.
+const type = async (t: string, wait = 350) => { setValue(input(), t); await flush(0); await flush(wait); };
 
 async function open(over: Parameters<typeof makeServices>[0] = {}) {
   const made = makeServices(over);

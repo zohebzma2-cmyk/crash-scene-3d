@@ -9,6 +9,7 @@ import { fakeToLatLon, fakeToLocal } from "./fakes";
 import { exampleName, loadAllExamples } from "./examples";
 import type { GeoService, RoadsService, VehiclesService } from "./types";
 import type { RoadsDeps } from "./roads";
+import { townLookups } from "./towns";
 import { ServiceError } from "./types";
 
 export interface FixtureEnv {
@@ -113,8 +114,7 @@ export function createFixtureGeo(split: (q: string) => { a: string; b: string; n
     return p;
   };
   const allNets = async () => (await Promise.all([...(await allScenes()).keys()].map(netFor))).filter((x): x is { net: RoadNetwork; scene: Scene } => x != null);
-  return {
-    async suggest(query, opts = {}) {
+  const suggest: GeoService["suggest"] = async (query, opts = {}) => {
       const q = query.trim();
       if (q.length < mapConfig.suggestMinChars) return [];
       const out: PlaceResult[] = [];
@@ -134,7 +134,10 @@ export function createFixtureGeo(split: (q: string) => { a: string; b: string; n
       const bias = opts.bias;
       if (bias) out.sort((a, b) => dist(fakeToLocal({ origin: bias }, a), { x: 0, y: 0 }) - dist(fakeToLocal({ origin: bias }, b), { x: 0, y: 0 }));
       return out.slice(0, mapConfig.suggestLimit);
-    },
+  };
+  return {
+    suggest,
+    ...townLookups(suggest),
     async crossStreets(street, near): Promise<CrossStreetsResult> {
       const result = new Map<string, { name: string; points: LatLon[]; place: string }>();
       for (const { net, scene } of await allNets()) {

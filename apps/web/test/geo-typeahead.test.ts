@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { BUSY_MESSAGE, PROXY_ROUTES } from "@csd/core";
 import { createServices } from "../src/services";
 import { fakeMergeSearchResults, fakeSplitCrossingQuery } from "../src/services/fakes";
-import { createGeoService, crossStreetsUrl, searchUrl, suggestUrl } from "../src/services/geo";
+import { BUSY_RETRY_MAX_MS, busyRetryDelayMs, createGeoService, crossStreetsUrl, searchUrl, suggestUrl } from "../src/services/geo";
+import { pickStreetIn, pickTown, townName } from "../src/services/towns";
 import { ServiceError } from "../src/services/types";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -59,12 +60,93 @@ describe("suggest (/api/geo/suggest)", () => {
     await expect(svc.suggest("Already aborted", { signal: done.signal })).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("does not cache a failure, and shows the busy message as text", async () => {
+  it("does not cache a failure, and shows the busy message as text once the one retry is busy too", async () => {
     let n = 0;
-    const { svc, fetchFn } = geo(() => (++n === 1 ? json({ code: "busy", message: BUSY_MESSAGE }, 429) : json([place("Elm Street")])));
-    await expect(svc.suggest("Elm Street")).rejects.toMatchObject({ message: BUSY_MESSAGE, code: "busy" });
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const fetchFn = vi.fn(async () => (++n <= 2 ? json({ code: "busy", message: BUSY_MESSAGE }, 429) : json([place("Elm Street")])));
+    const svc = createGeoService(fetchFn, { splitCrossing: fakeSplitCrossingQuery, mergeResults: fakeMergeSearchResults, sleep });
+    const onBusy = vi.fn();
+    await expect(svc.suggest("Elm Street", { onBusy })).rejects.toMatchObject({ message: BUSY_MESSAGE, code: "busy" });
+    expect(onBusy).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2); // the request and its one retry
     expect((await svc.suggest("Elm Street")).map((r) => r.label)).toEqual(["Elm Street"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("a busy answer is tried once more", () => {
+  const busy = (retryAfterS?: number, header?: string) => new Response(JSON.stringify({ code: "busy", message: BUSY_MESSAGE, ...(retryAfterS !== undefined ? { retryAfterS } : {}) }), {
+    status: 429, headers: { "Content-Type": "application/json", ...(header ? { "Retry-After": header } : {}) },
+  });
+  function svcWith(answers: Array<() => Response>) {
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const fetchFn = vi.fn(async () => (answers.shift() ?? (() => json([])))());
+    return { svc: createGeoService(fetchFn, { splitCrossing: fakeSplitCrossingQuery, mergeResults: fakeMergeSearchResults, sleep }), sleep, fetchFn };
+  }
+
+  it("suggest: waits the Retry-After, says so through onBusy, and returns the retry's answer", async () => {
+    const { svc, sleep, fetchFn } = svcWith([() => busy(1), () => json([place("Elm Street")])]);
+    const onBusy = vi.fn();
+    expect((await svc.suggest("Elm Street", { onBusy })).map((r) => r.label)).toEqual(["Elm Street"]);
+    expect(onBusy).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(1000);
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("cross streets: the same, and a long Retry-After is capped at 2 s (the header counts when the body has none)", async () => {
+    const { svc, sleep } = svcWith([() => busy(undefined, "30"), () => json({ street: "Main Street", crossings: [{ name: "Park Street", lat: 42.76, lon: -71.46 }] })]);
+    const onBusy = vi.fn();
+    const r = await svc.crossStreets("Main Street", { lat: 42.76, lon: -71.46 }, { onBusy });
+    expect(r.crossings.map((c) => c.name)).toEqual(["Park Street"]);
+    expect(onBusy).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(BUSY_RETRY_MAX_MS);
+    expect(busyRetryDelayMs(undefined)).toBe(1000);
+    expect(busyRetryDelayMs(0)).toBe(250);
+    expect(busyRetryDelayMs(1.5)).toBe(1500);
+  });
+
+  it("other failures are not retried", async () => {
+    const { svc, fetchFn } = svcWith([() => json({ code: "upstream", message: "down" }, 502)]);
+    await expect(svc.suggest("Elm Street")).rejects.toMatchObject({ code: "upstream" });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("towns (claim town and a town typed after a comma)", () => {
+  const p = (main: string, sub: string, over: Record<string, unknown> = {}) => ({ label: `${main}, ${sub}`, main, sub, lat: 42.76, lon: -71.46, kind: "road", ...over });
+
+  it("pickTown: a place in the typed state, never one elsewhere", () => {
+    const iowa = p("Nashua", "Nashua, IA", { category: "place", state: "IA", lat: 42.95, lon: -92.53 });
+    const nh = p("Nashua", "Nashua, NH", { category: "place", state: "NH", lat: 42.7656, lon: -71.4677 });
+    const shop = p("Nashua Micro-Tech Center", "Nashua, NH", { category: "place", state: "NH", town: "Nashua", lat: 42.71, lon: -71.45 });
+    expect(pickTown([iowa, shop, nh] as never, "Nashua, NH")).toEqual({ point: { lat: 42.7656, lon: -71.4677 }, state: "NH", label: "Nashua, NH" });
+    expect(pickTown([iowa] as never, "Nashua, NH")).toBeNull();
+    expect(pickTown([iowa] as never, "Nashua")?.state).toBe("IA");
+    expect(townName("Manchester NH")).toBe("manchester");
+    expect(townName("Concord New Hampshire 03301")).toBe("concord");
+    expect(townName("Nashua, NH 03060")).toBe("nashua");
+  });
+
+  it("pickStreetIn: the street in that town and state, not a same-name street elsewhere", () => {
+    const nashua = p("Elm Street", "Nashua, NH", { category: "street", street: "Elm Street", town: "Nashua", state: "NH", osmWayIds: [1] });
+    const manchester = p("Elm Street", "Manchester, NH", { category: "street", street: "Elm Street", town: "Manchester", state: "NH", osmWayIds: [2, 3], lat: 42.9869, lon: -71.4631 });
+    expect(pickStreetIn([nashua, manchester] as never, "Elm St", "Manchester NH")).toEqual({ name: "Elm Street", at: { lat: 42.9869, lon: -71.4631 }, ways: [2, 3], place: "Manchester, NH" });
+    expect(pickStreetIn([nashua] as never, "Elm St", "Manchester NH")).toBeNull();
+  });
+
+  it("streetIn: one type-ahead request for 'street, town'; else the town's spot with the typed name", async () => {
+    const seen: string[] = [];
+    const { svc } = geo((url) => {
+      const q = new URL(url, "http://x").searchParams.get("q")!;
+      seen.push(q);
+      if (q === "Elm St, Manchester NH") return json([p("Elm Street", "Manchester, NH", { category: "street", street: "Elm Street", town: "Manchester", state: "NH", osmWayIds: [2] })]);
+      if (q === "Oak St, Manchester NH") return json([]);
+      return json([p("Manchester", "Manchester, NH", { category: "place", state: "NH", lat: 42.9956, lon: -71.4548 })]);
+    });
+    expect(await svc.streetIn("Elm St", "Manchester NH")).toMatchObject({ name: "Elm Street", ways: [2], place: "Manchester, NH" });
+    expect(seen).toEqual(["Elm St, Manchester NH"]);
+    expect(await svc.streetIn("Oak St", "Manchester NH")).toEqual({ name: "Oak St", at: { lat: 42.9956, lon: -71.4548 }, ways: [], place: "Manchester, NH" });
+    expect(seen).toEqual(["Elm St, Manchester NH", "Oak St, Manchester NH", "Manchester NH"]);
   });
 });
 

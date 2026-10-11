@@ -4,7 +4,8 @@
 import { PROXY_ROUTES, type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult } from "@csd/core";
 import { mapConfig } from "../config/map";
 import { API_TIMEOUT_MS, getJson, type FetchLike } from "./http";
-import type { GeoService, SearchOptions } from "./types";
+import { townLookups } from "./towns";
+import { ServiceError, type GeoService, type SearchOptions } from "./types";
 
 export interface GeoDeps {
   readonly splitCrossing: (q: string) => { a: string; b: string; near: string } | null;
@@ -17,6 +18,10 @@ export const SEARCH_LIMIT = 5;
 export const MIN_INTERVAL_MS = 1000;
 export const MERGE_WINDOW_MS = 300;
 export const SEARCH_TIMEOUT_MS = API_TIMEOUT_MS;
+/** Type-ahead and cross streets: a "busy" answer is tried once more after its Retry-After, but never later than this. */
+export const BUSY_RETRY_MAX_MS = 2000;
+/** The wait before that one retry: the proxy's Retry-After (1 s when it gives none), between 0.25 s and 2 s. */
+export const busyRetryDelayMs = (retryAfterS: number | undefined): number => Math.min(BUSY_RETRY_MAX_MS, Math.max(250, (retryAfterS ?? 1) * 1000));
 
 function asArray(body: unknown): PlaceResult[] {
   if (Array.isArray(body)) return body as PlaceResult[];
@@ -82,27 +87,42 @@ export function createGeoService(fetchFn: FetchLike, deps: GeoDeps): GeoService 
     return results;
   }
 
+  /** GET JSON; a "busy" answer is tried once more after its Retry-After (at most BUSY_RETRY_MAX_MS). */
+  async function getWithRetry(url: string, signal: AbortSignal | undefined, onBusy: (() => void) | undefined): Promise<unknown> {
+    try {
+      return await getJson<unknown>(fetchFn, url, API_TIMEOUT_MS, signal);
+    } catch (e) {
+      if (!(e instanceof ServiceError) || e.code !== "busy") throw e;
+      onBusy?.();
+      await sleep(busyRetryDelayMs(e.retryAfterS));
+      if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+      return getJson<unknown>(fetchFn, url, API_TIMEOUT_MS, signal);
+    }
+  }
+
   const suggestCache = new Map<string, PlaceResult[]>();
   const crossCache = new Map<string, CrossStreetsResult>();
+  const suggest: GeoService["suggest"] = async (query, opts = {}) => {
+    const q = query.trim();
+    if (q.length < mapConfig.suggestMinChars) return [];
+    const key = `${q.toLowerCase()}|${biasKey(opts.bias)}|${opts.bbox?.map((n) => n.toFixed(2)).join(",") ?? ""}`;
+    const hit = suggestCache.get(key);
+    if (hit) return hit;
+    const body = await getWithRetry(suggestUrl(q, opts.bias, opts.bbox), opts.signal, opts.onBusy);
+    const results = deps.mergeResults(asArray(body).filter(validResult) as PlaceResult[]).slice(0, mapConfig.suggestLimit);
+    suggestCache.set(key, results);
+    return results;
+  };
   return {
-    async suggest(query, opts = {}) {
-      const q = query.trim();
-      if (q.length < mapConfig.suggestMinChars) return [];
-      const key = `${q.toLowerCase()}|${biasKey(opts.bias)}|${opts.bbox?.map((n) => n.toFixed(2)).join(",") ?? ""}`;
-      const hit = suggestCache.get(key);
-      if (hit) return hit;
-      const body = await getJson<unknown>(fetchFn, suggestUrl(q, opts.bias, opts.bbox), API_TIMEOUT_MS, opts.signal);
-      const results = deps.mergeResults(asArray(body).filter(validResult) as PlaceResult[]).slice(0, mapConfig.suggestLimit);
-      suggestCache.set(key, results);
-      return results;
-    },
+    suggest,
+    ...townLookups(suggest),
     async crossStreets(street, near, opts = {}) {
       const s = street.trim();
       if (!s) return { street: s, crossings: [] };
       const key = `${s.toLowerCase()}|${biasKey(near)}|${opts.ways?.join(",") ?? ""}`;
       const hit = crossCache.get(key);
       if (hit) return hit;
-      const out = asCrossings(await getJson<unknown>(fetchFn, crossStreetsUrl(s, near, opts.ways), API_TIMEOUT_MS, opts.signal), s);
+      const out = asCrossings(await getWithRetry(crossStreetsUrl(s, near, opts.ways), opts.signal, opts.onBusy), s);
       crossCache.set(key, out);
       return out;
     },

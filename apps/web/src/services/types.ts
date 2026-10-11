@@ -37,6 +37,30 @@ export interface SuggestOptions {
   /** Where to look first: the claim's location, else the pin, else the middle of the map. */
   readonly bias?: LatLon | null;
   readonly signal?: AbortSignal;
+  /** Called when the proxy answered "busy" and the request is tried once more after a short wait. */
+  readonly onBusy?: () => void;
+}
+
+export interface CrossStreetsOptions {
+  readonly signal?: AbortSignal;
+  readonly ways?: readonly number[];
+  /** Called when the proxy answered "busy" and the request is tried once more after a short wait. */
+  readonly onBusy?: () => void;
+}
+
+/** A town found by name ("Nashua, NH"): where it is, its state's two-letter code, and "Town, ST". */
+export interface TownPlace {
+  readonly point: LatLon;
+  readonly state: string | null;
+  readonly label: string;
+}
+
+/** A street found in a typed town: its name as the map spells it, a point on it, its OSM way ids, and "Town, ST". */
+export interface StreetInTown {
+  readonly name: string;
+  readonly at: LatLon;
+  readonly ways: readonly number[];
+  readonly place: string;
 }
 
 export interface GeoService {
@@ -53,7 +77,14 @@ export interface GeoService {
    */
   suggest(query: string, opts?: SuggestOptions): Promise<PlaceResult[]>;
   /** The streets that really cross `street` near a point (/api/geo/cross-streets), each with its crossing point. */
-  crossStreets(street: string, near: LatLon | null, opts?: { signal?: AbortSignal; ways?: readonly number[] }): Promise<CrossStreetsResult>;
+  crossStreets(street: string, near: LatLon | null, opts?: CrossStreetsOptions): Promise<CrossStreetsResult>;
+  /** Where a town is ("Nashua, NH"), from the type-ahead; never a place in another state than the one typed. Null when not found. */
+  town(text: string, opts?: { signal?: AbortSignal }): Promise<TownPlace | null>;
+  /**
+   * A street in a typed town ("Elm St" in "Manchester NH"): the street itself when the type-ahead finds it there,
+   * else the town's spot with the typed name. Null when neither can be found.
+   */
+  streetIn(street: string, town: string, opts?: { signal?: AbortSignal }): Promise<StreetInTown | null>;
 }
 
 export interface RoadsService {

@@ -1,19 +1,21 @@
 // Address search as a WAI-ARIA combobox.
 //
 // Typing (3 characters or more, after a 300 ms pause) asks for suggestions (Photon, through our proxy),
-// biased toward the claim's location, else the pin, else the middle of the map; every suggestion shows
-// its name and "Town, State". For an intersection ("X and Y", "X & Y", "X at Y", or after a street is
-// picked) a second list, "Crossing streets", offers only the streets that really cross it, and picking
-// one puts the pin exactly on the crossing. Enter with nothing highlighted runs the on-submit
-// (Nominatim) search, as before. The claim address is prefilled but nothing is sent until the claimant
-// types or taps Search.
+// biased toward the claim's town until there is a pin (the town is looked up on the first keystroke and
+// waited for), then toward the pin and the map; every suggestion shows its name and "Town, State", and one
+// far from the claim goes last, labelled so. For an intersection ("X and Y", "X & Y", "X at Y", or after a
+// street is picked) a second list, "Crossing streets", offers only the streets that really cross it, and
+// picking one puts the pin exactly on the crossing; a town typed after a comma ("X and Y, Town ST") says
+// where to look instead. A busy answer is retried once ("Busy, trying again…"). Enter with nothing
+// highlighted runs the on-submit (Nominatim) search, as before. The claim address is prefilled but nothing
+// is sent until the claimant types or taps Search.
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { CrossStreet, LatLon, PlaceResult } from "@csd/core";
 import { mapConfig } from "../config/map";
 import { Icon } from "../icons/Icon";
 import { useServices } from "../services/context";
 import { ServiceError } from "../services/types";
-import { useClaimTown } from "../state/claimTown";
+import { useClaimTown, useStreetInTown } from "../state/claimTown";
 import { useDoc } from "../state/DocProvider";
 import { useUi } from "../state/Ui";
 
@@ -29,8 +31,46 @@ export const TOO_LONG_TEXT = `That is too long to search for (${MAX_QUERY_CHARS}
 export const STREET_TOO_LONG_TEXT = `That street name is too long to look up (${MAX_STREET_CHARS} characters at most). Try a shorter name.`;
 export const NO_AREA_TEXT = "Search for the place, or drop the pin on the map first, so we know which area to look in.";
 export const noCrossingText = (street: string) => `No streets cross ${street} near here. Try the other street first, or drop the pin on the map.`;
+export const noTownText = (street: string, town: string) => `We couldn't find ${street} in ${town}. Check the spelling, or drop the pin on the map.`;
+/** Shown while a type-ahead or cross-streets request the proxy called busy is tried once more. */
+export const BUSY_RETRY_TEXT = "Busy, trying again…";
+/** Added to the "Town, ST" of a suggestion far from the claim (it is listed after the near ones). */
+export const FAR_SUFFIX = " — far from the claim";
+/** Farther than this from the claim's town is "far"; in another state, farther than FAR_OTHER_STATE_KM already is. */
+export const FAR_KM = 300;
+export const FAR_OTHER_STATE_KM = 50;
 
 const SEPARATORS = new Set(["and", "&", "at"]);
+/** What follows a picked street while "and" / "at" / "&" is being typed: still that street's crossings. */
+const PARTIAL_SEPARATOR = /^(a|an|and|at|&)$/i;
+
+/** The town typed after a comma in the second street ("Hanover St, Manchester NH" -> "Manchester NH"), once it is 3 characters or more. */
+export function townAfterComma(rest: string): string | null {
+  const at = rest.indexOf(",");
+  if (at < 0) return null;
+  const town = rest.slice(at + 1).replace(/\s+/g, " ").trim();
+  return town.length >= mapConfig.suggestMinChars ? town : null;
+}
+
+const kmBetween = (a: LatLon, b: LatLon) => {
+  const dLat = (a.lat - b.lat) * 111.32;
+  const dLon = (a.lon - b.lon) * 111.32 * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
+  return Math.hypot(dLat, dLon);
+};
+
+/**
+ * Suggestions in the claim's area first: one more than FAR_KM from the claim's town, or in another state and more than
+ * FAR_OTHER_STATE_KM away, is "far" and goes to the end (in its order). Without a claim location nothing is far.
+ */
+export function rankForClaim(list: readonly PlaceResult[], claimAt: LatLon | null, claimState: string | null): Array<{ place: PlaceResult; far: boolean }> {
+  const tagged = list.map((place) => {
+    if (!claimAt) return { place, far: false };
+    const km = kmBetween(claimAt, place);
+    const otherState = claimState != null && place.state != null && place.state !== claimState;
+    return { place, far: km > FAR_KM || (otherState && km > FAR_OTHER_STATE_KM) };
+  });
+  return [...tagged.filter((t) => !t.far), ...tagged.filter((t) => t.far)];
+}
 /** Never look further than this into the text: a pasted wall of text costs nothing. */
 const MAX_SCAN = 400;
 
@@ -122,28 +162,42 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
 
   const split = splitIntersection(query);
   const q = query.trim();
-  // Where to look: a known claim location, the pin, the middle of the map, and last the claim's town, which is only
-  // looked up once "A and B" is typed with none of the others to go on.
-  const known = claimBias ?? pin ?? viewBias;
-  const wantTown = typed && !known && !street && split != null && split.first.length >= mapConfig.suggestMinChars;
-  const claim = useClaimTown(wantTown);
-  const bias = known ?? claim.point;
+  // Where to look. Before there is a pin: the claim's town (looked up once the claimant starts typing, and waited
+  // for, so even the first suggestions are near the claim), else the middle of the map. With a pin: the pin and
+  // the map around it. A location passed in for the claim beats both.
+  const claim = useClaimTown(typed);
+  const waitClaim = !claimBias && !pin && claim.status === "loading";
+  const bias = claimBias ?? (pin ? viewBias ?? pin : claim.point ?? viewBias);
+  const claimAt = claimBias ?? claim.point;
   const biasKey = bias ? `${bias.lat.toFixed(2)},${bias.lon.toFixed(2)}` : "-";
   const isSettled = settled !== null && settled === query;
+  // "Elm St and Hanover St, Manchester NH": the town after the comma says where to look, not the claim or the map.
+  const typedTown = split && split.first.length >= mapConfig.suggestMinChars ? townAfterComma(split.rest) : null;
+  const inTown = useStreetInTown(typedTown && split ? split.first : null, typedTown);
   // What the second list is about: the street before the separator, else a picked street while the text still names it.
-  const intent: { name: string; rest: string; ways: readonly number[]; at: LatLon | null } | null = (() => {
-    if (!typed && !street) return null;
+  const intent: { name: string; rest: string; ways: readonly number[]; at: LatLon | null; town?: string; place?: string } | null = (() => {
+    // Text a pick put there ("Main Street & Park Street, Nashua, NH") is not a question: no crossing lookup for it.
+    if ((!typed && !street) || isSettled) return null;
     if (split) {
+      if (split.first.length < mapConfig.suggestMinChars) return null;
+      if (typedTown) {
+        const v = inTown.value;
+        return { name: v?.name ?? split.first, rest: split.rest, ways: v?.ways ?? [], at: v?.at ?? null, town: typedTown, ...(v ? { place: v.place } : {}) };
+      }
       const same = street && street.name.toLowerCase() === split.first.toLowerCase();
-      return split.first.length >= mapConfig.suggestMinChars ? { name: same ? street.name : split.first, rest: split.rest, ways: same ? street.ways : [], at: same ? street.at : bias } : null;
+      return { name: same ? street.name : split.first, rest: split.rest, ways: same ? street.ways : [], at: same ? street.at : bias };
     }
-    return street && matchesTyped(street.name, q) && q.length >= mapConfig.suggestMinChars ? { name: street.name, rest: "", ways: street.ways, at: street.at } : null;
+    if (!street || q.length < mapConfig.suggestMinChars) return null;
+    // Still the picked street: its name being edited, or followed by the start of "and" / "at" / "&".
+    const tail = q.toLowerCase().startsWith(street.name.toLowerCase()) ? q.slice(street.name.length).trim() : null;
+    return matchesTyped(street.name, q) || (tail !== null && PARTIAL_SEPARATOR.test(tail)) ? { name: street.name, rest: "", ways: street.ways, at: street.at } : null;
   })();
   // A street name the proxy would refuse, or no area to look in: say so, and don't send a request that would fail.
-  const noArea = intent != null && !intent.at && intent.ways.length === 0;
-  // The claim's town is still being found: wait for it, then ask.
-  const areaPending = noArea && claim.status === "loading";
-  const blocked = intent && intent.name.length > MAX_STREET_CHARS ? STREET_TOO_LONG_TEXT : noArea && !areaPending ? NO_AREA_TEXT : null;
+  const noArea = intent != null && !intent.town && !intent.at && intent.ways.length === 0;
+  // The claim's town, or the typed town, is still being found: wait for it, then ask.
+  const areaPending = (noArea && claim.status === "loading") || (intent?.town != null && inTown.status === "loading");
+  const townMissing = intent?.town != null && inTown.status === "none" ? noTownText(split?.first ?? intent.name, intent.town) : null;
+  const blocked = intent && intent.name.length > MAX_STREET_CHARS ? STREET_TOO_LONG_TEXT : townMissing ?? (noArea && !areaPending ? NO_AREA_TEXT : null);
   const crossFor = blocked || areaPending ? null : intent;
   const mode: "crossings" | "suggest" = intent ? "crossings" : "suggest";
 
@@ -151,13 +205,17 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
   const bboxKey = bbox ? bbox.map((n) => n.toFixed(2)).join(",") : "";
   const suggestKey = `${q.toLowerCase()}|${biasKey}|${bboxKey}`;
   const [suggested, setSuggested] = useState<Loaded<PlaceResult[]> | null>(null);
+  /** The request (suggest or cross-streets key) that the proxy called busy and that is being tried again. */
+  const [retrying, setRetrying] = useState<string | null>(null);
   const tooLong = q.length > MAX_QUERY_CHARS;
   const wantSuggest = typed && mode === "suggest" && !isSettled && q.length >= mapConfig.suggestMinChars && !tooLong;
+  // Nothing is asked until the claim's town is known (or known to be missing): an unbiased "Main St" is in Colorado.
+  const fireSuggest = wantSuggest && !waitClaim;
   useEffect(() => {
-    if (!wantSuggest) return;
+    if (!fireSuggest) return;
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => {
-      geo.suggest(q, { bias, bbox, signal: ctrl.signal }).then(
+      geo.suggest(q, { bias, bbox, signal: ctrl.signal, onBusy: () => setRetrying(suggestKey) }).then(
         (value) => setSuggested({ key: suggestKey, status: "ok", value }),
         (e: unknown) => { if (!(e instanceof DOMException && e.name === "AbortError")) setSuggested({ key: suggestKey, status: "error", message: e instanceof ServiceError ? e.message : SEARCH_FAILED_TEXT }); },
       );
@@ -165,8 +223,8 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
     return () => { window.clearTimeout(timer); ctrl.abort(); };
     // `suggestKey` stands for the text, the rounded bias and the map view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wantSuggest, suggestKey, geo]);
-  const suggestState = !wantSuggest ? null : suggested && suggested.key === suggestKey ? suggested : { key: suggestKey, status: "loading" as const };
+  }, [fireSuggest, suggestKey, geo]);
+  const suggestState = !wantSuggest ? null : fireSuggest && suggested && suggested.key === suggestKey ? suggested : { key: suggestKey, status: "loading" as const };
 
   // ---- crossing streets ----
   const crossKey = crossFor ? `${crossFor.name.toLowerCase()}|${crossFor.at ? `${crossFor.at.lat.toFixed(2)},${crossFor.at.lon.toFixed(2)}` : "-"}|${crossFor.ways.join(",")}` : "";
@@ -178,7 +236,7 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
     const at = crossFor.at;
     const ways = crossFor.ways;
     const timer = window.setTimeout(() => {
-      geo.crossStreets(name, at, { signal: ctrl.signal, ways }).then(
+      geo.crossStreets(name, at, { signal: ctrl.signal, ways, onBusy: () => setRetrying(crossKey) }).then(
         (r) => setCrossed({ key: crossKey, status: "ok", value: r.crossings }),
         (e: unknown) => { if (!(e instanceof DOMException && e.name === "AbortError")) setCrossed({ key: crossKey, status: "error", message: e instanceof ServiceError ? e.message : SEARCH_FAILED_TEXT }); },
       );
@@ -196,21 +254,24 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
       for (const c of crossState.value) {
         if (!matchesCrossTyped(c.name, crossFor.rest)) continue;
         const pts = c.points && c.points.length > 1 ? c.points : [{ lat: c.lat, lon: c.lon }];
+        const place = c.place ?? crossFor.place;
         pts.forEach((p, i) => {
-          const sub = [c.place, pts.length > 1 ? `crossing ${i + 1} of ${pts.length}` : null].filter(Boolean).join(" · ");
+          const sub = [place, pts.length > 1 ? `crossing ${i + 1} of ${pts.length}` : null].filter(Boolean).join(" · ");
           out.push({
             id: `${ids}-c${out.length}`, main: c.name, sub,
-            onPick: () => pickCrossing(crossFor.name, c, p),
+            onPick: () => pickCrossing(crossFor.name, c, p, place),
           });
         });
       }
     } else if (mode === "suggest" && suggestState?.status === "ok") {
-      suggestState.value.forEach((s, i) => out.push({ id: `${ids}-s${i}`, main: s.main, sub: s.sub, onPick: () => pickSuggestion(s) }));
+      rankForClaim(suggestState.value, claimAt, claim.state).forEach(({ place: s, far }, i) => out.push({
+        id: `${ids}-s${i}`, main: s.main, sub: far ? `${s.sub}${FAR_SUFFIX}` : s.sub, onPick: () => pickSuggestion(s),
+      }));
     }
     return out;
     // The pick handlers only read stable setters and the current street.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, crossFor?.name, crossFor?.rest, crossState, suggestState, ids]);
+  }, [mode, crossFor?.name, crossFor?.rest, crossFor?.place, crossState, suggestState, ids, claimAt?.lat, claimAt?.lon, claim.state]);
 
   function settle(text: string) {
     setSettled(text);
@@ -240,11 +301,11 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
     onPicked({ lat: s.lat, lon: s.lon });
   }
 
-  function pickCrossing(streetName: string, c: CrossStreet, p: { lat: number; lon: number }) {
+  function pickCrossing(streetName: string, c: CrossStreet, p: { lat: number; lon: number }, place: string | undefined) {
     const result: PlaceResult = {
-      label: `${streetName} & ${c.name}${c.place ? `, ${c.place}` : ""}`,
+      label: `${streetName} & ${c.name}${place ? `, ${place}` : ""}`,
       main: `${streetName} & ${c.name}`,
-      sub: c.place ?? "",
+      sub: place ?? "",
       lat: p.lat,
       lon: p.lon,
       kind: "crossing",
@@ -375,7 +436,7 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
                   </li>
                 ))}
               </ul>
-              {loading ? <p className="combo-note" role="status"><span className="spinner" aria-hidden="true" /> Searching…</p> : null}
+              {loading ? <p className="combo-note" role="status"><span className="spinner" aria-hidden="true" /> {retrying !== null && retrying === state?.key ? BUSY_RETRY_TEXT : "Searching…"}</p> : null}
               {message ? <p className="combo-note" role="status">{message}</p> : null}
               <p className="combo-attrib">{ATTRIBUTION_TEXT} · <a href={mapConfig.attributionUrl} target="_blank" rel="noopener noreferrer">{mapConfig.attribution}</a></p>
             </div>
