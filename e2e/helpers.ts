@@ -5,6 +5,7 @@ import { test as base, expect, type Download, type Locator, type Page } from "@p
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { unzipStored } from "../packages/exports/src/zip";
+import { isLiveTarget, stubNonEssentialApi } from "./live-guard";
 
 export const EXAMPLES = ["t-bone-intersection", "highway-rear-end", "parking-lot-backing"] as const;
 export type ExampleName = (typeof EXAMPLES)[number];
@@ -43,11 +44,17 @@ export function watchErrors(page: Page): () => string[] {
   return () => [...errors];
 }
 
-export const test = base.extend<{ pageErrors: () => string[] }>({
+export const test = base.extend<{ pageErrors: () => string[]; liveGuard: void }>({
   pageErrors: async ({ page }, use) => {
     const get = watchErrors(page);
     await use(get);
   },
+  // Against a deployed copy (BASE_URL not on this machine), the vehicle lookups and map tiles are answered inside the
+  // test, so our runs don't spend the live proxy's shared budget (e2e/live-guard.ts). Nothing changes for local runs.
+  liveGuard: [async ({ page }, use) => {
+    if (isLiveTarget()) await stubNonEssentialApi(page);
+    await use();
+  }, { auto: true }],
 });
 export { expect };
 
