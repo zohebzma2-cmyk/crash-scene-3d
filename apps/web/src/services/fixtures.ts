@@ -118,13 +118,19 @@ export function createFixtureGeo(split: (q: string) => { a: string; b: string; n
       const q = query.trim();
       if (q.length < mapConfig.suggestMinChars) return [];
       const out: PlaceResult[] = [];
+      // "Main Street, Nashua NH": the street part is matched against the streets of that town only.
+      const comma = q.indexOf(",");
+      const streetPart = comma >= 0 ? q.slice(0, comma) : q;
+      const townPart = comma >= 0 ? q.slice(comma + 1) : "";
+      const sameText = (a: string, b: string) => words(a).join(" ") === words(b).join(" ");
       for (const { net, scene } of await allNets()) {
         const ts = townState(scene.location.label);
-        // A town on its own ("Nashua, NH", as the claim gives it) is a place too: the example's own spot stands for it.
-        if (ts.toLowerCase() === q.toLowerCase() && !out.some((p) => p.label === ts)) out.push({ label: ts, main: ts.split(",")[0] ?? ts, sub: ts, lat: scene.location.lat, lon: scene.location.lon, kind: "road", category: "place" });
+        // A town on its own ("Nashua, NH" or "Nashua NH") is a place too: the example's own spot stands for it.
+        if (sameText(ts, q) && !out.some((p) => p.label === ts)) out.push({ label: ts, main: ts.split(",")[0] ?? ts, sub: ts, lat: scene.location.lat, lon: scene.location.lon, kind: "road", category: "place" });
+        if (townPart && !sameText(ts, townPart)) continue;
         const seen = new Set<string>();
         for (const w of net.ways) {
-          if (!w.name || seen.has(w.name) || !matches(w.name, q)) continue;
+          if (!w.name || seen.has(w.name) || !matches(w.name, streetPart)) continue;
           seen.add(w.name);
           const near = nearestOnPolyline(w.centerline, { x: 0, y: 0 });
           const at = near ? fakeToLatLon(net.frame, near.point) : scene.location;

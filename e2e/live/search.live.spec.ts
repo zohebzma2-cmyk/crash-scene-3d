@@ -59,12 +59,12 @@ test("'Main St' on a fresh home page suggests Nashua, NH first, not Colorado", a
 test("'Main Street' then 'and Park Street': the pin lands on the Nashua crossing and both streets are found there", async ({ page }) => {
   api = await fresh(page);
   await typeSlowly(page, "Main St");
-  await option(page, /^Main Street$/, /Nashua, NH/).click();
+  await option(page, /^Main Street$/, /Nashua, NH/).click({ timeout: 30_000 });
   // The crossing list for the picked street (Overpass, through the proxy).
   await expect(page.locator(".combo-title")).toHaveText("Crossing streets");
   await box(page).press("End");
   await typeSlowly(page, " and Park", false);
-  await option(page, /^Park Street$/).click();
+  await option(page, /^Park Street$/).click({ timeout: 45_000 });
   const coords = page.locator(".coords .num");
   await expect(coords).toBeVisible();
   const [lat, lon] = (await coords.innerText()).split(",").map((s) => Number(s.trim())) as [number, number];

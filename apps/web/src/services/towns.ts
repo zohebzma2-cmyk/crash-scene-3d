@@ -1,7 +1,7 @@
 // Finding a town ("Nashua, NH", the claim's) and a street in a typed town ("Elm St" in "Manchester NH"),
 // on top of the type-ahead service, so the live and fixture services answer alike.
 import type { PlaceResult } from "@csd/core";
-import { isStateText, normalizeStreetName, stateOfText } from "@csd/mapdata";
+import { isStateText, nameMatchScore, stateOfText } from "@csd/mapdata";
 import type { GeoService, StreetInTown, TownPlace } from "./types";
 
 type Suggest = GeoService["suggest"];
@@ -39,16 +39,13 @@ export function pickTown(results: readonly PlaceResult[], text: string): TownPla
   return { point: { lat: p.lat, lon: p.lon }, state: stateOf(p), label: p.sub || p.label };
 }
 
-/** The longest word of a typed street name ("N Main St" -> "main"): it must be in the street's own name. */
-const keyWord = (street: string) => [...(street.toLowerCase().match(/[a-z0-9]+/g) ?? [])].sort((a, b) => b.length - a.length)[0] ?? "";
-
 /** A street of that name in that town (and state, when typed) among type-ahead results. */
 export function pickStreetIn(results: readonly PlaceResult[], street: string, town: string): StreetInTown | null {
   const state = stateOfText(town);
   const name = townName(town);
-  const key = keyWord(street);
+  // The same street name, "St" / "Street" and "N" / "North" alike (nameMatchScore, as the crossings use).
   const hit = results.find((p) => p.category === "street" && finite(p) && (!state || stateOf(p) === state) && townOf(p) === name
-    && normalizeStreetName(p.street ?? p.main).includes(key));
+    && nameMatchScore(street, { name: p.street ?? p.main }) > 0);
   return hit ? { name: hit.street ?? hit.main, at: { lat: hit.lat, lon: hit.lon }, ways: hit.osmWayIds ?? [], place: hit.sub } : null;
 }
 
