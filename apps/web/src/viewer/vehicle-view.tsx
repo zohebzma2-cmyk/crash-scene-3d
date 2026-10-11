@@ -3,9 +3,10 @@
 import { useEffect, useMemo } from "react";
 import { Line } from "@react-three/drei";
 import { MeshStandardMaterial, type Color, type Group, type Material } from "three";
-import type { Pose, RoadNetwork, VehicleResult } from "@csd/core";
+import { vehicleColor, type Paintable, type Pose, type RoadNetwork, type VehicleResult } from "@csd/core";
 import { headingToYaw, heightAt, toThree } from "./math";
-import { vehicleToken, type SceneColors } from "./tokens";
+import { vehicleToken, type SceneColors, type SceneToken } from "./tokens";
+import { applyTint, type TintPlan } from "./glb-model";
 import { vehicleModel, type VehicleParts } from "./vehicle-models";
 import { LIFT } from "./scene-geometry";
 
@@ -24,9 +25,19 @@ export class VehicleMaterials {
     this.taillight = new MeshStandardMaterial({ color: colors["--color-scene-taillight"], emissive: colors["--color-scene-taillight"], emissiveIntensity: 0.5, roughness: 0.3 });
   }
 
-  bodyFor(id: string): MeshStandardMaterial {
-    let m = this.body.get(id);
-    if (!m) { m = new MeshStandardMaterial({ color: this.colors[vehicleToken(id)], roughness: 0.45, metalness: 0.15 }); this.body.set(id, m); }
+  /**
+   * The body material of vehicle `v`, in `vehicleColor(v)`: its picked paint, or its token colour for "Not sure".
+   * The colour is set only when the paint changes (never per frame); the letter badges and outlines stay in the token.
+   */
+  bodyFor(v: Paintable): MeshStandardMaterial {
+    let m = this.body.get(v.id);
+    if (!m) { m = new MeshStandardMaterial({ roughness: 0.45, metalness: 0.15 }); this.body.set(v.id, m); }
+    const fill = vehicleColor(v, vehicleToken);       // a token name, or the picked "#rrggbb"
+    if (m.userData.fill !== fill) {
+      if (fill.startsWith("--")) m.color.copy(this.colors[fill as SceneToken]);
+      else m.color.set(fill);                          // sRGB hex to the working colour space
+      m.userData.fill = fill;
+    }
     return m;
   }
 
@@ -44,8 +55,19 @@ export function useVehicleMaterials(colors: SceneColors): VehicleMaterials {
   return mats;
 }
 
+/** A catalog model fitted to this vehicle's footprint (glb-model.ts), with how to tint it. */
+export interface CatalogModel {
+  readonly object: Group;
+  readonly plan: TintPlan;
+  readonly watermarked: boolean;
+}
+
 export interface VehicleMeshProps {
   readonly v: VehicleResult;
+  /** The scene's vehicle (its paint); absent = the token colour. */
+  readonly paint?: Paintable;
+  /** The catalog model, once loaded: drawn instead of the low-poly parts, in the same posed group (no flash, same pose). */
+  readonly catalog?: CatalogModel | null;
   readonly pose: Pose;
   readonly mats: VehicleMaterials;
   readonly terrain: RoadNetwork["terrain"] | null;
@@ -58,7 +80,7 @@ export interface VehicleMeshProps {
   readonly damage?: (parts: VehicleParts) => VehicleParts;
 }
 
-export function VehicleMesh({ v, pose, mats, terrain, register, damage }: VehicleMeshProps) {
+export function VehicleMesh({ v, paint, catalog, pose, mats, terrain, register, damage }: VehicleMeshProps) {
   const model = vehicleModel(v.type, v.lengthM, v.widthM);
   const parts = useMemo(() => (damage ? damage(model.parts) : model.parts), [damage, model]);
   useEffect(() => () => {
@@ -66,13 +88,21 @@ export function VehicleMesh({ v, pose, mats, terrain, register, damage }: Vehicl
     for (const k of ["body", "glass", "headlight", "taillight", "tire"] as const) if (parts[k] !== model.parts[k]) parts[k].dispose();
   }, [parts, model]);
   const ground = heightAt(terrain ?? null, { x: pose.xM, y: pose.yM });
+  const body = mats.bodyFor(paint ?? { id: v.id });
+  const fill = body.userData.fill as string;
+  // The catalog model takes the same colour as our body material (vehicleColor), set when the paint or the model changes.
+  useEffect(() => { if (catalog) applyTint(catalog.plan, body.color); }, [catalog, body, fill]);
   return (
     <group ref={(g) => register?.(v.id, g)} position={toThree({ x: pose.xM, y: pose.yM }, ground)} rotation={[0, headingToYaw(pose.headingRad), 0]}>
-      <mesh geometry={parts.body} material={mats.bodyFor(v.id)} castShadow />
-      <mesh geometry={parts.glass} material={mats.glass} />
-      <mesh geometry={parts.tire} material={mats.tire} castShadow />
-      <mesh geometry={parts.headlight} material={mats.headlight} />
-      <mesh geometry={parts.taillight} material={mats.taillight} />
+      {catalog ? <primitive object={catalog.object} /> : (
+        <>
+          <mesh geometry={parts.body} material={body} castShadow />
+          <mesh geometry={parts.glass} material={mats.glass} />
+          <mesh geometry={parts.tire} material={mats.tire} castShadow />
+          <mesh geometry={parts.headlight} material={mats.headlight} />
+          <mesh geometry={parts.taillight} material={mats.taillight} />
+        </>
+      )}
     </group>
   );
 }

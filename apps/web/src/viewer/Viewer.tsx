@@ -13,6 +13,8 @@ import { LIFT, RING_M } from "./scene-geometry";
 import { World } from "./World";
 import { readSceneColors, vehicleToken, type SceneColors } from "./tokens";
 import { VehicleMesh, RestOutline, useVehicleMaterials } from "./vehicle-view";
+import { useCatalogModels } from "./catalog-models";
+import { PaintChip } from "../components/PaintChip";
 import { disposeVehicleModels, vehicleModel } from "./vehicle-models";
 import { projectRing, projectVehicle, vehicleLabel } from "./labels";
 import { renderStill, type CaptureContext } from "./capture";
@@ -209,7 +211,7 @@ const LABEL_GAP_PX = 8;
 const LABEL_STEP_PX = 8;
 const PILL_REACH_PX = 150;
 const estimateWidth = (it: LabelItem) => (it.kind === "vehicle" ? 14 + it.text.length * 6.6 : 30 + it.text.length * 7.2);
-const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass";
+const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass, .viewer3d-model-note";
 
 function LabelProjector({ vehicles, measures, ring, showVehicleLabels, sizes, obstacles, layer, onLayout }: {
   vehicles: readonly VehicleAnchor[]; measures: readonly MeasureAnchor[]; ring: { center: Vec2; ground: number }; showVehicleLabels: boolean;
@@ -337,6 +339,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const fxApi = useRef<EffectsApi | null>(null);        // FX
   const measureRef = useRef<Group | null>(null);         // FX: measurements stay mounted so the Aftermath still can show them
   const damage = useDamage(props.scene, props.sim);      // FX: dent callbacks per vehicle
+  const catalog = useCatalogModels(props.scene, props.sim, props.loadModel);   // round B: catalog GLBs, swapped in when loaded
   const extraPoints = useCallback(() => fxApi.current?.extraPoints() ?? [], []);   // FX
   const sizes = useRef<Sizes>(new Map());
   const obstacles = useRef<Rect[]>([]);
@@ -355,6 +358,12 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
 
   const registerGroup = useCallback((id: string, g: Group | null) => { if (g) groups.current.set(id, g); else groups.current.delete(id); }, []);
   const poses = useMemo(() => props.sim.vehicles.map((v) => ({ v, pose: trackPose(props.sim, v, props.timeS) })), [props.sim, props.timeS]);
+
+  const catalogRef = useRef(catalog);
+  useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+  // Notes about catalog models: a watermarked preview, and a model that keeps the catalog's paint (it can't be tinted).
+  const watermarked = [...catalog.values()].some((m) => m.watermarked);
+  const untinted = props.scene.vehicles.filter((v) => catalog.get(v.id)?.plan.kind === "none");
 
   // Everything the still capture needs, read at capture time so it is always current.
   const latest = useRef({ props, colors, terrain });
@@ -383,6 +392,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
       camera: () => { const c = controls.current?.object; return c ? { orthographic: isOrtho(c), zoom: c.zoom, position: c.position.toArray(), target: controls.current!.target.toArray() } : null; },
       // Read-only: the live scene graph, camera and vehicle groups, for the visibility sweep (e2e/visibility-sweep.spec.ts).
       three: () => (probe.current ? { ...probe.current, groups: Object.fromEntries(groups.current) } : null),
+      // Which vehicles show a catalog model, and how it is tinted (round B e2e).
+      models: () => Object.fromEntries([...catalogRef.current].map(([id, m]) => [id, { tint: m.plan.kind, watermarked: m.watermarked }])),
     };
     (window as unknown as { __csdViewer?: typeof hook }).__csdViewer = hook;
     return () => { delete (window as unknown as { __csdViewer?: typeof hook }).__csdViewer; };
@@ -531,7 +542,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
         <World roads={props.roads} colors={colors} focus={props.sim.impactPointM} avoid={pathPoints} />
         {props.showPaths && <Paths sim={props.sim} colors={colors} terrain={terrain} />}
         <ImpactRing sim={props.sim} colors={colors} terrain={terrain} />
-        {poses.map(({ v, pose }) => <VehicleMesh key={v.id} v={v} pose={pose} mats={mats} terrain={terrain} register={registerGroup} damage={damage.get(v.id)} />)}
+        {poses.map(({ v, pose }) => <VehicleMesh key={v.id} v={v} paint={props.scene.vehicles.find((x) => x.id === v.id)} catalog={catalog.get(v.id) ?? null} pose={pose} mats={mats} terrain={terrain} register={registerGroup} damage={damage.get(v.id)} />)}
         <group ref={measureRef} visible={props.showMeasurements}><Measurements sim={props.sim} colors={colors} terrain={terrain} groups={shownGroups} /></group>{/* FX: always mounted, shown by the toggle or the Aftermath still */}
         <ImpactEffects scene={props.scene} sim={props.sim} roads={props.roads} colors={colors} timeS={props.timeS} reducedMotion={props.reducedMotion} apiRef={fxApi} measureRef={measureRef} groups={groups} />{/* FX */}
         {(props.showMeasurements || props.showPaths) && props.sim.vehicles.map((v) => (
@@ -570,6 +581,14 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
 
       <div className="viewer3d-hud-rail">
         <div className="viewer3d-hud">
+          {watermarked || untinted.length ? (
+            <div className="viewer3d-model-note" role="note">
+              {watermarked ? <span>Vehicle models from the catalog are watermarked previews.</span> : null}
+              {untinted.map((v) => (
+                <span key={v.id} className="viewer3d-model-paint">{v.id}&apos;s model keeps the catalog&apos;s paint.{v.color ? <> <PaintChip vehicle={v} /></> : null}</span>
+              ))}
+            </div>
+          ) : null}
           {props.showPaths ? <span className="viewer3d-legend">Dashed: before impact · Solid: after</span> : null}
           {/* The compass sits in one row with the zoom buttons, so the legend above keeps its place (labels plan around both). */}
           <div className="viewer3d-hud-row">

@@ -2,6 +2,7 @@
 // review step and calls the handle for export stills. Viewer internals are
 // built separately (react-three-fiber); the shell never imports three directly.
 import type { RoadNetwork, Scene, SimulationResult } from "@csd/core";
+import type { VehicleModelAsset, VehicleModelQuery } from "../services/vehicle-models";
 
 export type CameraView = "top" | "wide" | "driver-a" | "driver-b" | "aftermath";
 export type Units = "us" | "metric";
@@ -27,6 +28,11 @@ export interface ViewerProps {
   readonly measureGroups?: { readonly impact: boolean; readonly travel: boolean };
   /** A label was tapped or clicked: select that vehicle. */
   readonly onSelectVehicle?: (id: string) => void;
+  /**
+   * Catalog 3D models (round B): the GLB for a vehicle, or null for our own low-poly model. Absent = always ours.
+   * Never blocks the first frame: our model shows until the catalog one has loaded.
+   */
+  readonly loadModel?: (q: VehicleModelQuery, signal?: AbortSignal) => Promise<VehicleModelAsset | null>;
   /** Called once the scene has rendered its first frame (e2e waits on this). */
   readonly onReady?: () => void;
 }

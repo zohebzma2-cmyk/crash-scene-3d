@@ -45,6 +45,9 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 .viewer3d-controls .icon-btn { color: var(--color-text); }
 .viewer3d-controls .icon-btn:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: calc(var(--size-focus-offset) * -1); }
 .viewer3d-legend { padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); background: var(--glass-bg); font-size: var(--text-xs); color: var(--color-text-secondary); }
+/* Catalog models (round B): a watermarked preview, or a model that keeps the catalog's paint, said in one small note. */
+.viewer3d-model-note { display: flex; flex-direction: column; gap: var(--space-1); max-width: min(100%, var(--size-dialog-max)); padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); background: var(--glass-bg); font-size: var(--text-xs); color: var(--color-text-secondary); }
+.viewer3d-model-paint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
 /* The one-time hint on the first plain wheel over the picture. */
 .viewer3d-hint {
