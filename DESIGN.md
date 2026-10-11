@@ -540,6 +540,7 @@ export const mapProvider = {
 - Drawn in the browser at export time from the tiles **already loaded** in the visible map, copied onto a canvas.
 - Never made by requesting tiles in a loop or fetching new tiles for export.
 - If those tiles aren't available or the canvas is tainted, the thumbnail falls back to the top-down diagram's road outline with the address and coordinates as text.
+- The names of the streets that meet at the pin (on the picture and on the outline) each sit along their own road, at the nearest spot that keeps at least half a text size clear of the pin, the credit and every other name; a road too short for its name along it gets the name level beside it, and a name with no clear spot is left off (owner's polish list, 2026-10-10).
 
 ---
 

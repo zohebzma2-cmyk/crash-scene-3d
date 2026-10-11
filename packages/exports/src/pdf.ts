@@ -86,6 +86,9 @@ export interface PdfPageReport {
   readonly north?: { readonly arrow: { x: number; y: number; w: number; h: number }; readonly chip: { x: number; y: number; w: number; h: number }; /** The diagram box, and what must stay clear of the chip: vehicles, run-up and impact ring. */ readonly box: { x: number; y: number; w: number; h: number }; readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }> };
   /** The street names drawn at the pin on the map picture or the outline (their boxes include the halo). */
   readonly mapLabels?: ReadonlyArray<{ text: string; rotateDeg: number; box: { x: number; y: number; w: number; h: number } }>;
+  /** The pin (with its ring) and the credit chip on the map, when street names were placed around them. */
+  readonly mapPin?: { x: number; y: number; w: number; h: number };
+  readonly mapCredit?: { x: number; y: number; w: number; h: number };
   /** Every run of text drawn on the page, with its glyph box. */
   readonly texts: ReadonlyArray<{ region: Region; text: string; box: { x: number; y: number; w: number; h: number } }>;
   /** The vehicles table as drawn: its box (header row and rows), the column edges, and the note under it when there is one. */
@@ -446,11 +449,14 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
           const mpp = input.mapThumbnail ? thumbnailMetersPerPixel(input.mapThumbnail) : null;
           if (input.roads && mpp) {
             const pinHalf = (THUMB_PIN_IMAGE_PX + THUMB_RING_IMAGE_PX) * k;
+            const pinRect = { x: x + w / 2 - pinHalf, y: by + h / 2 - pinHalf, w: pinHalf * 2, h: pinHalf * 2 };
             const names = planPinStreetLabels(input.roads, {
               box: mapBox, center: toLocal(input.roads.frame, input.scene.location), scale: k / mpp, size: MIN_TEXT_PT,
               names: input.scene.vehicles.flatMap((v) => (v.travel.roadName ? [v.travel.roadName] : [])),
-              keepClear: [{ x: x + w / 2 - pinHalf, y: by + h / 2 - pinHalf, w: pinHalf * 2, h: pinHalf * 2 }, credit],
+              keepClear: [pinRect, credit],
             }, c.measure);
+            c.marks.mapPin = pinRect;
+            c.marks.mapCredit = credit;
             c.clipPath(roundedRectPts(x, by, w, h, radius, 5));
             c.replay(names.prims);
             c.unclip();
@@ -478,6 +484,8 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
             captionBox: { x, y: capY, w, h: mapCaption.length * lh(cs) },
           };
           c.marks.mapLabels = outline.labels;
+          c.marks.mapPin = { x: outline.pin[0] - pinR * 1.5, y: outline.pin[1] - pinR * 1.5, w: pinR * 3, h: pinR * 3 };
+          c.marks.mapCredit = credit;
           c.clipPath(roundedRectPts(x, by, w, h, radius, 5));
           c.replay(outline.prims);
           c.unclip();
@@ -877,6 +885,8 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
       ...(cv.marks.mapOutline ? { mapOutline: cv.marks.mapOutline as NonNullable<PdfPageReport["mapOutline"]> } : {}),
       ...(cv.marks.north ? { north: cv.marks.north as NonNullable<PdfPageReport["north"]> } : {}),
       ...(cv.marks.mapLabels ? { mapLabels: cv.marks.mapLabels as NonNullable<PdfPageReport["mapLabels"]> } : {}),
+      ...(cv.marks.mapPin ? { mapPin: cv.marks.mapPin as NonNullable<PdfPageReport["mapPin"]> } : {}),
+      ...(cv.marks.mapCredit ? { mapCredit: cv.marks.mapCredit as NonNullable<PdfPageReport["mapCredit"]> } : {}),
       texts: cv.texts,
       ...(cv.marks.table ? { table: cv.marks.table as NonNullable<PdfPageReport["table"]> } : {}),
     });

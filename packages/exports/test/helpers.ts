@@ -228,3 +228,16 @@ export function withPngText(png: Uint8Array, key: string, value: string): Uint8A
   const iend = png.length - 12;
   return new Uint8Array(Buffer.concat([Buffer.from(png.subarray(0, iend)), chunk, Buffer.from(png.subarray(iend))]));
 }
+
+/** A plain synthetic map picture with the pin dead centre, drawn the way the app marks it (a dot with a ring, at 2x). No map data. */
+export function centredMapPng(width: number, height: number): Uint8Array {
+  const cv = createCanvas(width, height) as Canvas;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#EDE9E0";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath(); ctx.arc(width / 2, height / 2, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2563EB";
+  ctx.beginPath(); ctx.arc(width / 2, height / 2, 14, 0, Math.PI * 2); ctx.fill();
+  return new Uint8Array(cv.toBuffer("image/png"));
+}

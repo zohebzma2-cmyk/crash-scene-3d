@@ -8,13 +8,13 @@ import {
 import type { ExportBundle, ExportRequest, Scene, SimulationResult } from "@csd/core";
 import { buildExports, footerBandHeight, sceneFile } from "../src";
 import { about } from "../src/about";
-import { planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
+import { PIN_LABEL_GAP, planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
 import { buildModel, approachPhrase, fileClaim, printable, speedInputs } from "../src/model";
 import { buildPdf, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
 import { renderBand, renderDiagramPng, renderStillPng } from "../src/png";
 import { MAX_PNG_SIDE, decodePng } from "../src/png-decode";
 import { color, rgb01 } from "../src/style";
-import { MONO, SANS, brandFonts, brandMeasure, createSolidPng, latin1, makePng, readPdf, renderPdfPage, saveOutput, syntheticPng, testCanvas, withPngText } from "./helpers";
+import { MONO, SANS, brandFonts, brandMeasure, centredMapPng, createSolidPng, latin1, makePng, readPdf, renderPdfPage, saveOutput, syntheticPng, testCanvas, withPngText } from "./helpers";
 import { loadRoads } from "./osm-roads";
 import { fourVehicle, manyShortWarnings, stress, twoVehicle } from "./sim-fixtures";
 // @ts-expect-error plain .mjs without types
@@ -1556,4 +1556,56 @@ describe("the PDF \"Hit on\" column (owner, 2026-10-10)", () => {
     expect(r.report[0]!.table!.foot).toBeNull();
     expect(read.text).not.toContain("as entered; the picture uses another side");
   });
+});
+
+describe("street names at the pin on the PDF map (owner, 2026-10-10)", () => {
+  const real = JSON.parse(readFileSync(new URL("./data/real-sims.json", import.meta.url), "utf8")) as Record<string, { scene: Scene; sim: SimulationResult }>;
+  const overflow = JSON.parse(readFileSync(new URL("./data/overflow-3v.json", import.meta.url), "utf8")) as { scene: Scene; sim: SimulationResult };
+  const cases: Array<[string, string, { scene: Scene; sim: SimulationResult }]> = [
+    ...Object.entries(real).map(([name, v]) => [name, name, v] as [string, string, { scene: Scene; sim: SimulationResult }]),
+    ["overflow-3v", "t-bone-intersection", overflow],
+  ];
+  type B = { x: number; y: number; w: number; h: number };
+  const touch = (a: B, b: B, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+  const inRect = (b: B, o: B) => b.x >= o.x - 1e-6 && b.y >= o.y - 1e-6 && b.x + b.w <= o.x + o.w + 1e-6 && b.y + b.h <= o.y + o.h + 1e-6;
+  const gap = MIN_TEXT_PT * PIN_LABEL_GAP - 1e-6;
+
+  async function pdfFor(example: string, scene: Scene, sim: SimulationResult, mpp: string | null) {
+    const { PNG_METERS_PER_PIXEL_KEY } = await import("../src/png-meta");
+    const { stamp } = await sceneFile(scene, sim, CREATED);
+    return buildPdf({
+      model: buildModel(scene, sim, stamp), scene, sim, roads: loadRoads(example, scene.location), fonts: brandFonts(), createdAt: CREATED,
+      sceneFileName: "crash-scene.json", ...(mpp ? { mapThumbnail: withPngText(centredMapPng(1200, 800), PNG_METERS_PER_PIXEL_KEY, mpp) } : {}),
+    });
+  }
+
+  it("never lets two names, a name and the pin, or a name and the credit touch, at any map scale", async () => {
+    let checked = 0;
+    for (const [name, example, { scene, sim }] of cases) {
+      for (const mpp of ["0.11", "0.22", "0.3", "0.44", "0.88", null]) {
+        const r = await pdfFor(example, scene, sim, mpp);
+        const p = r.report[0]!;
+        const labels = p.mapLabels ?? [];
+        const box = mpp ? p.images[0]! : p.mapOutline!.box;
+        const what = `${name} at ${mpp ?? "outline"}`;
+        for (const [i, l] of labels.entries()) {
+          checked++;
+          expect(inRect(l.box, box), `${what}: ${l.text} inside the map`).toBe(true);
+          expect(touch(l.box, p.mapPin!, gap), `${what}: ${l.text} at the pin`).toBe(false);
+          expect(touch(l.box, p.mapCredit!, gap), `${what}: ${l.text} at the credit`).toBe(false);
+          for (const m of labels.slice(i + 1)) expect(touch(l.box, m.box, gap), `${what}: ${l.text} against ${m.text}`).toBe(false);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  }, 120_000);
+
+  it("still names both streets of the t-bone crossing, each along or beside its own road", async () => {
+    const { scene, sim } = real["t-bone-intersection"]!;
+    for (const mpp of ["0.22", "0.3", null]) {
+      const r = await pdfFor("t-bone-intersection", scene, sim, mpp);
+      const texts = (r.report[0]!.mapLabels ?? []).map((l) => l.text);
+      expect(texts, `at ${mpp ?? "outline"}`).toEqual(expect.arrayContaining(["MAIN STREET", "PARK STREET"]));
+    }
+  }, 60_000);
 });
