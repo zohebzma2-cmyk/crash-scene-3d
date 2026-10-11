@@ -30,10 +30,10 @@
 
 ## What's next (in order)
 1. **The owner's polish list (2026-10-10, after close-out):**
-   1. PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2.
-   2. The PDF "Hit on" column gets more room, or its note moves under the table.
-   3. The PDF map thumbnail: street labels at the pin spaced apart.
-   4. The diagram: the scale bar moved off the north arrow.
+   1. ~~PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2.~~ Done on branch `polish/pdf` (not merged or deployed).
+   2. ~~The PDF "Hit on" column gets more room, or its note moves under the table.~~ Done on `polish/pdf`: short cell, note under the table.
+   3. ~~The PDF map thumbnail: street labels at the pin spaced apart.~~ Done on `polish/pdf`.
+   4. ~~The diagram: the scale bar moved off the north arrow.~~ Done on `polish/pdf` (PDF and PNG; the PNG card also moves above a wide legend).
    5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together".
 2. **The camera framing fixes** from docs/VISIBILITY-SWEEP.md, in this order:
    1. fit into the unobstructed view, which matters most on phones;
