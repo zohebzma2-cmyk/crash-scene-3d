@@ -35,10 +35,10 @@
 
 ## What's next (in order)
 1. **The owner's polish list (2026-10-10, after close-out):**
-   1. PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2.
-   2. The PDF "Hit on" column gets more room, or its note moves under the table.
-   3. The PDF map thumbnail: street labels at the pin spaced apart.
-   4. The diagram: the scale bar moved off the north arrow.
+   1. PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2. **Merged (reviewed), not yet deployed.**
+   2. The PDF "Hit on" column gets more room, or its note moves under the table. **Merged (reviewed), not yet deployed.**
+   3. The PDF map thumbnail: street labels at the pin spaced apart. **Merged (reviewed), not yet deployed.**
+   4. The diagram: the scale bar moved off the north arrow. **Merged (reviewed), not yet deployed.**
    5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together". **Merged (reviewed), not yet deployed.**
    6. The vehicles step no longer says "a lot of map requests" when you type a make and model: vPIC has its own buckets, every route retries before a busy message, wording is per topic, our live tests stub vehicles and tiles (docs/PROXY-BUSY.md, decision 0010). **Merged (reviewed), not yet deployed.** After the deploy, run `e2e/live/vehicles.live.spec.ts` once. Decision for the owner: extend CLAUDE.md hard rule 6's exception to vPIC (2/s global with bursts).
 2. **The camera framing fixes** from docs/VISIBILITY-SWEEP.md, in this order:
