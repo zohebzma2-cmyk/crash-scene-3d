@@ -2,8 +2,8 @@
 // csp.spec.ts passed while Safari's console showed "Refused to apply a stylesheet", so this spec runs on WebKit too (@xb).
 //
 // It fails on ANY violation: a securitypolicyviolation event, or the browser's own "Refused to ..." console error.
-// It needs no fixtures and no live API: it opens the examples (cached road data) and walks every step, so it also runs
-// against a deployed copy, read-only:
+// It needs no fixtures, so it also runs against a deployed copy. On a production deploy the examples use the live
+// /api (map, roads, terrain), so a run there spends a few proxy requests:
 //
 //   BASE_URL=https://crash-scene-3d.netlify.app E2E_FULL=1 npx playwright test e2e/csp-steps.spec.ts --project=webkit-desktop
 //
@@ -79,12 +79,16 @@ test("@xb no CSP violation on any step: location, vehicles, review (measure, aft
 test("@xb self-check: this engine reports a blocked <style>, a style attribute and a stylesheet", async ({ page }) => {
   const violations = await watchCsp(page);
   await page.goto("/");
-  await page.evaluate(() => {
-    const s = document.createElement("style"); s.textContent = "a{color:red}"; document.head.append(s);
-    const d = document.createElement("div"); d.setAttribute("style", "color:red"); document.body.append(d);
-    const f = document.createElement("div"); f.style.color = "red"; document.body.append(f);   // CSSOM: allowed, must NOT be reported
-  });
-  await expect.poll(async () => (await violations()).length).toBeGreaterThanOrEqual(2);
-  const dirs = (await violations()).map((v) => v.directive);
-  expect(dirs.some((d) => d === "style-src-elem" || d === "console")).toBe(true);
+  const count = async () => (await violations()).length;
+  // Each kind is checked on its own, so one report can't stand in for another.
+  await page.evaluate(() => { const s = document.createElement("style"); s.textContent = "a{color:red}"; document.head.append(s); });
+  await expect.poll(count, { message: "a blocked <style> element is reported" }).toBeGreaterThanOrEqual(1);
+  const afterStyle = await count();
+  await page.evaluate(() => { const d = document.createElement("div"); d.setAttribute("style", "color:red"); document.body.append(d); });
+  await expect.poll(count, { message: "a blocked style attribute is reported" }).toBeGreaterThan(afterStyle);
+  const afterAttr = await count();
+  // CSSOM (element.style.x = ...) is allowed by CSP and must NOT be reported.
+  await page.evaluate(() => { const f = document.createElement("div"); f.style.color = "red"; document.body.append(f); });
+  await page.waitForTimeout(300);
+  expect(await count()).toBe(afterAttr);
 });

@@ -111,7 +111,7 @@ It exits 1 on any miss and prints a table. It sends only requests the proxy reje
 
 `--local` marks the three static-file `Cache-Control` rows as SKIP, because Netlify's local server sets its own value. **Run without `--local` on the real site**, where all three must pass. `--dev` also skips the `/assets/*` row for a plain Vite dev server (which has none).
 
-The CSP in the page itself is tested separately, in real browsers: `e2e/csp-steps.spec.ts` (Chromium and WebKit, also runnable against a deployed `BASE_URL`) and `e2e/csp.spec.ts` load the built app and every step under the policy and fail on any violation. Run it with `npm run e2e`, or against a running copy with `CSP_BASE_URL=http://localhost:8888`.
+The CSP in the page itself is tested separately, in real browsers: `e2e/csp-steps.spec.ts` (Chromium and WebKit, also runnable against a deployed `BASE_URL`) and `e2e/csp.spec.ts` load the built app and every step under the policy and fail on any violation. Run it with `npm run e2e`, or against a running copy with `BASE_URL= (or CSP_BASE_URL= for csp.spec.ts) http://localhost:8888`.
 
 ## First-deploy checklist
 
