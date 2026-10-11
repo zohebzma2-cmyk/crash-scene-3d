@@ -7,7 +7,7 @@
 //    and the wait is dropped when the claimant types on (the caller's signal).
 //  - Model lists are cached for the session (memory and sessionStorage); the model box filters them locally.
 //  - A "busy" answer is tried again after its Retry-After, up to 2.5 s in all, before the card says so.
-import { PROXY_ROUTES, type VehicleModelResult } from "@csd/core";
+import { MAKE_ALIASES, POPULAR_MAKES, PROXY_ROUTES, normName, resolveName, type VehicleModelResult } from "@csd/core";
 import { abortableSleep, getJsonRetrying, type FetchLike } from "./http";
 import { ServiceError, type ModelsOptions, type VehiclesService } from "./types";
 
@@ -24,32 +24,16 @@ export const UNKNOWN_MAKE_WAIT_MS = 800;
 /** After the makes list failed (even after the retries), it isn't asked for again for this long. */
 export const MAKES_RETRY_AFTER_MS = 30_000;
 
-/** Everyday names for makes, matched after the exact name. The value must be in vPIC's list to be used. */
-const MAKE_ALIASES: Readonly<Record<string, string>> = {
-  chevy: "chevrolet",
-  vw: "volkswagen",
-  volks: "volkswagen",
-  mercedes: "mercedesbenz",
-  benz: "mercedesbenz",
-  merc: "mercedesbenz",
-  caddy: "cadillac",
-  bimmer: "bmw",
-  beemer: "bmw",
-  alfa: "alfaromeo",
-  harley: "harleydavidson",
-  rangerover: "landrover",
-  rolls: "rollsroyce",
-};
-
 /** The comparison form of a make: lowercase letters and digits only ("Mercedes-Benz" = "mercedes benz"). */
-const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+const squash = normName;
 
-/** The makes list's own spelling of a typed make, by exact name or an everyday alias; null when it isn't one. */
+/**
+ * The makes list's own spelling of a typed make, by exact name or an everyday name from core's MAKE_ALIASES
+ * ("chevy", "vw", "merc", "beemer", "harley"...); null when it isn't one. The picker ranks with the same table.
+ */
 export function resolveMake(text: string, makes: readonly string[]): string | null {
-  const typed = squash(text);
-  if (typed.length < 2) return null;
-  const byKey = new Map(makes.map((m) => [squash(m), m] as const));
-  return byKey.get(typed) ?? byKey.get(MAKE_ALIASES[typed] ?? "") ?? null;
+  if (normName(text).length < 2) return null;
+  return resolveName(text, makes, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES });
 }
 
 const STORE_PREFIX = "csd.vpic.v1.";

@@ -97,7 +97,14 @@ describe("typing two vehicles like a person", () => {
     await flush();
     // "chev" was never asked for; "chevy" was asked for as Chevrolet; the model box filters the list locally.
     expect(api.models()).toEqual([`${PROXY_ROUTES.models}?make=Honda&year=2021`, `${PROXY_ROUTES.models}?make=Chevrolet&year=2019`]);
-    expect([...card("B").querySelectorAll("datalist option")].map((o) => o.getAttribute("value"))).toEqual(["Malibu", "Silverado 1500"]);
+    // Both of Chevrolet's 2019 models arrived; the model box's list (a combobox) shows the ones that match "silverado".
+    expect(text(card("B"))).toContain("2 Chevrolet models for 2019");
+    bmodel.focus();
+    await flush();
+    const list = document.getElementById(bmodel.getAttribute("aria-controls") ?? "");
+    expect([...(list?.querySelectorAll('[role="option"] .r-main') ?? [])].map((o) => o.textContent)).toEqual(["Silverado 1500", "Use ‘silverado’ as typed"]);
+    bmodel.blur();
+    await flush();
 
     const [ayear, amake, amodel] = fields("A");
     await typeLikeAPerson(ayear, "2019");
