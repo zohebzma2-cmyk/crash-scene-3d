@@ -1,5 +1,6 @@
 // Stock photos in the exports: an optional fixed-width cell in the PDF vehicles table and a card per vehicle
 // along the bottom of the 3D stills, from a provider injected like the canvas. Synthetic pictures only.
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { ExportRequest, Scene, SimulationResult } from "@csd/core";
 import { buildExports, sceneFile, type VehicleMediaProvider } from "../src";
@@ -7,7 +8,7 @@ import { buildModel, fileClaim } from "../src/model";
 import { buildPdf } from "../src/pdf";
 import { renderStillPng } from "../src/png";
 import { decodePng } from "../src/png-decode";
-import { brandFonts, readPdf, saveOutput, syntheticPng, testCanvas } from "./helpers";
+import { brandFonts, readPdf, saveOutput, syntheticPng, tableLines, testCanvas } from "./helpers";
 import { loadRoads } from "./osm-roads";
 import { twoVehicle } from "./sim-fixtures";
 
@@ -130,4 +131,55 @@ describe("buildExports with a photo provider", () => {
     await buildExports({ ...req(scene, sim), formats: ["json", "png-diagram"] }, testCanvas().factory, { vehiclePhoto });
     expect(vehiclePhoto).not.toHaveBeenCalled();
   });
+});
+
+describe("the photo cell and the 2deab93 table (polish/pdf)", () => {
+  const data = (name: string) => JSON.parse(readFileSync(new URL(`./data/${name}`, import.meta.url), "utf8"));
+  const real = data("real-sims.json") as Record<string, { scene: Scene; sim: SimulationResult }>;
+  const before = data("table-text-2deab93.json") as Record<string, string[]>;
+
+  it("without a photo, the three examples' table text is exactly the snapshot (empty map, and a provider that has none)", async () => {
+    for (const [name, { scene, sim }] of Object.entries(real)) {
+      expect(tableLines(await readPdf((await pdf(scene, sim, new Map())).bytes)), `${name}, no photos`).toEqual(before[name]);
+      const bundle = await buildExports(
+        { scene, sim, roads: loadRoads("t-bone-intersection", scene.location), formats: ["pdf"], fonts: brandFonts(), now: () => NOW, mapThumbnail: syntheticPng(800, 600, "map") },
+        testCanvas().factory, { vehiclePhoto: async () => null },
+      );
+      const file = bundle.files.find((f) => f.name.endsWith(".pdf"))!;
+      expect(tableLines(await readPdf(file.bytes)), `${name}, provider with no photos`).toEqual(before[name]);
+    }
+  }, 120_000);
+
+  it("with photos (the three-vehicle overflow scene too), the cell takes its room from Direction and Speed, never Vehicle or Type", async () => {
+    const overflow = data("overflow-3v.json") as { scene: Scene; sim: SimulationResult };
+    for (const [name, { scene, sim }] of [...Object.entries(real), ["overflow-3v", overflow] as const]) {
+      const photos = new Map(scene.vehicles.map((v) => [v.id, syntheticPng(600, 400, `photo ${v.id}`)] as const));
+      const without = await pdf(scene, sim);
+      const withPhotos = await pdf(scene, sim, photos);
+      const [a, b] = [await readPdf(without.bytes), await readPdf(withPhotos.bytes)];
+      // Column starts, from the table's header labels on page 1.
+      const head = (read: typeof a, label: string) => read.positioned.find((p) => p.page === 1 && p.str.trim() === label)?.x ?? NaN;
+      const cols = (read: typeof a) => ["Vehicle", "Type, weight", "Direction", "Speed at impact, as entered", "Hit on"].map((l) => head(read, l));
+      const [c0, c1] = [cols(a), cols(b)];
+      for (const x of [...c0, ...c1]) expect(Number.isFinite(x), name).toBe(true);
+      const w = (c: number[], i: number) => c[i + 1]! - c[i]!;
+      expect(w(c1, 0), `${name}: Vehicle keeps its width`).toBeCloseTo(w(c0, 0), 3);
+      expect(w(c1, 1), `${name}: Type keeps its width`).toBeCloseTo(w(c0, 1), 3);
+      expect(w(c1, 2), `${name}: Direction gives some room`).toBeLessThan(w(c0, 2));
+      expect(w(c1, 3), `${name}: Speed gives some room`).toBeLessThan(w(c0, 3));
+      expect(c1[4], `${name}: Hit on doesn't move`).toBeCloseTo(c0[4]!, 3);
+      // The photo cell sits before Vehicle, which moves right by exactly what Direction and Speed gave.
+      expect(c1[0]! - c0[0]!).toBeCloseTo((w(c0, 2) - w(c1, 2)) + (w(c0, 3) - w(c1, 3)), 3);
+      // Vehicle and Type wrap exactly as without photos.
+      const cellText = (read: typeof a, from: number, to: number) => {
+        const page = read.positioned.filter((p) => p.page === 1);
+        const y = (word: string) => page.find((p) => p.str.replace(/\s+/g, "") === word)!.y;
+        const [top, bottom] = [y("VEHICLES"), y("KEYMEASUREMENTS")];
+        return page.filter((p) => p.y < top - 0.5 && p.y > bottom + 0.5 && p.x >= from - 0.5 && p.x < to - 0.5 && p.str.trim()).map((p) => p.str.trim());
+      };
+      expect(cellText(b, c1[0]!, c1[2]!), `${name}: Vehicle and Type text`).toEqual(cellText(a, c0[0]!, c0[2]!));
+      // Every page still keeps the body off the footer.
+      for (const p of withPhotos.report) expect(p.bodyBottom).toBeLessThan(p.footerTop);
+    }
+  }, 180_000);
 });

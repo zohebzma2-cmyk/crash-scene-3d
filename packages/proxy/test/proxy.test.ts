@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUSY_MESSAGE, PROXY_ROUTES, TIMEOUT_MESSAGE, type PlaceResult, type ProxyError, type VehicleModelResult } from "@csd/core";
+import { BUSY_MESSAGE, BUSY_MESSAGES, PROXY_ROUTES, TIMEOUT_MESSAGES, UPSTREAM_MESSAGES, type PlaceResult, type ProxyError, type VehicleModelResult } from "@csd/core";
 import { overpassBboxQuery } from "@csd/mapdata";
 import { MIRROR_HOSTS, MIRROR_URLS, START, config, hang, jsonResponse, nominatimRows, settle, setup, type Call } from "./helpers";
 
@@ -91,7 +91,9 @@ describe("rate limits", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("1");
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.json()).toEqual({ code: "busy", message: BUSY_MESSAGE, retryAfterS: 1 });
+    // The search's own wording (the map's is BUSY_MESSAGE).
+    expect(await res.json()).toEqual({ code: "busy", message: BUSY_MESSAGES.search, retryAfterS: 1 });
+    expect(BUSY_MESSAGES.search).not.toBe(BUSY_MESSAGE);
   });
 
   it("services are limited independently", async () => {
@@ -175,7 +177,7 @@ describe("timeouts", () => {
     const t = setup(hang);
     const res = await settle(t.get(search("Main St")));
     expect(res.status).toBe(504);
-    expect(await res.json()).toMatchObject({ code: "timeout", message: TIMEOUT_MESSAGE });
+    expect(await res.json()).toMatchObject({ code: "timeout", message: TIMEOUT_MESSAGES.search });
     expect(vi.getTimerCount()).toBe(0); // nothing left running
   });
 
@@ -369,11 +371,12 @@ describe("vehicles (vPIC)", () => {
     const t = setup((c) => (truckDown && c.url.includes("/truck?") ? new Response("x", { status: 500 }) : vpicHandler(c)));
     const first = await settle(t.get(PROXY_ROUTES.makes, "u1"));
     expect(first.status).toBe(502);
-    expect(t.calls).toHaveLength(3); // car, mpv, truck (motorcycle never tried)
+    expect((await first.json()) as ProxyError).toMatchObject({ code: "upstream", message: UPSTREAM_MESSAGES.vehicles });
+    expect(t.calls).toHaveLength(4); // the four kinds are asked side by side
     truckDown = false;
     const second = await settle(t.get(PROXY_ROUTES.makes, "u1"));
     expect(second.status).toBe(200);
-    expect(t.calls).toHaveLength(5); // car and mpv came from cache; truck again + motorcycle
+    expect(t.calls).toHaveLength(5); // car, mpv and motorcycle came from cache; only truck again
     expect(((await second.json()) as string[])).toContain("Ford");
   });
 });

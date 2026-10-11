@@ -1,4 +1,4 @@
-// Round B: the maker logo and the stock photo on the vehicle card (docs/decisions/0010-vehicle-images.md), in
+// Round B: the maker logo and the stock photo on the vehicle card (docs/decisions/0011-vehicle-images.md), in
 // Chromium and WebKit at 1440 and 390, in fixtures mode: ?media=on answers the media routes with synthetic files,
 // ?media=busy answers 429 as a provider over its quota would. The browser only ever talks to its own origin.
 // E2E_SHOTS_DIR=<dir> also saves a screenshot of the card for each case.

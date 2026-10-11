@@ -31,6 +31,16 @@ export interface CreateServicesOptions {
   readonly fetch?: typeof globalThis.fetch;
   /** The page's query string, for fixtures mode's ?media= switch (defaults to the window's). */
   readonly search?: string;
+  /**
+   * Fixture builds only (?vehicles=proxy): the real vehicle service through /api/vehicles/* while everything
+   * else stays on fixtures, so a test can put a fake proxy behind it (e2e/vehicles-typing.spec.ts).
+   */
+  readonly vehiclesFromProxy?: boolean;
+}
+
+/** ?vehicles=proxy, honoured only where fixtures are allowed (a dev server or a VITE_FIXTURES=1 build). */
+export function vehiclesFromProxyRequested(search: string): boolean {
+  return fixturesAllowed() && new URLSearchParams(search).get("vehicles") === "proxy";
 }
 
 export function createServices(opts: CreateServicesOptions): Services {
@@ -62,7 +72,7 @@ export function createServices(opts: CreateServicesOptions): Services {
     media,
     geo: fx ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
     roads: fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps),
-    vehicles: fx ? createFixtureVehicles() : createVehiclesService(fetchFn),
+    vehicles: fx && !opts.vehiclesFromProxy ? createFixtureVehicles() : createVehiclesService(fetchFn),
     physics,
     fixer: createFixer({ makeWorker, run: (scene, roads, o) => physics.suggestFixes(scene, roads, o) }),
     fixMemory: createFixMemory(),

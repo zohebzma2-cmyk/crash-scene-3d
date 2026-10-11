@@ -50,7 +50,7 @@ export interface MediaService {
   readonly logoCredit: { get(): boolean; subscribe(fn: () => void): () => void };
 }
 
-/** The angle for a camera of the 3D viewer (docs/decisions/0010-vehicle-images.md). Front 3/4 is the default. */
+/** The angle for a camera of the 3D viewer (docs/decisions/0011-vehicle-images.md). Front 3/4 is the default. */
 export function viewFor(camera: CameraView): VehicleImageView {
   switch (camera) {
     // From above, the side profile reads best as a flat label next to a plan view.

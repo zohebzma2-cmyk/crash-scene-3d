@@ -1,19 +1,20 @@
 // The PDF summary: US Letter, brand fonts embedded, laid out like the locked
 // prototype. The goal is one page. The layout shrinks in steps (padding, then
 // text down to 8 pt, never smaller) to fit. If the assumptions and warnings
-// still don't fit, the full lists move to page 2 (and on, if they are huge),
-// with the header and the full footer repeated on every page. Nothing is ever
-// dropped, and nothing is ever drawn over the footer.
+// still don't fit, page 1 keeps as many whole assumptions as fit and says what
+// continues; the rest of the list and the warnings move to page 2 (and on, if
+// they are huge), with the header and the full footer repeated on every page.
+// Nothing is ever dropped, and nothing is ever drawn over the footer.
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFName, PDFString, type PDFImage } from "pdf-lib";
 import { DISCLAIMER_LONG, DISCLAIMER_SHORT, toLocal } from "@csd/core";
 import type { BrandFonts, RoadNetwork, Scene, SimulationResult } from "@csd/core";
-import { northArrow, northArrowSize } from "./north";
+import { scaleChip, scaleChipPrims, type ScaleChipStyle } from "./north";
 import { planDiagram, planPinStreetLabels, planRoadOutline, scaleBars, type Box } from "./diagram";
 import { thumbnailMetersPerPixel } from "./png-meta";
 import { roundedRectPts, wrapText, type FontKey, type Pt } from "./draw";
 import { WORDMARK, drawMarkPdf, lockup } from "./logo";
-import type { ReportModel } from "./model";
+import { HIT_ON_MARK, type ReportModel } from "./model";
 import { PdfCanvas, type Extent, type PdfFonts, type Region } from "./pdf-canvas";
 import { PX_TO_PT, color, px, vehicleColor } from "./style";
 
@@ -29,8 +30,22 @@ const THUMB_RING_IMAGE_PX = 3;
 const MIN_OUTLINE_SPAN_M = 80;
 /** The diagram is at least this share of the room between the header and the footer (0.3 keeps the real examples on one page). */
 export const MIN_DIAGRAM_FRACTION = 0.3;
+/** Longest a scale bar may be, as shares of the diagram's width, tried in turn until the chip fits a clear corner. */
+const CHIP_BAR_SHARES = [0.3, 0.24, 0.18, 0.12] as const;
 /** Diagram labels (street names, letters, marker numbers, scale) stay at least this large (pt). */
 export const MIN_DIAGRAM_TEXT_PT = MIN_TEXT_PT;
+
+/**
+ * The north arrow and scale chip in the PDF diagram, in pt. Its spacing comes from the tokens and doesn't shrink
+ * with the page's fit level, so the bars keep clear of the arrow at every size.
+ */
+export function pdfChipStyle(textPt: number, lineH: number, hair: number): ScaleChipStyle {
+  return {
+    textSize: textPt, arrowH: textPt * 3.2, padX: px("space-2") * PX_TO_PT * 0.75, padY: px("space-1") * PX_TO_PT,
+    gap: px("space-3") * PX_TO_PT, labelGap: px("space-2") * PX_TO_PT, rowH: lineH * 1.15,
+    barLine: hair * 2, tick: textPt * 0.25, tickLine: hair * 1.2, arrowLine: hair * 1.3,
+  };
+}
 
 interface Level { readonly textPx: number; readonly pad: number; readonly gap: number; readonly leading: number }
 const LEVELS: readonly Level[] = [
@@ -39,6 +54,8 @@ const LEVELS: readonly Level[] = [
   { textPx: MIN_TEXT_PT / PX_TO_PT, pad: 0.5, gap: 0.6, leading: px("leading-tight") },
   { textPx: MIN_TEXT_PT / PX_TO_PT, pad: 0.25, gap: 0.4, leading: px("leading-tight") },
 ];
+/** The most compact fit level: 8 pt text with the tightest spacing. Anything moves to page 2 only at this level. */
+export const FLOOR_LEVEL = LEVELS.length - 1;
 
 export interface PdfInput {
   readonly model: ReportModel;
@@ -84,9 +101,24 @@ export interface PdfPageReport {
     readonly captionBox: { x: number; y: number; w: number; h: number };
   };
   /** The north arrow (with its "N") and the chip it shares with the scale bars, in the diagram, as drawn. */
-  readonly north?: { readonly arrow: { x: number; y: number; w: number; h: number }; readonly chip: { x: number; y: number; w: number; h: number }; /** The diagram box, and what must stay clear of the chip: vehicles, run-up and impact ring. */ readonly box: { x: number; y: number; w: number; h: number }; readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }> };
+  readonly north?: {
+    readonly arrow: { x: number; y: number; w: number; h: number };
+    readonly chip: { x: number; y: number; w: number; h: number };
+    /** The diagram box, and what must stay clear of the chip: vehicles, run-up and impact ring. */
+    readonly box: { x: number; y: number; w: number; h: number };
+    readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
+    /** Each scale bar (line, caps and end ticks) and its label, as drawn. */
+    readonly bars: ReadonlyArray<{ bar: { x: number; y: number; w: number; h: number }; label: { x: number; y: number; w: number; h: number } }>;
+  };
   /** The street names drawn at the pin on the map picture or the outline (their boxes include the halo). */
   readonly mapLabels?: ReadonlyArray<{ text: string; rotateDeg: number; box: { x: number; y: number; w: number; h: number } }>;
+  /** The pin (with its ring) and the credit chip on the map, when street names were placed around them. */
+  readonly mapPin?: { x: number; y: number; w: number; h: number };
+  readonly mapCredit?: { x: number; y: number; w: number; h: number };
+  /** Every run of text drawn on the page, with its glyph box. */
+  readonly texts: ReadonlyArray<{ region: Region; text: string; box: { x: number; y: number; w: number; h: number } }>;
+  /** The vehicles table as drawn: its box (header row and rows), the column edges, and the note under it when there is one. */
+  readonly table?: { readonly box: { x: number; y: number; w: number; h: number }; readonly cols: readonly number[]; readonly foot: { x: number; y: number; w: number; h: number } | null };
 }
 
 export interface PdfResult {
@@ -277,6 +309,8 @@ interface Block {
   readonly name?: string;
   /** Start a new page before this block (the overflow lists begin on page 2). */
   readonly breakBefore?: boolean;
+  /** A heading: it goes to the next page with the block after it rather than end a page alone. */
+  readonly keepWithNext?: boolean;
   readonly draw: (s: Sheet, y: number) => void;
 }
 
@@ -295,11 +329,16 @@ interface Built {
   readonly movedList: string;
   /** A plain one-line "… continued on page 2" block for when the sections it names moved. */
   readonly placeholder: (text: string) => Block;
-  /** Blocks of page 1 (one-page mode: everything). */
+  /** Blocks of page 1 (one-page mode: everything; split mode: the sections above the assumptions). */
   readonly first: readonly Block[];
-  /** Overflow blocks that follow (assumption and warning lists in overflow mode). */
+  /** Overflow blocks that follow (the whole assumption and warning lists in overflow mode). */
   readonly rest: readonly Block[];
   readonly footerH: number;
+  /**
+   * Split mode: the assumptions section of page 1 holding as many whole assumptions as fit in `room` (pt, the
+   * section's heading and its "continued on page 2" line included), and the lists that follow on the next pages.
+   */
+  readonly fill?: (room: number) => { readonly block: Block; readonly shown: number; readonly rest: readonly Block[]; readonly movedText: string };
 }
 
 /** Split items into two columns of nearly equal height, keeping their order (left column first). */
@@ -318,7 +357,29 @@ function twoColumns<T extends { h: number }>(items: readonly T[]): { left: T[]; 
   return { left: [...left], right: [...right], leftH: left.reduce((a, it) => a + it.h, 0), rightH: right.reduce((a, it) => a + it.h, 0) };
 }
 
-function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "full" | "split", footerH: number, photos: ReadonlyMap<string, PDFImage> = new Map()): Built {
+/** Fill two columns in order (left first) up to `cap` each: how many items fit, and the columns. */
+function fillColumns<T extends { h: number }>(items: readonly T[], cap: number): { left: T[]; right: T[]; leftH: number; rightH: number; shown: number } {
+  const cols: [T[], T[]] = [[], []];
+  const hs = [0, 0];
+  let c = 0;
+  let shown = 0;
+  for (const it of items) {
+    while (c < 2 && hs[c]! + it.h > cap) c++;
+    if (c >= 2) break;
+    cols[c]!.push(it);
+    hs[c]! += it.h;
+    shown++;
+  }
+  return { left: cols[0], right: cols[1], leftH: hs[0]!, rightH: hs[1]!, shown };
+}
+
+/** "Assumptions 9 to 16", "Assumption 16" or "Assumptions" (none shown yet): what of the list still has to come. */
+function assumptionsLeft(shown: number, total: number): string {
+  if (shown <= 0) return "assumptions";
+  return total - shown === 1 ? `assumption ${total}` : `assumptions ${shown + 1} to ${total}`;
+}
+
+function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "full" | "split", footerH: number, laterRoom: number, photos: ReadonlyMap<string, PDFImage> = new Map()): Built {
   const { model } = input;
   const m = s.m;
   const { M, CW, colW, colGap, body, small, gapBig, gapSm, hair, radius, pad } = m;
@@ -380,24 +441,28 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       // picture is planned again with the chip as an obstacle so street names and markers keep clear of it.
       const plan0 = planDiagram(input.sim, input.roads, diaOpts, sh.cv.measure);
       const cs = MIN_DIAGRAM_TEXT_PT;
-      const bars = scaleBars(plan0.scale, colW * 0.3);
-      const nsz = northArrowSize(cs * 3.2, cs, sh.cv.measure);
-      const rowH = lh(cs) * 1.15;
-      const labW = Math.max(sh.cv.measure("mono", cs, bars.metric.label), sh.cv.measure("mono", cs, bars.us.label));
-      const barW = Math.max(bars.metric.px, bars.us.px);
-      const chipW = gapSm * 2.5 + nsz.w + barW + gapSm + labW;
-      const chipH = Math.max(nsz.h, rowH * 2) + gapSm;
+      const chipStyle = pdfChipStyle(cs, lh(cs), hair);
       const inset = gapSm * 0.5;
-      const corners = [
-        { x: diaBox.x + inset, y: diaBox.y + diaBox.h - chipH - inset },
-        { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + diaBox.h - chipH - inset },
-        { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + inset },
-        { x: diaBox.x + inset, y: diaBox.y + inset },
-      ].map((c) => ({ ...c, w: chipW, h: chipH }));
       const clash = (c: { x: number; y: number; w: number; h: number }) => plan0.keep.some((k) => k.x < c.x + c.w + inset && c.x < k.x + k.w + inset && k.y < c.y + c.h + inset && c.y < k.y + k.h + inset);
-      const chip = corners.find((c) => !clash(c)) ?? corners[0]!;
+      // When no corner is clear, shorter bars make a narrower chip (each bar stays exact in its unit).
+      let found: { chip: { x: number; y: number; w: number; h: number }; barList: Array<{ label: string; px: number }> } | null = null;
+      for (const share of CHIP_BAR_SHARES) {
+        const bars = scaleBars(plan0.scale, colW * share);
+        const barList = [bars.metric, bars.us];
+        const { w: chipW, h: chipH } = scaleChip([0, 0], barList, chipStyle, sh.cv.measure).rect;
+        const corners = [
+          { x: diaBox.x + inset, y: diaBox.y + diaBox.h - chipH - inset },
+          { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + diaBox.h - chipH - inset },
+          { x: diaBox.x + diaBox.w - chipW - inset, y: diaBox.y + inset },
+          { x: diaBox.x + inset, y: diaBox.y + inset },
+        ].map((c) => ({ ...c, w: chipW, h: chipH }));
+        const clear = corners.find((c) => !clash(c));
+        if (clear || !found) found = { chip: clear ?? corners[0]!, barList };
+        if (clear) break;
+      }
+      const { chip, barList } = found!;
       const plan = planDiagram(input.sim, input.roads, { ...diaOpts, obstacles: [chip] }, sh.cv.measure);
-      const north = northArrow([chip.x + gapSm, chip.y + gapSm * 0.5], cs * 3.2, cs, color("color-text"), hair * 1.3, sh.cv.measure);
+      const chipLayout = scaleChip([chip.x, chip.y], barList, chipStyle, sh.cv.measure);
       const mapBox: Box = { x: M, y: ky + gapSm * 0.5, w: colW, h: mapH };
       sh.add("body", (c) => {
         const { x, y: by, w, h } = mapBox;
@@ -416,11 +481,14 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
           const mpp = input.mapThumbnail ? thumbnailMetersPerPixel(input.mapThumbnail) : null;
           if (input.roads && mpp) {
             const pinHalf = (THUMB_PIN_IMAGE_PX + THUMB_RING_IMAGE_PX) * k;
+            const pinRect = { x: x + w / 2 - pinHalf, y: by + h / 2 - pinHalf, w: pinHalf * 2, h: pinHalf * 2 };
             const names = planPinStreetLabels(input.roads, {
               box: mapBox, center: toLocal(input.roads.frame, input.scene.location), scale: k / mpp, size: MIN_TEXT_PT,
               names: input.scene.vehicles.flatMap((v) => (v.travel.roadName ? [v.travel.roadName] : [])),
-              keepClear: [{ x: x + w / 2 - pinHalf, y: by + h / 2 - pinHalf, w: pinHalf * 2, h: pinHalf * 2 }, credit],
+              keepClear: [pinRect, credit],
             }, c.measure);
+            c.marks.mapPin = pinRect;
+            c.marks.mapCredit = credit;
             c.clipPath(roundedRectPts(x, by, w, h, radius, 5));
             c.replay(names.prims);
             c.unclip();
@@ -448,6 +516,8 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
             captionBox: { x, y: capY, w, h: mapCaption.length * lh(cs) },
           };
           c.marks.mapLabels = outline.labels;
+          c.marks.mapPin = { x: outline.pin[0] - pinR * 1.5, y: outline.pin[1] - pinR * 1.5, w: pinR * 3, h: pinR * 3 };
+          c.marks.mapCredit = credit;
           c.clipPath(roundedRectPts(x, by, w, h, radius, 5));
           c.replay(outline.prims);
           c.unclip();
@@ -464,33 +534,37 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       });
       sh.add("diagram", (c) => {
         c.replay(plan.prims);
-        // Two scale bars (exact meters, exact feet) and the north arrow on a small chip.
+        // Two scale bars (exact meters, exact feet) and the north arrow on a small chip, side by side with a gap between.
         c.poly(roundedRectPts(chip.x, chip.y, chip.w, chip.h, radius * 0.5, 3), true, color("color-surface"), { color: color("color-border"), width: hair });
-        const ink = color("color-text");
-        c.replay(north.prims);
-        c.marks.north = { arrow: north.rect, chip, box: diaBox, keep: plan.keep };
-        const cy = chip.y;
-        const bx = chip.x + gapSm * 1.5 + nsz.w;
-        [bars.metric, bars.us].forEach((b, i) => {
-          const by = cy + gapSm * 0.5 + rowH * i + rowH * 0.45;
-          c.poly([[bx, by], [bx + b.px, by]], false, undefined, { color: ink, width: hair * 2, cap: "round" });
-          c.poly([[bx, by - 2], [bx, by + 2]], false, undefined, { color: ink, width: hair * 1.2 });
-          c.poly([[bx + b.px, by - 2], [bx + b.px, by + 2]], false, undefined, { color: ink, width: hair * 1.2 });
-          c.text({ k: "text", at: [bx + barW + gapSm, by + cs * 0.35], text: b.label, font: "mono", size: cs, color: ink });
-        });
+        c.replay(scaleChipPrims(chipLayout, chipStyle, color("color-text"), color("color-border"), c.measure));
+        c.marks.north = { arrow: chipLayout.arrow, chip, box: diaBox, keep: plan.keep, bars: chipLayout.bars.map((b) => ({ bar: b.box, label: b.labelBox })) };
         c.poly(roundedRectPts(diaBox.x, diaBox.y, diaBox.w, diaBox.h, radius, 5), true, undefined, { color: color("color-border"), width: hair });
       });
       sh.block("body", M, diaBox.y + diaH + gapSm * 0.4, capLines, "sans", small, color("color-text-secondary"));
     },
   };
 
-  /* Vehicles table. */
+  /* Vehicles table. A hit side the picture couldn't use keeps a short cell ("Front *"); its full wording is a note under the table. */
   const frac = [0.045, 0.17, 0.16, 0.225, 0.295, 0.105];
-  // Stock photos, when there are any: one fixed-width cell after the letter, and the other columns share what is left.
+  const cw = frac.map((f) => f * CW);
+  // Stock photos, only when there is at least one: a fixed-width cell after the letter, its width taken from Speed and
+  // Direction (in proportion to their shares). The letter, Vehicle and Type columns keep their widths.
   const photoW = photos.size > 0 ? px("space-16") * PX_TO_PT * 1.25 : 0;
-  const cw = frac.map((f) => f * (CW - photoW));
-  const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w + (i === 0 ? photoW : 0)), a), [M]);
+  if (photoW > 0) {
+    const fromSpeed = photoW * (cw[4]! / (cw[3]! + cw[4]!));
+    cw[4] = cw[4]! - fromSpeed;
+    cw[3] = cw[3]! - (photoW - fromSpeed);
+  }
   const padX = px("space-2") * PX_TO_PT * 0.75;
+  // Only when a cell carries the mark does "Hit on" widen, to its longest short value, and only at the expense of the
+  // speed column: Vehicle, Type and Direction keep their widths, so their wrapping never changes.
+  if (model.vehicles.some((v) => v.hitOnAdjusted)) {
+    const need = Math.max(...model.vehicles.map((v) => s.cv.measure("sans", body, v.hitOnShort))) + padX * 2;
+    const more = Math.max(0, need - cw[5]!);
+    cw[5] = cw[5]! + more;
+    cw[4] = cw[4]! - more;
+  }
+  const cx = cw.reduce<number[]>((a, w, i) => (a.push((a[i] ?? M) + w + (i === 0 ? photoW : 0)), a), [M]);
   const padY = px("space-2") * PX_TO_PT * 0.5 * pad;
   /** The photo's box in its cell (3:2, the providers' shape), and the picture fitted inside it keeping its own shape. */
   const photoBoxW = Math.max(0, photoW - padX * 2);
@@ -509,7 +583,7 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       s.lines(v.typeWeight, cw[2]! - padX * 2, "sans", body),
       s.lines(v.direction, cw[3]! - padX * 2, "sans", body),
       s.lines(v.speed, cw[4]! - padX * 2, "mono", body),
-      s.lines(v.hitOn, cw[5]! - padX * 2, "sans", body),
+      s.lines(v.hitOnShort, cw[5]! - padX * 2, "sans", body),
     ];
     // The notes may run under the one-line "Hit on" value, so they wrap wider.
     const noteW = cw[4]! + (cells[4]!.length === 1 ? cw[5]! : 0) - padX * 2;
@@ -518,8 +592,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     const photo = photos.get(v.id) ?? null;
     return { v, cells, noteLs, photo, h: Math.max(h, bs + hair * 2, photo ? photoBoxH + padY * 2 : 0) };
   });
+  const footLs = model.vehicles.filter((v) => v.hitOnAdjusted).flatMap((v) => s.lines(`${HIT_ON_MARK} ${v.id}: ${v.hitOn}.`, CW, "sans", small));
+  const footGap = gapSm * 0.5;
   const table: Block = {
-    h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0), gapBefore: gapBig, kind: "main", name: "Vehicles",
+    h: headingH() + tHeadH + rows.reduce((a, r) => a + r.h, 0) + (footLs.length ? footGap + footLs.length * lh(small) : 0), gapBefore: gapBig, kind: "main", name: "Vehicles",
     draw: (sh, y0) => {
       let y = y0 + heading(sh, "body", M, y0, "Vehicles");
       sh.box("body", M, y, CW, tHeadH, color("color-surface-2"), undefined, 0);
@@ -545,6 +621,9 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
         sh.block("body", cx[5]! + padX, y + padY, r.cells[4]!, "sans", body, color("color-text"));
         y += r.h;
       }
+      if (footLs.length) sh.block("body", M, y + footGap, footLs, "sans", small, color("color-text-tertiary"));
+      const tableBox = { x: M, y: y0 + headingH(), w: CW, h: y - y0 - headingH() };
+      sh.add("body", (c) => { c.marks.table = { box: tableBox, cols: cx, foot: footLs.length ? { x: M, y: y + footGap, w: CW, h: footLs.length * lh(small) } : null }; });
     },
   };
 
@@ -586,30 +665,32 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   const bullet = px("space-4") * PX_TO_PT * 0.7;
   // Assumptions are numbered (DESIGN.md section 8): "1.", "2.", ... and the numbering carries onto the overflow pages.
   const numW = s.cv.measure("sans", body, `${model.assumptions.length}.`) + body * 0.7;
-  const aItems = mode === "full" ? model.assumptions.map((a, i) => { const ls = s.lines(a, colW - numW, "sans", body); return { n: i + 1, ls, h: ls.length * lh(body) + pad * 1.2 }; }) : [];
-  const aCols = twoColumns(aItems);
-  const assumptions: Block = {
-    h: headingH() + (mode === "full" ? Math.max(aCols.leftH, aCols.rightH) : lh(body) + pad), gapBefore: gapBig, kind: "main",
-    draw: (sh, y0) => {
-      heading(sh, "body", M, y0, "Assumptions used");
-      if (mode === "split") {
-        sh.block("body", M, y0 + headingH(), [`${cap(movedList([], model.warnings.length > 0))} continued on page 2`], "sans", body, color("color-text-secondary"));
-        return;
-      }
-      const col = (items: typeof aItems, x: number) => {
-        let ay = y0 + headingH();
-        for (const it of items) {
-          sh.text("body", [x, ay + lh(body) * 0.5 + body * 0.35], `${it.n}.`, "sans", body, color("color-text-secondary"));
-          sh.block("body", x + numW, ay, it.ls, "sans", body, color("color-text"));
-          ay += it.h;
-        }
-      };
-      col(aCols.left, M);
-      col(aCols.right, rx);
-    },
+  const aItems = model.assumptions.map((a, i) => { const ls = s.lines(a, colW - numW, "sans", body); return { n: i + 1, ls, h: ls.length * lh(body) + pad * 1.2 }; });
+  type AItem = (typeof aItems)[number];
+  /** The assumptions section: its heading, the items in two columns and, when some of it moves on, the "continued" line. */
+  const assumptionsBlock = (cols: { left: readonly AItem[]; right: readonly AItem[]; leftH: number; rightH: number }, cont: string | null): Block => {
+    const colsH = Math.max(cols.leftH, cols.rightH);
+    const contGap = colsH > 0 ? gapSm * 0.5 : 0;
+    return {
+      h: headingH() + colsH + (cont ? contGap + lh(body) + pad : 0), gapBefore: gapBig, kind: "main",
+      draw: (sh, y0) => {
+        heading(sh, "body", M, y0, "Assumptions used");
+        const col = (items: readonly AItem[], x: number) => {
+          let ay = y0 + headingH();
+          for (const it of items) {
+            sh.text("body", [x, ay + lh(body) * 0.5 + body * 0.35], `${it.n}.`, "sans", body, color("color-text-secondary"));
+            sh.block("body", x + numW, ay, it.ls, "sans", body, color("color-text"));
+            ay += it.h;
+          }
+        };
+        col(cols.left, M);
+        col(cols.right, rx);
+        if (cont) sh.block("body", M, y0 + headingH() + colsH + contGap, [cont], "sans", body, color("color-text-secondary"));
+      },
+    };
   };
 
-  const first: Block[] = [top, table, measures, assumptions];
+  const first: Block[] = mode === "full" ? [top, table, measures, assumptionsBlock(twoColumns(aItems), null)] : [top, table, measures];
   const placeholder = (text: string): Block => ({
     h: lh(body) + pad, gapBefore: gapBig, kind: "main",
     draw: (sh, y) => { sh.block("body", M, y, [text], "sans", body, color("color-text-secondary")); },
@@ -639,37 +720,96 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     return { first, rest: [], footerH, placeholder, movedList: "" };
   }
 
-  /* Overflow: the full lists, full width, on the pages that follow. */
-  const rest: Block[] = [];
-  const bulletBlock = (text: string, kind: "main" | "warn", textCol: string, dot: string, gapBefore: number, n?: number): Block => {
+  /* Overflow: the lists, full width, on the pages that follow. */
+  const bulletBlocks = (text: string, kind: "main" | "warn", textCol: string, dot: string, gapBefore: number, n?: number): Block[] => {
     const lead = n === undefined ? bullet : numW;
     const ls = s.lines(text, CW - lead - (kind === "warn" ? gapSm : 0), "sans", body);
-    const h = ls.length * lh(body) + pad * 1.2 + (kind === "warn" ? pad : 0);
-    return {
-      h, gapBefore, kind,
+    const extra = pad * 1.2 + (kind === "warn" ? pad : 0);
+    // An item is never cut between pages, unless it alone is taller than a whole page: then it breaks between lines,
+    // with its number or bullet on the first part. Each part leaves room for a section heading above it (and the
+    // warning panel's top padding), so a heading always has its first item on the same page.
+    const per = Math.max(1, Math.floor((laterRoom - extra - headingH() - gapSm * 0.5 - gapBig) / lh(body)));
+    const parts: string[][] = [];
+    for (let i = 0; i < ls.length; i += per) parts.push(ls.slice(i, i + per));
+    return parts.map((part, j) => ({
+      h: part.length * lh(body) + extra, gapBefore: j === 0 ? gapBefore : 0, kind,
       draw: (sh, y) => {
         const off = kind === "warn" ? gapSm : 0;
         const ty = y + (kind === "warn" ? pad * 0.5 : 0);
-        if (n === undefined) sh.add("body", (c) => c.circle([M + off + bullet * 0.3, ty + lh(body) / 2], body * 0.12, dot));
-        else sh.text("body", [M, ty + lh(body) * 0.5 + body * 0.35], `${n}.`, "sans", body, color("color-text-secondary"));
-        sh.block("body", M + off + lead, ty, ls, "sans", body, textCol);
+        if (j === 0) {
+          if (n === undefined) sh.add("body", (c) => c.circle([M + off + bullet * 0.3, ty + lh(body) / 2], body * 0.12, dot));
+          else sh.text("body", [M, ty + lh(body) * 0.5 + body * 0.35], `${n}.`, "sans", body, color("color-text-secondary"));
+        }
+        sh.block("body", M + off + lead, ty, part, "sans", body, textCol);
       },
-    };
+    }));
   };
   const headBlock = (text: string, gapBefore: number, kind: "main" | "warn"): Block => ({
-    h: headingH() + (kind === "warn" ? gapSm * 0.5 : 0), gapBefore, kind,
+    h: headingH() + (kind === "warn" ? gapSm * 0.5 : 0), gapBefore, kind, keepWithNext: true,
     draw: (sh, y) => { heading(sh, "body", kind === "warn" ? M + gapSm : M, y + (kind === "warn" ? gapSm * 0.5 : 0), text); },
   });
-  if (model.assumptions.length) {
-    rest.push({ ...headBlock("Assumptions used", gapBig, "main"), breakBefore: true });
-    model.assumptions.forEach((a, i) => rest.push(bulletBlock(a, "main", color("color-text"), color("color-text"), 0, i + 1)));
-  }
-  if (model.warnings.length) {
-    const wh = headBlock("Details that may not fit together", gapBig, "warn");
-    rest.push(model.assumptions.length ? wh : { ...wh, breakBefore: true });
-    for (const w of model.warnings) rest.push(bulletBlock(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0));
-  }
-  return { first, rest, footerH, placeholder, movedList: movedList([], model.warnings.length > 0) };
+  const warnBlocks = (w: string) => bulletBlocks(w, "warn", color("color-warning-tint-text"), color("color-warning-tint-text"), 0);
+  /** The lists that follow page 1 when its first `shown` assumptions and first `wShown` warnings are on it. */
+  const restFrom = (shown: number, wShown = 0): Block[] => {
+    const rest: Block[] = [];
+    const left = model.assumptions.slice(shown);
+    if (left.length) {
+      rest.push({ ...headBlock(shown > 0 ? "Assumptions used (continued)" : "Assumptions used", gapBig, "main"), breakBefore: true });
+      left.forEach((a, i) => rest.push(...bulletBlocks(a, "main", color("color-text"), color("color-text"), 0, shown + i + 1)));
+    }
+    const wLeft = model.warnings.slice(wShown);
+    if (wLeft.length) {
+      const wh = headBlock(wShown > 0 ? "Details that may not fit together (continued)" : "Details that may not fit together", gapBig, "warn");
+      rest.push(left.length ? wh : { ...wh, breakBefore: true });
+      for (const w of wLeft) rest.push(...warnBlocks(w));
+    }
+    return rest;
+  };
+  // Page 1 takes as many whole assumptions as fit in the room left under the other sections (in the same two
+  // columns as a one-page summary). When they all fit, as many whole warnings as fit follow them, in their panel.
+  // Only the rest moves on, and a line says what moved.
+  const fill = (room: number) => {
+    const contH = gapSm * 0.5 + lh(body) + pad;
+    const total = aItems.length;
+    const greedy = fillColumns(aItems, room - headingH() - contH);
+    const all = greedy.shown === total;
+    const shown = greedy.shown;
+    const cols = all ? twoColumns(aItems) : greedy;
+    const wHeadH = headingH() + gapSm * 0.5;
+    const wItems: Block[][] = [];
+    if (all && model.warnings.length) {
+      let left = room - (headingH() + Math.max(cols.leftH, cols.rightH)) - gapBig - wHeadH - contH;
+      for (const w of model.warnings) {
+        const parts = warnBlocks(w);
+        const h = parts.reduce((a, b) => a + b.h, 0);
+        if (h > left) break;
+        left -= h;
+        wItems.push(parts);
+      }
+    }
+    const wShown = wItems.length;
+    const wMoved = model.warnings.length > wShown;
+    const moved = [...(all ? [] : [assumptionsLeft(shown, total)]), ...(wMoved ? [wShown ? "the other details that may not fit together" : "details that may not fit together"] : [])];
+    const movedText = listOf(moved);
+    const cont = moved.length ? `${cap(movedText)} continued on page 2` : null;
+    if (!wShown) return { block: assumptionsBlock(cols, cont), shown, rest: restFrom(shown), movedText };
+    const aBlock = assumptionsBlock(cols, null);
+    const wH = wHeadH + wItems.flat().reduce((a, b) => a + b.h, 0);
+    const block: Block = {
+      h: aBlock.h + gapBig + wH + (cont ? contH : 0), gapBefore: gapBig, kind: "main",
+      draw: (sh, y0) => {
+        aBlock.draw(sh, y0);
+        let y = y0 + aBlock.h + gapBig;
+        sh.box("body", M, y, CW, wH, color("color-warning-tint"));
+        heading(sh, "body", M + gapSm, y + gapSm * 0.5, "Details that may not fit together");
+        y += wHeadH;
+        for (const b of wItems.flat()) { b.draw(sh, y); y += b.h; }
+        if (cont) sh.block("body", M, y + gapSm * 0.5, [cont], "sans", body, color("color-text-secondary"));
+      },
+    };
+    return { block, shown, rest: restFrom(shown, wShown), movedText };
+  };
+  return { first, rest: restFrom(0), footerH, placeholder, movedList: movedList([], model.warnings.length > 0), fill };
 }
 
 /* ------------------------------------------------------------------ pagination */
@@ -680,18 +820,21 @@ interface Placed { readonly block: Block; readonly y: number }
 function paginate(blocks: readonly Block[], top1: number, top2: number, limit: number): Placed[][] {
   const pages: Placed[][] = [[]];
   let y = top1;
-  for (const b of blocks) {
+  blocks.forEach((b, i) => {
     const cur = pages[pages.length - 1]!;
     const gap = cur.length === 0 ? 0 : b.gapBefore;
     const forced = b.breakBefore === true && cur.length > 0 && pages.length === 1;
-    if (cur.length > 0 && (forced || y + gap + b.h > limit)) {
+    const next = blocks[i + 1];
+    // A heading whose next block won't fit after it on this page starts the next page with that block.
+    const orphan = b.keepWithNext === true && next !== undefined && y + gap + b.h + next.gapBefore + next.h > limit;
+    if (cur.length > 0 && (forced || orphan || y + gap + b.h > limit)) {
       pages.push([{ block: b, y: top2 }]);
       y = top2 + b.h;
     } else {
       cur.push({ block: b, y: y + gap });
       y += gap + b.h;
     }
-  }
+  });
   return pages;
 }
 
@@ -726,7 +869,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
   const scratch = doc.addPage([pageW, pageH]);
   const measureCv = new PdfCanvas(doc, scratch, fonts);
 
-  const planFor = (li: number, mode: "full" | "split", fallback = false): { pages: Placed[][]; m: Metrics; mk: (cv: PdfCanvas) => Sheet; built: Built; foot: ReturnType<typeof footer>; movedText: string } => {
+  const planFor = (li: number, mode: "full" | "split", fallback = false): { pages: Placed[][]; m: Metrics; mk: (cv: PdfCanvas) => Sheet; built: Built; foot: ReturnType<typeof footer>; movedText: string; fits: boolean } => {
     const m = metricsFor(measureCv, LEVELS[li]!);
     const sh = new Sheet(measureCv, m);
     // The footer and header are the same shape on every page, so measure them with throwaway sheets.
@@ -734,10 +877,20 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     const head1 = header(new Sheet(measureCv, m), true);
     const head2 = header(new Sheet(measureCv, m), false);
     sh.headerH = head1 - m.M;
-    const built = buildBlocks(sh, input, thumb, mode, foot.height, photos);
     const limit = m.H - m.M - foot.height - m.gapBig;
+    const built = buildBlocks(sh, input, thumb, mode, foot.height, limit - head2, photos);
     let blocks: Block[] = [...built.first, ...built.rest];
     let movedText = built.movedList;
+    // Split mode: page 1 must hold its sections and the assumptions heading with its "continued" line.
+    let fits = true;
+    if (mode === "split" && !fallback && built.fill) {
+      let y = head1;
+      built.first.forEach((b, i) => { y += (i === 0 ? 0 : b.gapBefore) + b.h; });
+      const f = built.fill(limit - y - m.gapBig);
+      fits = y + m.gapBig + f.block.h <= limit + 1e-6;
+      blocks = [...built.first, f.block, ...f.rest];
+      movedText = f.movedText;
+    }
     if (fallback) {
       // Last resort: the first-page sections that fit stay, a one-line note says what moved, and the rest follows on page 2.
       const core = built.first.slice(0, 3);
@@ -758,7 +911,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
       ];
     }
     const pages = paginate(blocks, head1, head2, limit);
-    return { pages, m, mk: (cv) => new Sheet(cv, m), built, foot, movedText };
+    return { pages, m, mk: (cv) => new Sheet(cv, m), built, foot, movedText, fits };
   };
 
   let chosen: ReturnType<typeof planFor> | null = null;
@@ -768,12 +921,13 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     if (p.pages.length === 1) { chosen = p; levelIdx = li; }
   }
   if (!chosen) {
-    for (let li = 0; li < LEVELS.length && !chosen; li++) {
-      const p = planFor(li, "split");
-      // Page 1 holds all the first-page blocks when the overflow starts on page 2.
-      if (p.pages[0]!.length === p.built.first.length) { chosen = p; levelIdx = li; }
-    }
-    if (!chosen) { levelIdx = LEVELS.length - 1; chosen = planFor(levelIdx, "split", true); }
+    // Text shrinks first: nothing moves to page 2 until it doesn't fit at the floor (DESIGN.md section 8). So a split
+    // page 1 is always laid out at the floor level, where it holds the most whole assumptions. (A larger level can't
+    // fit sections the floor can't, so there is no case for splitting at a larger size.)
+    levelIdx = FLOOR_LEVEL;
+    const p = planFor(levelIdx, "split");
+    // Page 1 holds all the first-page sections and the assumptions section (as many as fit) when the overflow starts on page 2.
+    chosen = p.fits && p.pages[0]!.length === p.built.first.length + 1 ? p : planFor(levelIdx, "split", true);
   }
 
   doc.removePage(0); // the scratch page
@@ -824,6 +978,10 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
       ...(cv.marks.mapOutline ? { mapOutline: cv.marks.mapOutline as NonNullable<PdfPageReport["mapOutline"]> } : {}),
       ...(cv.marks.north ? { north: cv.marks.north as NonNullable<PdfPageReport["north"]> } : {}),
       ...(cv.marks.mapLabels ? { mapLabels: cv.marks.mapLabels as NonNullable<PdfPageReport["mapLabels"]> } : {}),
+      ...(cv.marks.mapPin ? { mapPin: cv.marks.mapPin as NonNullable<PdfPageReport["mapPin"]> } : {}),
+      ...(cv.marks.mapCredit ? { mapCredit: cv.marks.mapCredit as NonNullable<PdfPageReport["mapCredit"]> } : {}),
+      texts: cv.texts,
+      ...(cv.marks.table ? { table: cv.marks.table as NonNullable<PdfPageReport["table"]> } : {}),
     });
   });
   const missing = new Set<string>();

@@ -1,4 +1,4 @@
-# 0010. Vehicle photos, 3D models and maker logos
+# 0011. Vehicle photos, 3D models and maker logos
 
 Status: Built on branch `roundB/images` (2026-10-11), not merged or deployed. Needs the owner's say-so before any deploy, and a check with the real keys after it (see "Only checkable after a deploy").
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUSY_MESSAGE, PROXY_ROUTES, type CrossStreetsResult, type PlaceResult, type ProxyCapabilities, type ProxyError } from "@csd/core";
+import { BUSY_MESSAGES, PROXY_ROUTES, type CrossStreetsResult, type PlaceResult, type ProxyCapabilities, type ProxyError } from "@csd/core";
 import { photonToPlaces, stateAbbreviation } from "../src";
 import { loadCassette, replay } from "./cassette";
 import { START, config, hang, jsonResponse, settle, setup, type Call, type Upstream } from "./helpers";
@@ -179,7 +179,7 @@ describe("/api/geo/suggest", () => {
     expect(ok).toBeGreaterThanOrEqual(capacity);
     expect(ok).toBeLessThanOrEqual(capacity + Math.ceil(refillPerS * 1.2)); // burst 12 plus the 3/s refill over the 1.2 s wait
     const refused = flood.find((r) => r.status === 429)!;
-    expect(await refused.json()).toMatchObject({ code: "busy", message: BUSY_MESSAGE });
+    expect(await refused.json()).toMatchObject({ code: "busy", message: BUSY_MESSAGES.search });
   });
 
   it("caps all users together at burst 20 refilling 10/s", async () => {

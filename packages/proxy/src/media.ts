@@ -1,5 +1,5 @@
 // Vehicle photos, 3D models and maker logos: /api/vehicles/image, /api/vehicles/model, /api/logos/make.
-// docs/decisions/0010-vehicle-images.md has the why. In short:
+// docs/decisions/0011-vehicle-images.md has the why. In short:
 //  - Everything is fetched here and served from our origin (the browser never sees a provider URL).
 //  - Keys come from deps.secret at call time and only ever travel upstream in request headers, on calls
 //    that refuse redirects. They are never in a URL, a cache key, a stored body, a log line or a response.
