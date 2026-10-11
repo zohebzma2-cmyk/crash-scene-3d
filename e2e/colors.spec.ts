@@ -152,13 +152,13 @@ test("@xb a catalog model swaps in for our model without a frame of nothing, tin
   const red = await hueFromVehicle(page, "A", "red");
   expect(red.shown - red.hidden, `red pixels from A's catalog model (${JSON.stringify(red)})`).toBeGreaterThan(isPhone(page) ? 20 : 60);
   await expect(page.locator(".viewer3d-model-note")).toContainText("watermarked previews");
-  await shot(page, "glb-box", info.project.name);
   const origin = new URL(page.url()).origin;
   expect(glbRequests.length).toBeGreaterThan(0);
   for (const u of glbRequests) expect(new URL(u).origin).toBe(origin);
   expect(glbRequests.some((u) => u.includes("/api/"))).toBe(false);   // fixtures mode never calls /api
   expect(await violations()).toEqual([]);
   expect(pageErrors(), pageErrors().join(" | ")).toEqual([]);
+  await shot(page, "glb-box", info.project.name);   // after the CSP check: WebKit reports Playwright's own screenshot styles
 });
 
 test("@xb a catalog model with the paint baked into its texture is recoloured by the shader (both engines compile it)", async ({ page, pageErrors }, info) => {
@@ -175,10 +175,10 @@ test("@xb a catalog model with the paint baked into its texture is recoloured by
   // The baked red is gone from B: what red is left in the picture isn't B's.
   const red = await hueFromVehicle(page, "B", "red");
   expect(red.shown - red.hidden, `red pixels left on B (${JSON.stringify(red)})`).toBeLessThan(isPhone(page) ? 15 : 40);
-  await shot(page, "glb-baked", info.project.name);
   expect(consoleErrors.filter((e) => /shader|WebGL|THREE/i.test(e))).toEqual([]);
   expect(await violations()).toEqual([]);
   expect(pageErrors(), pageErrors().join(" | ")).toEqual([]);
+  await shot(page, "glb-baked", info.project.name);
 });
 
 test("@xb the colour picker passes axe (keyboard, names, contrast) with a near-white custom paint and with Black", async ({ page }) => {
@@ -191,10 +191,17 @@ test("@xb the colour picker passes axe (keyboard, names, contrast) with a near-w
   await expect(picker.getByRole("radio", { name: "White" })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(picker.getByRole("radio", { name: "Black" })).toHaveAttribute("aria-checked", "true");
-  for (const step of ["black", "near-white"]) {
+  for (const step of ["black", "near-white", "near-white, dark theme"]) {
     if (step === "near-white") {
       await picker.getByRole("radio", { name: "Custom" }).click();
       await picker.locator("input[type=color]").fill("#fdfdfc");
+    }
+    if (step.endsWith("dark theme")) {
+      await page.getByRole("button", { name: "Switch to the dark theme" }).click();
+      // The check mark on the near-white swatch stays dark in the dark theme (its ink is a light-dark() pair).
+      const ink = await picker.locator(".is-custom").evaluate((el) => getComputedStyle(el).color);
+      const [r, g, b] = ink.match(/\d+(\.\d+)?/g)!.map(Number);
+      expect(r! + g! + b!, `ink ${ink}`).toBeLessThan(150);
     }
     const res = await new AxeBuilder({ page }).include('[data-paint-picker="A"]').include(".map-frame-sm").withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
     expect(res.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`), step).toEqual([]);
