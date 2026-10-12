@@ -2,7 +2,11 @@
 // Vehicles step fixes (2026-10-11): a typed nickname is matched once a late makes list lands.
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PROXY_ROUTES } from "@csd/core";
+import { suggestionsCount } from "../src/components/VehicleCombobox";
 import { createFixtureVehicles } from "../src/services/fixtures";
+import { vehicleModelUrl } from "../src/services/media";
+import { createVehiclesService } from "../src/services/vehicles";
 import type { VehiclesService } from "../src/services/types";
 import { initialDoc, reducer, type Doc } from "../src/state/doc";
 import { key, renderApp, setValue } from "./helpers";
@@ -124,5 +128,38 @@ describe("a typed nickname and a late makes list", () => {
     await late.land();
     expect(field("A", "make").value).toBe("chevy");
     expect(field("B", "make").value).toBe("Chevrolet");
+  });
+});
+
+describe("picker leftovers (item 5)", () => {
+  it("an accented make typed by hand is asked for without its accents (no 400), and one the proxy can't take is never asked", async () => {
+    window.sessionStorage.clear();
+    const urls: string[] = [];
+    const fetchFn = vi.fn(async (url: string) => {
+      urls.push(url);
+      const body = url.startsWith(PROXY_ROUTES.makes) ? ["Ford"] : [];
+      return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+    });
+    const svc = createVehiclesService(fetchFn, { sleep: async () => undefined });
+    await svc.models("Citroën", 2019);
+    await svc.models("Škoda", 2019);
+    expect(await svc.models("Zephyr #1", 2019)).toEqual([]);
+    expect(urls).toEqual([PROXY_ROUTES.makes, `${PROXY_ROUTES.models}?make=Citroen&year=2019`, `${PROXY_ROUTES.models}?make=Skoda&year=2019`]);
+    // Photos and models of an accented make are asked for without the accents too.
+    expect(vehicleModelUrl({ year: 2019, make: "Škoda", model: "Octavia" })).toBe(`${PROXY_ROUTES.vehicleModel}?make=Skoda&model=Octavia&year=2019`);
+  });
+
+  it("the live count says 'No matches. Press Enter to use what you typed.' when only 'Use as typed' is left", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { services } = makeServices({ vehicles: createFixtureVehicles() });
+    app = await renderApp(services, { hash: "#vehicles", storage: located() });
+    await settle();
+    const make = field("B", "make");
+    await typeLikeAPerson(make, "Zephyr");
+    expect(rowNames(make)).toEqual(["Use ‘Zephyr’ as typed"]);
+    expect(active(make)).toBe("Use ‘Zephyr’ as typed");
+    await settle(700);
+    expect(make.closest(".vcombo")?.querySelector("[aria-live=polite]")?.textContent).toBe("No matches. Press Enter to use what you typed.");
+    expect(suggestionsCount(0, false)).toBe("No suggestions.");
   });
 });

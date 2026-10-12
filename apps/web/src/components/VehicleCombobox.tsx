@@ -45,7 +45,9 @@ export interface VehicleComboboxProps {
 
 /** The count is announced this long after the list last changed, so it isn't read on every keystroke. */
 export const ANNOUNCE_DELAY_MS = 600;
-export const suggestionsCount = (n: number) => (n === 0 ? "No suggestions." : `${n} ${n === 1 ? "suggestion" : "suggestions"}. Use the arrow keys.`);
+/** The live count: how many matches; with none but the "Use what I typed" row, that Enter takes what was typed. */
+export const suggestionsCount = (n: number, freeRow = false) =>
+  n > 0 ? `${n} ${n === 1 ? "suggestion" : "suggestions"}. Use the arrow keys.` : freeRow ? "No matches. Press Enter to use what you typed." : "No suggestions.";
 
 export const SUGGESTIONS_LABEL = "Suggestions";
 /** The list closes this long after the field loses focus (the address search uses the same pause). */
@@ -72,12 +74,13 @@ export function VehicleCombobox({
   // The live region is always in the page (a region added with its text is often not read); its text follows the
   // list once typing settles, and empties when the list closes.
   const matches = items.filter((i) => !i.free).length;
+  const freeRow = items.some((i) => i.free);
   const [said, setSaid] = useState("");
   useEffect(() => {
     if (!announce) return;
-    const timer = window.setTimeout(() => setSaid(visible ? suggestionsCount(matches) : ""), ANNOUNCE_DELAY_MS);
+    const timer = window.setTimeout(() => setSaid(visible ? suggestionsCount(matches, freeRow) : ""), ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [announce, visible, matches]);
+  }, [announce, visible, matches, freeRow]);
 
   const pick = (item: ComboItem) => {
     setOpen(false);

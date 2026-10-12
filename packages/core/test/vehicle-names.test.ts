@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, editDistance, makeAndAliases, maxTypos, modelYears, normName, rankNames, rankYears, resolveName, typeFromVpic,
+  MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, VPIC_MAKE_TEXT, asciiName, editDistance, makeAndAliases, maxTypos, modelYears, normName, rankNames, rankYears, resolveName, typeFromVpic,
 } from "../src";
 
 // Makes as the proxy serves them (vPIC names, title-cased), with some of the obscure ones that share prefixes.
@@ -103,6 +103,16 @@ describe("makes: a rare exact name against a popular alias", () => {
     // Without the popular list, the exact name still comes first.
     expect(resolveName("harley", LIST, { aliases: MAKE_ALIASES })).toBe("Harley");
   });
+  it("a name an alias sends elsewhere is left out of the list: vPIC's rare 'Harley' row can't be picked, so it isn't shown", () => {
+    const opts = { aliases: MAKE_ALIASES, popular: POPULAR_MAKES };
+    expect(rankNames("harley", LIST, opts).map((r) => r.name)).toEqual(["Harley-Davidson"]);
+    expect(rankNames("har", LIST, opts).map((r) => r.name)).toEqual(["Harley-Davidson"]);
+    expect(rankNames("", LIST, opts).map((r) => r.name)).not.toContain("Harley");
+    // Only when the alias really sends it elsewhere: without the popular list "harley" is still the Harley row.
+    expect(rankNames("harley", LIST, { aliases: MAKE_ALIASES })[0]?.name).toBe("Harley");
+    // A make whose alias target isn't in the list stays.
+    expect(rankNames("harley", ["Harley", "Honda"], opts).map((r) => r.name)).toEqual(["Harley"]);
+  });
   it("datsun is Datsun, not an alias of Nissan", () => {
     expect(MAKE_ALIASES.datsun).toBeUndefined();
     expect(resolveName("datsun", LIST, { aliases: MAKE_ALIASES, popular: POPULAR_MAKES })).toBe("Datsun");
@@ -179,5 +189,19 @@ describe("typeFromVpic", () => {
     expect(typeFromVpic("Truck", "5500XD")).toBe("truck");
     expect(typeFromVpic("Truck", "Silverado")).toBe("pickup");
     expect(typeFromVpic("Truck", "Silverado HD")).toBe("pickup");
+  });
+});
+
+describe("asciiName: a typed make for the lookups (vehicles step fixes, 2026-10-11)", () => {
+  it("takes the accents off, so 'Citroën' and 'Škoda' fit the proxy's make pattern instead of a 400", () => {
+    expect(asciiName("Citroën")).toBe("Citroen");
+    expect(asciiName("Škoda")).toBe("Skoda");
+    expect(asciiName("Løvstad Ærø Straße")).toBe("Lovstad AEro Strasse");
+    expect(VPIC_MAKE_TEXT.test("Citroën")).toBe(false);
+    expect(VPIC_MAKE_TEXT.test(asciiName("Citroën"))).toBe(true);
+    expect(VPIC_MAKE_TEXT.test(asciiName("Škoda"))).toBe(true);
+    // Everything else is kept as typed.
+    expect(asciiName("TH!NK")).toBe("TH!NK");
+    expect(asciiName("Mercedes-Benz")).toBe("Mercedes-Benz");
   });
 });

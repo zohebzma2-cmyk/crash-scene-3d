@@ -4,7 +4,7 @@
 //
 // Every failure is "use our own picture": a 204, a JSON {fallback:true}, a 429, a timeout or no network all
 // come back as null. Nothing here throws at the UI.
-import { MEDIA_HEADERS, PROXY_ROUTES, type VehicleImageView, type VehicleType } from "@csd/core";
+import { MEDIA_HEADERS, PROXY_ROUTES, asciiName, type VehicleImageView, type VehicleType } from "@csd/core";
 import type { CameraView } from "../viewer/types";
 import { API_TIMEOUT_MS, type FetchLike } from "./http";
 
@@ -62,7 +62,8 @@ export function viewFor(camera: CameraView): VehicleImageView {
   }
 }
 
-const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+/** Accents off ("Škoda" is "Skoda"), as the proxy's plain-ASCII make and model patterns need; spaces tidied. */
+const clean = (s: string) => asciiName(s).replace(/\s+/g, " ").trim();
 const MAKE_OK = /^[A-Za-z0-9][A-Za-z0-9 .&'/-]{0,39}$/;
 const MODEL_OK = /^[A-Za-z0-9][A-Za-z0-9 .&'/()+-]{0,59}$/;
 
