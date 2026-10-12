@@ -1,0 +1,6 @@
+{
+  "_fixture": "As model-info.json, for a car with no 3D yet ('returns a clean masked-placeholder model instead of an error'). Assumed shape; values are synthetic.",
+  "url": "https://cdn.carimagesapi.com/3d/_masked.glb?expires=1791763200&sig=0a0b0c0d0e0f",
+  "watermarked": true,
+  "fallback": true
+}

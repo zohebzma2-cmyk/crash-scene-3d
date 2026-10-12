@@ -12,7 +12,7 @@ import { MEDIA_HEADERS, type MediaFallback, type MediaFallbackReason, type Provi
 import { canonicalMake, normMake, slugOf } from "./make-domains";
 import { makeLogoParams, parseQuery, vehicleImageParams, vehicleModelParams } from "./params";
 import type { ProxyDeps, SecretName } from "./types";
-import { BadUpstreamBody, ProxyFailure, QuotaFailure, fetchUpstream, type Ctx, type Entry, type QuotaSpec, type UpstreamCall } from "./upstream";
+import { BadUpstreamBody, ProxyFailure, QuotaFailure, fetchUpstream, type Ctx, type Entry, type QuotaSpec, type UpstreamCall, type UpstreamErrorInfo } from "./upstream";
 
 const DAY_S = 86_400;
 /** Longest a browser keeps a photo, model or logo (our server cache is longer). */
@@ -86,6 +86,19 @@ function safeAssetUrl(raw: unknown, hosts: readonly string[], secrets: readonly 
   const forms = (x: string) => [x, encodeURIComponent(x), encodeURIComponent(x).toLowerCase()];
   const lower = out.toLowerCase();
   return secrets.some((x) => x && forms(x).some((f) => out.includes(f) || lower.includes(f.toLowerCase()))) ? null : out;
+}
+
+/** Where a 3D model answer may put the GLB's URL: top level, or inside a `model` or `glb` object. */
+const MODEL_URL_FIELDS = ["url", "model_url", "glb_url", "glb", "src", "download_url"] as const;
+function modelUrlIn(b: Obj): string | null {
+  for (const o of [b, isObj(b.model) ? b.model : null, isObj(b.glb) ? b.glb : null]) {
+    if (!o) continue;
+    for (const f of MODEL_URL_FIELDS) {
+      const s = str(o[f]);
+      if (s) return s;
+    }
+  }
+  return null;
 }
 
 /** Photo URLs of one picture, keyed "<format>@<width>" ("webp@400") and "<format>@default". */
@@ -221,11 +234,72 @@ export interface MediaRoutes {
 /** Printable ASCII, no spaces, a sane length: anything else is treated as "not set" (and never echoed). */
 const SECRET_SHAPE = /^[\x21-\x7e]{8,512}$/;
 
+/* ------------------------------------------------------------------ diagnostics */
+
+/** Distinct log lines one instance writes at most (each line once). */
+const MAX_LOG_LINES = 200;
+/** How much of a provider's error body a log line keeps. */
+const LOG_BODY_CHARS = 300;
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A provider's text made safe to log: our own secrets (as typed and percent-encoded, any case), anything after
+ * "Bearer ", the value of a credential-like parameter or field (api_key=, api_secret=, sig=, token=, key: …), and
+ * key-shaped words (ci_…, sk_…, pk_…) become "<redacted>"; with `longTokens`, so does any run of 24 or more
+ * letters, digits, "_" or "-". Control characters become spaces, so a line stays one line.
+ */
+export function redactForLog(text: string, secrets: readonly string[], longTokens = true): string {
+  let s = text;
+  for (const x of secrets) {
+    if (!x) continue;
+    // As typed, percent-encoded, and as JSON writes it ("\"", "\\", and "\/" for "/").
+    const forms = new Set([x, encodeURIComponent(x), JSON.stringify(x).slice(1, -1), JSON.stringify(x).slice(1, -1).replace(/\//g, "\\/")]);
+    for (const form of forms) s = s.replace(new RegExp(escapeRe(form), "gi"), "<redacted>");
+  }
+  s = s
+    .replace(/\bBearer\s+[^\s"',;]+/gi, "Bearer <redacted>")
+    .replace(/\b(api_key|api_secret|apikey|api-key|x-api-secret|access_token|token|secret|sig|signature|key|password)(["']?\s*[=:]\s*["']?)[^\s"'&,;}]+/gi, "$1$2<redacted>")
+    .replace(/\b(?:ci|sk|pk)_[A-Za-z0-9_-]{3,}/g, "<redacted>");
+  if (longTokens) s = s.replace(/[A-Za-z0-9_-]{24,}/g, "<redacted>");
+  return s.replace(/[\u0000-\u001f\u007f]+/g, " ");
+}
+
+/**
+ * Where a call went, for a log line: scheme, host and path (segments of 32+ characters redacted), plus the names
+ * (never the values) of its query parameters.
+ */
+export function endpointForLog(raw: string, secrets: readonly string[]): string {
+  let u: URL;
+  try { u = new URL(raw); } catch { return "<unreadable URL>"; }
+  const path = u.pathname.split("/").map((seg) => (seg.length >= 32 ? "<redacted>" : seg)).join("/");
+  // A name is kept only when it looks like a parameter name (16 letters, digits, "_" or "-" at most) and isn't part of
+  // a secret: anything else ("api_key=ci_…" sent percent-encoded as a name) could carry a credential.
+  const plainName = (k: string) => /^[A-Za-z0-9_-]{1,16}$/.test(k) && !secrets.some((x) => k.length >= 4 && x.toLowerCase().includes(k.toLowerCase()));
+  const names = [...new Set([...new Set(u.searchParams.keys())].map((k) => (plainName(k) ? k : "<redacted>")))];
+  return redactForLog(`${u.protocol}//${u.host}${path}${names.length ? `?${names.join(",")}` : ""}`, secrets, false);
+}
+
+/** The shape of a JSON answer, never its values: field names, types, booleans as they are, a URL as its host. */
+export function shapeForLog(v: unknown, depth = 0): string {
+  if (Array.isArray(v)) return `array(${v.length})${v.length && depth < 2 ? `[${shapeForLog(v[0], depth + 1)}]` : ""}`;
+  if (isObj(v)) {
+    if (depth >= 3) return "object";
+    const keys = Object.keys(v).slice(0, 24);
+    return `{${keys.map((k) => `${k.replace(/[^\w-]/g, "").slice(0, 32)}:${shapeForLog(v[k], depth + 1)}`).join(",")}}`;
+  }
+  if (typeof v === "string") {
+    try { const u = new URL(v); return `url(${u.protocol}//${u.host})`; } catch { return "string"; }
+  }
+  if (typeof v === "boolean" || v === null) return String(v);
+  return typeof v;
+}
+
 export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRequest: (fields: string[]) => Response): MediaRoutes {
   const { carimages: ci, logodev: ld, cacheTtlS: ttl } = config.media;
   const said = new Set<string>();
   const logOnce = (line: string) => {
-    if (said.has(line)) return;
+    if (said.has(line) || said.size >= MAX_LOG_LINES) return;
     said.add(line);
     (deps.log ?? ((l: string) => console.warn(l)))(line);
   };
@@ -246,6 +320,47 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     if (!k) logOnce("proxy: the logo.dev secret key is not set; maker logos skip logo.dev");
     return k;
   };
+  /** Every secret that is set, for redacting log lines (read at log time, never kept). */
+  const knownSecrets = (): string[] =>
+    (["CARIMAGES_API_KEY", "CARIMAGES_API_SECRET", "LOGO_DEV_SECRET_KEY"] as const).map((n) => secret(n)).filter((x): x is string => x !== null);
+
+  /**
+   * One log line per distinct failure of a provider call: the provider, the endpoint (no query values), the HTTP
+   * status (or "no answer") and the start of the error body, all redacted. Request headers are never logged.
+   */
+  const diag = (provider: "carimages" | "logodev") => (info: UpstreamErrorInfo): void => {
+    const secrets = knownSecrets();
+    // A body cut off mid-word may end in part of a secret that no rule recognises: drop that last word.
+    const raw = info.truncated ? info.body.replace(/\S*$/, "") : info.body;
+    const body = raw ? redactForLog(raw, secrets).replace(/\s+/g, " ").trim().slice(0, LOG_BODY_CHARS) : "";
+    const note = info.note ? ` (${redactForLog(info.note, secrets).slice(0, 120)})` : "";
+    logOnce(`proxy: ${provider} ${endpointForLog(info.url, secrets)} -> ${info.status || "no answer"}${note}${body ? ` ${body}` : ""}`);
+  };
+  /**
+   * A `quota` answer says which cap refused it, once per distinct line: the caller's own daily share (per-user),
+   * everyone's daily cap (shared), the cooldown after the provider's 429, or that 429. No caller is named.
+   */
+  const quotaDiag = (e: QuotaFailure): void => {
+    const provider = (e.quotaKey ?? "quota:unknown").replace(/^quota:/, "").replace(/[^\w-]/g, "");
+    const cfg = provider === "logodev" ? ld : provider === "carimages" ? ci : null;
+    const what = e.refusedBy === "per-user" ? `the per-user daily cap${cfg ? ` (${cfg.perUserDailyCap} keyed calls a rolling day per person)` : ""}`
+      : e.refusedBy === "shared" ? `the shared daily cap${cfg ? ` (${cfg.dailyCap} keyed calls a rolling day for everyone)` : ""}`
+        : e.refusedBy === "cooldown" ? `the cooldown after the provider's 429${cfg ? ` (${Math.round(cfg.cooldownS / 60)} min)` : ""}`
+          : "the provider's own 429 (cooldown started)";
+    logOnce(`proxy: ${provider} quota -> refused by ${what}; answering the fallback`);
+  };
+  /** reasonOf, plus the quota log line. */
+  const fallbackOf = (e: unknown): MediaFallbackReason => {
+    if (e instanceof QuotaFailure) quotaDiag(e);
+    return reasonOf(e);
+  };
+  const ciDiag = diag("carimages");
+  const ldDiag = diag("logodev");
+  /** A 200 whose JSON we could not use: its shape (names and types, never values), once per distinct line. */
+  const shapeDiag = (provider: "carimages" | "logodev", url: string, what: string, body: unknown): void => {
+    const secrets = knownSecrets();
+    logOnce(`proxy: ${provider} ${endpointForLog(url, secrets)} -> 200 ${what}; shape ${redactForLog(shapeForLog(body), secrets).slice(0, 600)}`);
+  };
 
   const daily = (cap: number) => ({ capacity: Math.max(1, cap), refillPerS: Math.max(1, cap) / DAY_S });
   const ciQuota: QuotaSpec = { key: "quota:carimages", limit: daily(ci.dailyCap), perUser: daily(ci.perUserDailyCap), cooldownKey: "media/ci/cooldown", cooldownS: ci.cooldownS };
@@ -257,12 +372,14 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     url: `${ci.apiUrl}${path}`,
     quota: ciQuota,
     init: { redirect: "error", headers: { Authorization: `Bearer ${keys.key}`, "X-Api-Secret": keys.secret, Accept: "application/json" } },
+    onError: ciDiag,
   });
   const ldCall = (path: string, key: string): UpstreamCall => ({
     service: "logodev",
     url: `${ld.apiUrl}${path}`,
     quota: ldQuota,
     init: { redirect: "error", headers: { Authorization: `Bearer ${key}`, Accept: "application/json" } },
+    onError: ldDiag,
   });
 
   /** A JSON answer reshaped to only what we use (`shape`), cached under `cacheKey`. */
@@ -274,12 +391,57 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     return { value: parseJson(entry.bytes) as T, hit: entry.hit };
   }
 
-  /** Download a file from an allowed host (no credentials sent), check it, cache it. */
-  function asset(ctx: Ctx, cacheKey: string, ttlS: number, url: string, service: "carimages" | "logodev", check: (b: Uint8Array) => boolean): Promise<Entry> {
+  const apiBase = new URL(ci.apiUrl);
+  /**
+   * A catalog link into CarImages' own REST API rather than its CDN. The docs' catalog answers link every picture
+   * that way ("https://carimagesapi.com/api/v1/vehicles/bmw/3-series/g20/image?redirect=1&format=png"), and that
+   * endpoint wants the key and secret like every REST call (unkeyed it answers 401); it then 302s to the CDN.
+   */
+  const SLUG = "[a-z0-9][a-z0-9._-]{0,80}";
+  /**
+   * The documented REST asset links, and only those: a car generation's picture or 3D model
+   * (/api/v1/vehicles/{make}/{model}/{gen}/image|model) and a motorcycle generation's picture
+   * (/api/v1/motos/{make}/{model}/{gen}/image, the models list's `thumbnail`).
+   */
+  const KEYED_ASSET = new RegExp(`^${escapeRe(apiBase.pathname)}/(?:vehicles/${SLUG}/${SLUG}/${SLUG}/(?:image|model)|motos/${SLUG}/${SLUG}/${SLUG}/image)$`, "i");
+  /** Any link into the REST API (keyed shape or not). */
+  const apiLink = (url: string): URL | null => {
+    let u: URL;
+    try { u = new URL(url); } catch { return null; }
+    return u.origin === apiBase.origin && (u.pathname === apiBase.pathname || u.pathname.startsWith(`${apiBase.pathname}/`)) ? u : null;
+  };
+  const keyedLink = (url: string): URL | null => {
+    const u = apiLink(url);
+    return u && KEYED_ASSET.test(u.pathname) ? u : null;
+  };
+
+  /**
+   * Download a file, check it, cache it. A CDN link (or logo.dev's) is fetched with no credentials. A link into
+   * CarImages' REST API is one keyed call (headers only, one quota token, `redirect=1` so it answers with the file)
+   * whose redirect is followed by hand to the CDN without the key: redirect hops never carry request headers.
+   * Either way redirects go only to that provider's own asset hosts, https, at most three hops.
+   */
+  function asset(
+    ctx: Ctx, cacheKey: string, ttlS: number, url: string, service: "carimages" | "logodev", check: (b: Uint8Array) => boolean,
+    keys?: { key: string; secret: string },
+  ): Promise<Entry> {
+    const keyed = service === "carimages" ? keyedLink(url) : null;
+    if (service === "carimages" && !keyed && apiLink(url)) {
+      // Into the REST API but not a documented picture or model link: never fetched, keyed or not, and no token spent.
+      logOnce(`proxy: carimages refused a catalog link into the REST API that is not a picture or model: ${endpointForLog(url, knownSecrets())}`);
+      return Promise.reject(new NoMatch("no-image"));
+    }
+    if (keyed && !keys) return Promise.reject(new NoMatch("not-configured"));
+    if (keyed && !keyed.searchParams.has("redirect")) keyed.searchParams.set("redirect", "1");
+    const call: UpstreamCall = keyed && keys
+      ? {
+          service: "carimages", url: keyed.toString(), quota: ciQuota, redirectHosts: ci.assetHosts, onError: ciDiag,
+          init: { headers: { Authorization: `Bearer ${keys.key}`, "X-Api-Secret": keys.secret } },
+        }
+      : { service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts, onError: service === "carimages" ? ciDiag : ldDiag };
     return fetchUpstream(ctx, {
       cacheKey, ttlS, validStored: check,
-      // Redirects only to that provider's own asset hosts, https, at most three hops (never an internal address).
-      calls: [{ service: `${service}-2`, url, redirectHosts: service === "carimages" ? ci.assetHosts : ld.assetHosts }],
+      calls: [call],
       process: (bytes) => {
         if (!check(bytes)) throw new BadUpstreamBody("not the expected file");
         return { bytes, contentType: "application/octet-stream" };
@@ -308,15 +470,21 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
   async function generations(ctx: Ctx, keys: { key: string; secret: string }, make: NamedSlug, model: NamedSlug): Promise<{ gens: Generation[]; hit: boolean; key: string }> {
     const key = `media/ci/model/${make.slug}/${model.slug}`;
     try {
-      const { value, hit } = await keyedJson(ctx, key, ttl.catalog, ciCall(`/makes/${encodeURIComponent(make.slug)}/models/${encodeURIComponent(model.slug)}`, keys), (body) => {
+      const call = ciCall(`/makes/${encodeURIComponent(make.slug)}/models/${encodeURIComponent(model.slug)}`, keys);
+      const { value, hit } = await keyedJson(ctx, key, ttl.catalog, call, (body) => {
         const gens: Generation[] = [];
         const list = isObj(body) && Array.isArray(body.generations) ? body.generations : isObj(body) && isObj(body.data) && Array.isArray(body.data.generations) ? body.data.generations : [];
+        let unusable: unknown = null;
         for (const g of list) {
           if (!isObj(g)) continue;
           const slug = str(g.slug);
           if (!slug || !/^[a-z0-9][a-z0-9._-]{0,80}$/i.test(slug)) continue;
-          gens.push({ slug, start: yearOf(g.year_start), end: yearOf(g.year_end), image: assetSet(g.images, ci.assetHosts, ciSecrets(keys)) });
+          const image = assetSet(g.images, ci.assetHosts, ciSecrets(keys));
+          if (!image && g.images !== null && g.images !== undefined) unusable ??= g;
+          gens.push({ slug, start: yearOf(g.year_start), end: yearOf(g.year_end), image });
         }
+        if (gens.length === 0) shapeDiag("carimages", call.url, "but no generations we can read", body);
+        else if (unusable) shapeDiag("carimages", call.url, "but a generation's images are unusable (host not allowed?)", unusable);
         return gens;
       });
       return { gens: value, hit, key };
@@ -384,17 +552,24 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     return false;
   }
 
-  /** Download a catalog asset; when the catalog answer was a cached one whose link has expired, refresh it once. */
+  /**
+   * Download a catalog asset; when the catalog answer was a cached one whose CDN link has expired, refresh it once.
+   * A link into the REST API doesn't expire: its 404 means the provider has no such picture or model.
+   */
   async function catalogAsset<T>(
-    ctx: Ctx, resolve: () => Promise<{ url: string | null; catalogHit: boolean; catalogKeys: readonly string[]; extra: T }>,
+    ctx: Ctx, keys: { key: string; secret: string }, resolve: () => Promise<{ url: string | null; catalogHit: boolean; catalogKeys: readonly string[]; extra: T }>,
     cacheKey: (extra: T) => string, ttlS: number, check: (b: Uint8Array) => boolean,
   ): Promise<{ entry: Entry; extra: T }> {
     for (let attempt = 0; ; attempt++) {
       const r = await resolve();
       if (!r.url) throw new NoMatch("no-image");
       try {
-        return { entry: await asset(ctx, cacheKey(r.extra), ttlS, r.url, "carimages", check), extra: r.extra };
+        return { entry: await asset(ctx, cacheKey(r.extra), ttlS, r.url, "carimages", check, keys), extra: r.extra };
       } catch (e) {
+        if (keyedLink(r.url)) {
+          if (e instanceof ProxyFailure && !(e instanceof QuotaFailure) && e.status === 404) throw new NoMatch("no-image");
+          throw e;
+        }
         // Only "this link no longer works" (403, 404, 410) refreshes the catalog; a 5xx or a timeout does not.
         const expiredLink = e instanceof ProxyFailure && !(e instanceof QuotaFailure) && [403, 404, 410].includes(e.upstreamStatus ?? 0);
         if (attempt === 0 && r.catalogHit && expiredLink) {
@@ -433,7 +608,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     if (!model) return noImage("no-model", "make-only");
     if (!model.thumb) return noImage("no-image", "make-only");
     const key = `media/ci/moto-img/${make.slug}/${model.slug}/${width}`;
-    const entry = await asset(ctx, key, ttl.image, model.thumb, "carimages", (b) => imageKind(b) !== null);
+    const entry = await asset(ctx, key, ttl.image, model.thumb, "carimages", (b) => imageKind(b) !== null, keys);
     if (await isPlaceholder(ctx, entry.bytes, `moto/${make.slug}/${model.slug}`, key, !entry.hit)) { await ctx.deps.store.delete(key); return noImage("no-image"); }
     return mediaResponse(entry, ttl.image, imageKind(entry.bytes) ?? "application/octet-stream", { [MEDIA_HEADERS.image]: "exact" });
   }
@@ -449,7 +624,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     const year = p.data.year ?? null;
     try {
       if (type === "moto") return await motoImage(ctx, keys, makeText, modelText, width);
-      const { entry, extra } = await catalogAsset(ctx, async () => {
+      const { entry, extra } = await catalogAsset(ctx, keys, async () => {
         const car = await resolveCar(ctx, keys, makeText, modelText, year);
         let set = car.gen.image;
         let served: VehicleImageView = "front34";
@@ -468,7 +643,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       }
       return mediaResponse(entry, ttl.image, imageKind(entry.bytes) ?? "application/octet-stream", { [MEDIA_HEADERS.image]: "exact", [MEDIA_HEADERS.view]: extra.served });
     } catch (e) {
-      const reason = reasonOf(e);
+      const reason = fallbackOf(e);
       return noImage(reason, e instanceof NoMatch ? e.match : "none");
     }
   }
@@ -480,17 +655,23 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     if (!keys) return noModel("not-configured");
     const year = p.data.year ?? null;
     try {
-      const { entry, extra } = await catalogAsset(ctx, async () => {
+      const { entry, extra } = await catalogAsset(ctx, keys, async () => {
         const car = await resolveCar(ctx, keys, p.data.make, p.data.model, year);
         const path = `/vehicles/${encodeURIComponent(car.make.slug)}/${encodeURIComponent(car.model.slug)}/${encodeURIComponent(car.gen.slug)}/model`;
-        const infoKey = `media/ci/glb-info/${car.make.slug}/${car.model.slug}/${car.gen.slug}`;
+        // v2: answers kept by the first deploy (read with the old parser, kept 30 days) are read again.
+        const infoKey = `media/ci/glb-info/v2/${car.make.slug}/${car.model.slug}/${car.gen.slug}`;
         let info: { url: string | null; watermarked: boolean; fallback: boolean };
         let infoHit: boolean;
         try {
-          const got = await keyedJson(ctx, infoKey, ttl.model, ciCall(path, keys), (body) => {
+          const call = ciCall(path, keys);
+          const got = await keyedJson(ctx, infoKey, ttl.model, call, (body) => {
             const b = isObj(body) && isObj(body.data) ? body.data : isObj(body) ? body : {};
-            const raw = str(b.url) ?? str(b.model_url) ?? str(b.glb) ?? str(b.glb_url);
-            return { url: safeAssetUrl(raw, ci.assetHosts, ciSecrets(keys)), watermarked: b.watermarked === true, fallback: b.fallback === true };
+            // The docs publish no example: "JSON with the model URL + watermarked / fallback flags". Unknown: the
+            // free plan's watermark (the safe guess when the flag is missing).
+            const out = { url: safeAssetUrl(modelUrlIn(b), ci.assetHosts, ciSecrets(keys)), watermarked: b.watermarked !== false, fallback: b.fallback === true };
+            if (out.fallback) shapeDiag("carimages", call.url, "with fallback: true (no 3D for this car yet)", body);
+            else if (!out.url) shapeDiag("carimages", call.url, "but no model URL we can use", body);
+            return out;
           });
           info = got.value;
           infoHit = got.hit;
@@ -500,11 +681,13 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
         }
         // A car the provider has no 3D for comes back as a masked placeholder model: that is "no model".
         if (info.fallback) throw new NoMatch("no-model");
-        return { url: info.url, catalogHit: infoHit, catalogKeys: [infoKey], extra: { ...car, watermarked: info.watermarked } };
+        // No URL we can read in the JSON: the same endpoint with ?redirect=1 answers with the GLB itself (a 302 to
+        // the CDN, per the docs). One more keyed call, made only in that case.
+        return { url: info.url ?? `${ci.apiUrl}${path}?redirect=1`, catalogHit: infoHit, catalogKeys: [infoKey], extra: { ...car, watermarked: info.watermarked } };
       }, (x) => `media/ci/glb/${x.make.slug}/${x.model.slug}/${x.gen.slug}`, ttl.model, (b) => isGlb(b) && b.byteLength <= ci.maxModelBytes);
       return mediaResponse(entry, ttl.model, "model/gltf-binary", { [MEDIA_HEADERS.watermarked]: extra.watermarked ? "true" : "false" });
     } catch (e) {
-      const reason = reasonOf(e);
+      const reason = fallbackOf(e);
       return noModel(reason === "no-image" ? "no-model" : reason);
     }
   }
@@ -519,14 +702,14 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
       // No key: CarImages' public logo endpoint (it redirects to its CDN).
       return fetchUpstream(ctx, {
         cacheKey: `media/logo/ci-brand/${normMake(source.name)}`, ttlS: ttl.logo, validStored: isPng,
-        calls: [{ service: "carimages", url: `${ci.brandLogoUrl}?${new URLSearchParams({ make: source.name })}`, redirectHosts: ci.assetHosts }],
+        calls: [{ service: "carimages", url: `${ci.brandLogoUrl}?${new URLSearchParams({ make: source.name })}`, redirectHosts: ci.assetHosts, onError: ciDiag }],
         process: (bytes) => { if (!isPng(bytes)) throw new BadUpstreamBody("not a PNG"); return { bytes, contentType: "image/png" }; },
       });
     }
     if (source.src === "ci-api") {
       return fetchUpstream(ctx, {
         cacheKey: `media/logo/ci-api/${source.slug}`, ttlS: ttl.logo, validStored: isPng,
-        calls: [{ service: "carimages", url: `${ci.apiUrl}/makes/${encodeURIComponent(source.slug)}/logo`, redirectHosts: ci.assetHosts }],
+        calls: [{ service: "carimages", url: `${ci.apiUrl}/makes/${encodeURIComponent(source.slug)}/logo`, redirectHosts: ci.assetHosts, onError: ciDiag }],
         process: (bytes) => { if (!isPng(bytes)) throw new BadUpstreamBody("not a PNG"); return { bytes, contentType: "image/png" }; },
       });
     }
@@ -610,7 +793,7 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
         // A 404 (or "nobody has it") moves on quietly; anything else is remembered so a miss isn't cached.
         if (e instanceof NoMatch) { if (e.reason !== "no-image") transient ??= e.reason; continue; }
         if (e instanceof ProxyFailure && e.status === 404) continue;
-        transient ??= reasonOf(e);
+        transient ??= fallbackOf(e);
       }
     }
     if (transient) return noLogo(transient);

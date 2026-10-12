@@ -1,0 +1,1 @@
+{"error":"API key required. The REST API is available on every plan (free is watermarked) — pass ?api_key=ci_xxx or Authorization: Bearer ci_xxx, plus your api_secret via the X-Api-Secret header."}
