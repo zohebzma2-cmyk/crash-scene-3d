@@ -3,7 +3,8 @@
 // ?media=busy answers 429 as a provider over its quota would. The browser only ever talks to its own origin.
 // E2E_SHOTS_DIR=<dir> also saves a screenshot of the card for each case.
 import type { Page, TestInfo } from "@playwright/test";
-import { expect, freshStart, searchAndPick, test, watchCsp } from "./helpers";
+import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { expect, flat, freshStart, openExample, pdfText, saveFiles, searchAndPick, test, toReview, waitForViewer, watchCsp } from "./helpers";
 
 async function toVehicles(page: Page, media: "on" | "busy"): Promise<void> {
   await freshStart(page, `/?media=${media}#location`);
@@ -99,5 +100,55 @@ test.describe("the vehicle card's logo and photo", () => {
       await page.emulateMedia({ colorScheme: "dark" });
       await page.screenshot({ path: `${dir}/media-make-list-dark-${info.project.name}.png` });
     }
+  });
+});
+
+test.describe("the saved files carry the photo the card showed", () => {
+  test.use({ acceptDownloads: true });
+
+  test("@xb example, Edit details, the card's WebP photo, save: the PDF has the image and its header, the stills their photo card", async ({ page, pageErrors }) => {
+    test.setTimeout(150_000);
+    // Text drawn on 1920-wide canvases (the stills): a still's photo card is captioned "Stock photo".
+    await page.addInitScript(() => {
+      const seen: string[] = [];
+      (window as unknown as { __e2eStillText: string[] }).__e2eStillText = seen;
+      for (const proto of [globalThis.OffscreenCanvasRenderingContext2D?.prototype, globalThis.CanvasRenderingContext2D?.prototype]) {
+        if (!proto) continue;
+        const orig = proto.fillText;
+        proto.fillText = function (this: { canvas: { width: number } }, t: string, x: number, y: number, m?: number) {
+          if (this.canvas.width === 1920) seen.push(String(t));
+          return m === undefined ? orig.call(this, t, x, y) : orig.call(this, t, x, y, m);
+        } as typeof proto.fillText;
+      }
+    });
+    await openExample(page, "t-bone-intersection", "&media=on");
+    await page.getByRole("button", { name: "Edit details" }).click();
+    const photo = page.locator("#vehicle-A .vehicle-photo");
+    await expect(photo).toHaveAttribute("data-photo", "photo", { timeout: 15_000 });
+    // The card shows the fixture photo, served as WebP like production's (fixtures mode, media-fixtures.ts).
+    expect(await photo.locator("img").evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBe(400);
+    await toReview(page);
+    await waitForViewer(page);
+    await page.getByRole("button", { name: "Looks right: save it" }).click();
+    await expect(page.locator("#app")).toHaveAttribute("data-step", "export");
+    const { files } = await saveFiles(page);
+    const pdfName = [...files.keys()].find((n) => n.endsWith(".pdf"))!;
+    const pdf = new Uint8Array(files.get(pdfName)!);
+    const { pages } = await pdfText(pdf);
+    expect(flat(pages.join(" "))).toContain("Stock photo");
+    // An image XObject the size of the photo (the synthetic car is 400 x 267) is painted: the photo, not the map.
+    const doc = await getDocument({ data: pdf, useSystemFonts: false }).promise;
+    const sizes: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const ops = await (await doc.getPage(i)).getOperatorList();
+      ops.fnArray.forEach((f, k) => { if (f === OPS.paintImageXObject) sizes.push(`${ops.argsArray[k][1]}x${ops.argsArray[k][2]}`); });
+    }
+    await doc.cleanup();
+    expect(sizes).toContain("400x267");
+    // Both stills were made, and at least one drew a photo card.
+    expect([...files.keys()].filter((n) => /impact|rest/.test(n) && n.endsWith(".png")).length).toBe(2);
+    const stillText = await page.evaluate(() => (window as unknown as { __e2eStillText: string[] }).__e2eStillText);
+    expect(stillText.filter((t) => t === "Stock photo").length).toBeGreaterThanOrEqual(1);
+    expect(pageErrors()).toEqual([]);
   });
 });
