@@ -16,7 +16,7 @@ import type { Action, Scene, SceneVehicle, VehicleId, Zone } from "../contracts/
 import { ACTIONS, ZONES } from "../contracts/scene";
 import type { PlainMessage } from "../contracts/simulation";
 import type { Vec2 } from "../contracts/geometry";
-import { ZONE_WORDS, boundWord, formatDistance, formatMphNumber, formatSpeedExact } from "../format";
+import { ZONE_WORDS, boundWord, formatDistance, formatMphNumber, formatSpeedExact, roadWords as travelRoad } from "../format";
 import { MPH_TO_MPS, RANGE_HALF_MPH, RANGE_STEP_MPH } from "./constants";
 import { angleBetween, dist, makePoly, norm, polyCrossings, project, toRad } from "./geo";
 import { cleanNet, streetName, streetsAtPin } from "./lanes";
@@ -179,7 +179,8 @@ interface Candidate {
   readonly swap?: boolean;
 }
 
-interface DirectionOption { readonly bearingDeg: number; readonly roadId: string | null; readonly roadName: string | null }
+/** roadDesc: an unnamed road's words from streetsAtPin ("the parking aisle (west one)"), so fixes name it as the list does. */
+interface DirectionOption { readonly bearingDeg: number; readonly roadId: string | null; readonly roadName: string | null; readonly roadDesc?: string | null | undefined }
 
 /** Results that depend only on the road data and the pin, worked out once per search. */
 interface PinWorld {
@@ -192,7 +193,7 @@ interface PinWorld {
 function directionOptions(net: RoadNetwork | null, pin: Vec2): DirectionOption[] {
   if (net) {
     const choices = streetsAtPin(net, pin).directions;
-    if (choices.length) return choices.map((c) => ({ bearingDeg: c.bearingDeg, roadId: c.roadId, roadName: c.roadName }));
+    if (choices.length) return choices.map((c) => ({ bearingDeg: c.bearingDeg, roadId: c.roadId, roadName: c.roadName, roadDesc: c.roadDesc }));
   }
   return [0, 90, 180, 270].map((bearingDeg) => ({ bearingDeg, roadId: null, roadName: null }));
 }
@@ -203,7 +204,9 @@ const angleDeg = (a: number, b: number): number => (angleBetween(toRad(a), toRad
 
 function directionWords(v: SceneVehicle, o: DirectionOption, roadChanged: boolean): string {
   const bound = boundWord(o.bearingDeg);
-  const on = roadChanged && o.roadName ? ` on ${o.roadName}` : "";
+  // An unnamed road is named by its description whenever it is another road than the one the vehicle is on.
+  const road = travelRoad(o);
+  const on = road && (roadChanged ? true : o.roadName == null && o.roadDesc != null && o.roadId !== v.travel.roadId) ? ` on ${road}` : "";
   return v.action === "parked" || v.action === "backing" ? `Facing ${FACING[bound]}${on}` : `${ucFirst(bound)}${on}`;
 }
 
@@ -295,7 +298,7 @@ function singles(scene: Scene, world: PinWorld, errors: readonly PlainMessage[])
     // Vehicles the refusal names come first; then scene order.
     const who = (named.has(v.id) ? 0 : 0.5) + order * 0.01;
     for (const z of ZONES) if (z !== v.zone) out.push({ cost: 1 + who + 0.2 * zoneStep(z, v.zone), changes: [zoneChange(v, z)] });
-    const current = directionWords(v, { bearingDeg: v.travel.bearingDeg, roadId: v.travel.roadId, roadName: v.travel.roadName }, true);
+    const current = directionWords(v, { bearingDeg: v.travel.bearingDeg, roadId: v.travel.roadId, roadName: v.travel.roadName, roadDesc: v.travel.roadDesc }, true);
     // A backing or parked vehicle's direction is the way it faces: a backing vehicle facing against the traffic travels with it.
     const options = v.action === "backing" || v.action === "parked" ? [...world.dirs, ...world.dirs.map((o) => ({ ...o, bearingDeg: (o.bearingDeg + 180) % 360 }))] : world.dirs;
     const seen = new Set<string>();
@@ -308,7 +311,7 @@ function singles(scene: Scene, world: PinWorld, errors: readonly PlainMessage[])
       out.push({
         // Same road before a different road; a smaller turn before a bigger one.
         cost: 1.25 + who + (road ? 0 : 0.1) + 0.1 * (angleDeg(o.bearingDeg, v.travel.bearingDeg) / 180),
-        changes: [{ vehicleId: v.id, field: "direction", from: current, to: directionWords(v, o, !road), patch: { travel: { ...v.travel, bearingDeg: o.bearingDeg, roadId: o.roadId, roadName: o.roadName, lane: null } } }],
+        changes: [{ vehicleId: v.id, field: "direction", from: current, to: directionWords(v, o, !road), patch: { travel: { ...v.travel, bearingDeg: o.bearingDeg, roadId: o.roadId, roadName: o.roadName, roadDesc: o.roadDesc ?? undefined, lane: null } } }],
       });
     }
     ACTIONS.filter((a) => a !== v.action).forEach((a, i) => {
@@ -347,8 +350,8 @@ function singles(scene: Scene, world: PinWorld, errors: readonly PlainMessage[])
         const facing = v.action === "backing" || v.action === "parked" ? [...there, ...there.map((o) => ({ ...o, bearingDeg: (o.bearingDeg + 180) % 360 }))] : there;
         const best = [...facing].sort((a, b) => angleDeg(a.bearingDeg, v.travel.bearingDeg) - angleDeg(b.bearingDeg, v.travel.bearingDeg) || cmp(a.roadId ?? "", b.roadId ?? ""))[0];
         if (!best || angleDeg(best.bearingDeg, v.travel.bearingDeg) > 60 || (best.roadId === v.travel.roadId && angleDeg(best.bearingDeg, v.travel.bearingDeg) <= 1)) continue;
-        const current = directionWords(v, { bearingDeg: v.travel.bearingDeg, roadId: v.travel.roadId, roadName: v.travel.roadName }, true);
-        lineUp.push({ vehicleId: v.id, field: "direction", from: current, to: directionWords(v, best, true), patch: { travel: { ...v.travel, bearingDeg: best.bearingDeg, roadId: best.roadId, roadName: best.roadName, lane: null } } });
+        const current = directionWords(v, { bearingDeg: v.travel.bearingDeg, roadId: v.travel.roadId, roadName: v.travel.roadName, roadDesc: v.travel.roadDesc }, true);
+        lineUp.push({ vehicleId: v.id, field: "direction", from: current, to: directionWords(v, best, true), patch: { travel: { ...v.travel, bearingDeg: best.bearingDeg, roadId: best.roadId, roadName: best.roadName, roadDesc: best.roadDesc ?? undefined, lane: null } } });
       }
       if (lineUp.length) out.push({ cost: cost + 0.3 * lineUp.length, changes: [move, ...lineUp] });
     }

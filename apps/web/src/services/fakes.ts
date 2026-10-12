@@ -93,7 +93,7 @@ export function fakeStreetsAtPin(net: RoadNetwork, pin: Vec2): StreetsAtPin {
       const label = `${bound} on ${w.name}`;
       if (seen.has(label)) continue;
       seen.add(label);
-      directions.push({ roadId: w.id, roadName: w.name, bearingDeg: bearing, bound, label });
+      directions.push({ roadId: w.id, roadName: w.name, roadDesc: null, bearingDeg: bearing, bound, label });
       legs.push({ roadId: w.id, name: w.name, outwardBearingDeg: (bearing + 180) % 360, junction: n.point });
     }
   }

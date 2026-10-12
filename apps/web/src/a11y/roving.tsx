@@ -1,7 +1,7 @@
 // Radio groups and tab lists with a roving tabindex: one tab stop per group, arrow keys move
 // the choice (and focus), Home/End jump to the ends. Radios here are buttons with role="radio",
 // so the same component works for tiles, the compass, the impact zones and the unit switch.
-import { createContext, useContext, type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, useContext, type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent, type ReactNode, type Ref } from "react";
 
 type Key = string | number;
 
@@ -37,13 +37,16 @@ export interface RadioGroupProps<T extends Key> extends Omit<HTMLAttributes<HTML
   readonly value: T | null;
   readonly onChange: (value: T) => void;
   readonly children: ReactNode;
+  /** The group's element (the colour picker scrolls it on phones). */
+  readonly ref?: Ref<HTMLDivElement>;
 }
 
-export function RadioGroup<T extends Key>({ values, value, onChange, children, onKeyDown, ...rest }: RadioGroupProps<T>) {
+export function RadioGroup<T extends Key>({ values, value, onChange, children, onKeyDown, ref, ...rest }: RadioGroupProps<T>) {
   return (
     <Ctx.Provider value={{ value, values, onChange: onChange as (v: never) => void }}>
       <div
         {...rest}
+        ref={ref}
         role="radiogroup"
         onKeyDown={(e) => {
           onKeyDown?.(e);

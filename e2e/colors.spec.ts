@@ -210,6 +210,57 @@ test("@xb the colour picker passes axe (keyboard, names, contrast) with a near-w
   for (const b of await picker.getByRole("radio").all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 });
 
+// Vehicles step fixes (2026-10-11), item 4: under 480 px the fourteen swatches are one row that scrolls sideways, with
+// a fade at an end that has more past it; the arrow keys still move the choice and keep it in view. Desktop keeps the grid.
+test("@xb on a phone the colours are one scrolling row (44 px targets, faded ends, arrow keys); on desktop a grid", async ({ page, pageErrors }) => {
+  await freshStart(page, "/#vehicles");
+  const picker = page.locator('[data-paint-picker="A"]');
+  const radios = picker.getByRole("radio");
+  await expect(radios).toHaveCount(14);
+  // Measured in one go: the page may still be scrolling to the step's title between separate measurements.
+  const boxes14 = await picker.evaluate((el) => [...el.querySelectorAll('[role="radio"]')].map((r) => { const b = r.getBoundingClientRect(); return { y: b.top, h: b.height }; }));
+  for (const b of boxes14) expect(b.h).toBeGreaterThanOrEqual(44);
+  const tops = boxes14.map((b) => b.y);
+  /** Rows of swatches: tops more than 4 px apart start a new row (sub-pixel layout differs by engine). */
+  const rows = [...tops].sort((a, b) => a - b).filter((y, i, all) => i === 0 || y - all[i - 1]! > 4).length;
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways page scroll").toBe(true);
+  // The type and action tiles (icon beside the label on phones) never cut their label off; each is a 44 px target.
+  const tiles = await page.evaluate(() => [...document.querySelectorAll(".vehicle .tiles-compact .tile")].map((t) => ({ text: t.textContent, over: t.scrollWidth > t.clientWidth + 1, h: t.getBoundingClientRect().height })));
+  expect(tiles.filter((t) => t.over).map((t) => t.text)).toEqual([]);
+  for (const t of tiles) expect(t.h, t.text ?? "").toBeGreaterThanOrEqual(44);
+  const row = picker.locator(".paint-row");
+  const scroller = picker.locator(".paint-swatches");
+  /** Is this radio wholly inside the scroller's visible box? */
+  const inView = async (name: string) => {
+    const s = (await scroller.boundingBox())!;
+    const r = (await picker.getByRole("radio", { name, exact: true }).boundingBox())!;
+    return r.x >= s.x - 1 && r.x + r.width <= s.x + s.width + 1;
+  };
+  if ((page.viewportSize()?.width ?? 1440) >= 480) {
+    expect(rows, "desktop: a grid of rows").toBeGreaterThan(1);
+    return;
+  }
+  expect(rows, "phone: one row").toBe(1);
+  expect(await scroller.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  // Not sure (the default, the last swatch) starts in view, so the row is faded at its start only.
+  expect(await inView("Not sure of the colour")).toBe(true);
+  await expect(row).toHaveAttribute("data-more-start", "true");
+  await expect(row).not.toHaveAttribute("data-more-end", /.*/);
+  // Home: White, at the start, faded at the end. Arrow keys walk the row and keep the choice in view.
+  await picker.getByRole("radio", { name: "Not sure of the colour" }).focus();
+  await page.keyboard.press("Home");
+  await expect(picker.getByRole("radio", { name: "White" })).toBeFocused();
+  await expect(row).toHaveAttribute("data-more-end", "true");
+  await expect(row).not.toHaveAttribute("data-more-start", /.*/);
+  for (const name of ["Black", "Silver", "Gray", "Red", "Blue", "Dark blue", "Green"]) {
+    await page.keyboard.press("ArrowRight");
+    await expect(picker.getByRole("radio", { name, exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => inView(name), { message: `${name} scrolled into view` }).toBe(true);
+  }
+  await expect(row).toHaveAttribute("data-more-start", "true");
+  expect(pageErrors()).toEqual([]);
+});
+
 test("@xb the catalog-model note is kept clear: no vehicle label over it (Top and Wide, start, impact and final rest)", async ({ page }) => {
   test.setTimeout(150_000);
   await openSceneFile(page, (f) => {

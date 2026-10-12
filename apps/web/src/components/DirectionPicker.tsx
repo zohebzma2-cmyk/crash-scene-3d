@@ -49,7 +49,8 @@ export function DirectionPicker({ vehicle, picked: isPicked, choices, onChange }
         <div className="direction direction-roads">
           <RadioGroup className="choices" aria-labelledby={legendId} values={choices.map((_, i) => i)} value={pickedIndex} onChange={(i) => {
             const c = choices[i];
-            if (c) onChange({ ...t, bearingDeg: c.bearingDeg, roadId: c.roadId, roadName: c.roadName });
+            // An unnamed road keeps its description ("the parking aisle (west one)") for the compass line, summary and PDF.
+            if (c) onChange({ ...t, bearingDeg: c.bearingDeg, roadId: c.roadId, roadName: c.roadName, roadDesc: c.roadDesc ?? undefined });
           }}>
             {choices.map((c, i) => <Radio key={`${c.roadId}-${c.bearingDeg}`} value={i} className="choice">{ucFirst(c.label)}</Radio>)}
           </RadioGroup>
@@ -63,7 +64,7 @@ export function DirectionPicker({ vehicle, picked: isPicked, choices, onChange }
         </div>
       ) : (
         <div className="direction">
-          <RadioGroup className="compass" aria-labelledby={legendId} values={CARDINALS.map((c) => c.deg)} value={isPicked && CARDINALS.some((c) => c.deg === t.bearingDeg) ? t.bearingDeg : null} onChange={(deg) => onChange({ ...t, bearingDeg: deg, roadId: null, roadName: null })}>
+          <RadioGroup className="compass" aria-labelledby={legendId} values={CARDINALS.map((c) => c.deg)} value={isPicked && CARDINALS.some((c) => c.deg === t.bearingDeg) ? t.bearingDeg : null} onChange={(deg) => onChange({ ...t, bearingDeg: deg, roadId: null, roadName: null, roadDesc: undefined })}>
             {CARDINALS.map((c) => <Radio key={c.deg} value={c.deg} aria-label={c.word} data-h={c.deg}>{c.letter}</Radio>)}
             {isPicked ? <span className="compass-center" aria-hidden="true" style={arrow}><Icon name="heading" className="icon-lg" /></span> : null}
           </RadioGroup>

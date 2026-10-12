@@ -99,6 +99,12 @@ const TravelSchema = z.object({
   roadId: text("The road id", 80).nullable(),
   /** Road name for captions ("northbound on Main St"). */
   roadName: text("The road name", 120).nullable(),
+  /**
+   * An unnamed road's description for captions, from the roads at the pin ("the parking aisle (west one)"); never a
+   * name, never painted on the road. Additive: absent (or null) in older v3 files, and left out of the canonical JSON
+   * then, so their fingerprints don't change.
+   */
+  roadDesc: text("The road description", 120).nullable().transform((d) => d ?? undefined).optional(),
   /** Lane for its direction, 0 = rightmost. null = choose automatically. */
   lane: z.number({ error: "The lane should be a number from 0 to 7." }).int({ error: "The lane should be a whole number from 0 to 7." })
     .min(0, { error: "The lane should be a number from 0 to 7." }).max(7, { error: "The lane should be a number from 0 to 7." }).nullable(),

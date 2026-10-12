@@ -49,11 +49,21 @@ export interface CreateServicesOptions {
    * else stays on fixtures, so a test can put a fake proxy behind it (e2e/vehicles-typing.spec.ts).
    */
   readonly vehiclesFromProxy?: boolean;
+  /**
+   * Fixture builds only (?models=proxy): catalog 3D models are asked for at /api/vehicles/model on the network, so a
+   * test can see (and hold) those requests (e2e/vehicles-fixes.spec.ts: none while on the Vehicles step).
+   */
+  readonly modelsFromProxy?: boolean;
 }
 
 /** ?vehicles=proxy, honoured only where fixtures are allowed (a dev server or a VITE_FIXTURES=1 build). */
 export function vehiclesFromProxyRequested(search: string): boolean {
   return fixturesAllowed() && new URLSearchParams(search).get("vehicles") === "proxy";
+}
+
+/** ?models=proxy, honoured only where fixtures are allowed. */
+export function modelsFromProxyRequested(search: string): boolean {
+  return fixturesAllowed() && new URLSearchParams(search).get("models") === "proxy";
 }
 
 export function createServices(opts: CreateServicesOptions): Services {
@@ -100,6 +110,6 @@ export function createServices(opts: CreateServicesOptions): Services {
     pdf: createPdfPreviewService(),
     examples: createExamplesService(),
     // The one client of the model route; in fixtures mode the synthetic GLBs answer first, then images' media fixtures.
-    vehicleModels: createVehicleModelsService(fx ? createFixtureModelFetch(fixtureModels, mediaFetch) : fetchFn),
+    vehicleModels: createVehicleModelsService(fx && !opts.modelsFromProxy ? createFixtureModelFetch(fixtureModels, mediaFetch) : fetchFn),
   };
 }

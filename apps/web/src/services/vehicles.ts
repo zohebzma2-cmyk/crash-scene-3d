@@ -7,7 +7,7 @@
 //    and the wait is dropped when the claimant types on (the caller's signal).
 //  - Model lists are cached for the session (memory and sessionStorage); the model box filters them locally.
 //  - A "busy" answer is tried again after its Retry-After, up to 2.5 s in all, before the card says so.
-import { MAKE_ALIASES, POPULAR_MAKES, PROXY_ROUTES, normName, resolveName, type VehicleModelResult } from "@csd/core";
+import { MAKE_ALIASES, POPULAR_MAKES, PROXY_ROUTES, VPIC_MAKE_TEXT, asciiName, normName, resolveName, type VehicleModelResult } from "@csd/core";
 import { abortableSleep, getJsonRetrying, type FetchLike } from "./http";
 import { ServiceError, type ModelsOptions, type VehiclesService } from "./types";
 
@@ -141,7 +141,11 @@ export function createVehiclesService(fetchFn: FetchLike, deps: VehiclesDeps = {
       const list = await untilAborted(makes().catch((): string[] => []), opts.signal);
       const known = resolveMake(typed, list);
       if (!known) await abortableSleep(UNKNOWN_MAKE_WAIT_MS, opts.signal, sleep);
-      return untilAborted(modelList(known ?? typed, year), opts.signal);
+      // A make typed by hand goes without its accents ("Citroën" is asked for as "Citroen"): the proxy's pattern is
+      // plain ASCII and would refuse it (a 400). One it would refuse anyway is never asked for: no models, typing works.
+      const ask = known ?? asciiName(typed).replace(/\s+/g, " ").trim();
+      if (!VPIC_MAKE_TEXT.test(ask)) return [];
+      return untilAborted(modelList(ask, year), opts.signal);
     },
   };
 }

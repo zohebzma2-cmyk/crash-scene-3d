@@ -117,6 +117,39 @@
 .paint-custom input { width: var(--size-touch); height: var(--size-touch); padding: var(--space-0); border: var(--size-border) solid var(--color-border-strong); border-radius: var(--radius-xs); background-color: var(--color-surface); cursor: pointer; }
 .paint-picker .hint { margin-top: var(--space-2); }
 
+/* Narrow phones (under 480 px): the fourteen swatches are one row that scrolls sideways instead of a block of rows.
+   Each stays a 44 px target; arrow keys still move the choice (focus scrolls it into view, clear of the fades).
+   An end with more swatches past it fades into the card (the row sets data-more-start / data-more-end on scroll). */
+@media (max-width: 479px) {
+  .paint-row { position: relative; }
+  .paint-swatches {
+    display: flex; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity; scroll-padding-inline: var(--space-8);
+    /* Room for the focus ring and the selected border inside the scroller, which clips. */
+    padding: var(--space-1);
+    scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent;
+  }
+  .paint-swatch { flex: none; scroll-snap-align: start; }
+  .paint-name { overflow-wrap: normal; white-space: nowrap; }
+  .paint-row::before, .paint-row::after {
+    content: ""; position: absolute; inset-block: var(--space-0); width: var(--space-8); pointer-events: none;
+    opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard);
+  }
+  .paint-row::before { inset-inline-start: var(--space-0); background: linear-gradient(to right, var(--color-surface), transparent); }
+  .paint-row::after { inset-inline-end: var(--space-0); background: linear-gradient(to left, var(--color-surface), transparent); }
+  .paint-row[data-more-start]::before, .paint-row[data-more-end]::after { opacity: 1; }
+
+  /* Type and action tiles: the icon beside the label in a 44 px row, three to a line (same choices, same keys). */
+  .vehicle .tiles-compact .tile { flex-direction: row; justify-content: flex-start; min-height: var(--size-touch); padding: var(--space-1) var(--space-2); text-align: start; }
+  .vehicle .tiles-compact .tile .icon { flex: none; width: var(--size-icon); height: var(--size-icon); }
+  .vehicle .tiles-compact .tile .auto { top: var(--space-0); right: var(--space-1); }
+}
+/* Under 400 px a third of the card is too narrow for an icon beside "Motorcycle": the tiles stack icon over label again. */
+@media (max-width: 399px) {
+  .vehicle .tiles-compact .tile { flex-direction: column; justify-content: center; min-height: var(--size-tile-min); padding: var(--space-2) var(--space-1); text-align: center; }
+  .vehicle .tiles-compact .tile .auto { top: var(--space-1); }
+}
+
 /* The picked colour next to a catalog photo (round B): a chip, so a photo in the catalog's own paint never misleads. */
 .paint-chip { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-full); border: var(--size-border) solid var(--color-border-strong); background-color: var(--color-surface); color: var(--color-text); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
 .paint-chip .paint-dot { width: var(--size-icon-sm); height: var(--size-icon-sm); }

@@ -43,8 +43,23 @@ const isGlb = (b: ArrayBuffer): boolean => b.byteLength >= 20 && new DataView(b)
 
 interface Answer { readonly asset: VehicleModelAsset | null; /** The route said there is no model for this vehicle (not a passing failure). */ readonly noModel: boolean }
 
+/**
+ * One download of one model, shared by every caller that wants it. Models are for Review only: when every caller
+ * has given up (the viewer closed: the claimant went back to the Vehicles step), the download itself is cancelled,
+ * so nothing keeps downloading under the next screen and its own requests (the makes list) never wait behind it.
+ */
+interface Flight {
+  readonly asset: Promise<VehicleModelAsset | null>;
+  readonly ctrl: AbortController;
+  /** Callers with a signal that are still waiting. */
+  waiting: number;
+  /** A caller without a signal wants it whatever happens. */
+  kept: boolean;
+  settled: boolean;
+}
+
 export function createVehicleModelsService(fetchFn: FetchLike, timeoutMs = API_TIMEOUT_MS * 2, now: () => number = () => Date.now()): VehicleModelsService {
-  const cache = new Map<string, Promise<VehicleModelAsset | null>>();
+  const cache = new Map<string, Flight>();
   const noModel = new Map<string, number>();
   return {
     load(q, signal) {
@@ -53,35 +68,51 @@ export function createVehicleModelsService(fetchFn: FetchLike, timeoutMs = API_T
       if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
       const none = noModel.get(url);
       if (none !== undefined && now() - none < NO_MODEL_TTL_MS) return Promise.resolve(null);
-      let p = cache.get(url);
-      if (!p) {
-        const answer = fetchModel(fetchFn, url, timeoutMs);
-        p = answer.then((a) => a.asset);
-        cache.set(url, p);
+      let f = cache.get(url);
+      if (!f) {
+        const ctrl = new AbortController();
+        const answer = fetchModel(fetchFn, url, timeoutMs, ctrl.signal);
+        const flight: Flight = { asset: answer.then((a) => a.asset), ctrl, waiting: 0, kept: false, settled: false };
+        f = flight;
+        cache.set(url, flight);
         // A few models are kept for the session (a viewer reopened, two vehicles of the same model); older ones go.
         while (cache.size > CACHE_MODELS) cache.delete(cache.keys().next().value!);
         void answer.then((a) => {
+          flight.settled = true;
           if (a.asset) return;
-          cache.delete(url);
+          if (cache.get(url) === flight) cache.delete(url);
           if (a.noModel) noModel.set(url, now());
         });
       }
-      if (!signal) return p;
+      const flight = f;
+      if (!signal) { flight.kept = true; return flight.asset; }
+      flight.waiting += 1;
       return new Promise((resolve, reject) => {
-        const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+        const onAbort = () => {
+          reject(new DOMException("aborted", "AbortError"));
+          flight.waiting -= 1;
+          // Nobody wants it any more: stop the download, and forget it so the next viewer asks afresh.
+          if (flight.waiting === 0 && !flight.kept && !flight.settled) {
+            flight.ctrl.abort();
+            if (cache.get(url) === flight) cache.delete(url);
+          }
+        };
         signal.addEventListener("abort", onAbort, { once: true });
-        p.then((r) => { signal.removeEventListener("abort", onAbort); if (!signal.aborted) resolve(r); });
+        flight.asset.then((r) => { signal.removeEventListener("abort", onAbort); if (!signal.aborted) { flight.waiting -= 1; resolve(r); } });
       });
     },
   };
 }
 
-async function fetchModel(fetchFn: FetchLike, url: string, timeoutMs: number): Promise<Answer> {
+async function fetchModel(fetchFn: FetchLike, url: string, timeoutMs: number, cancel: AbortSignal): Promise<Answer> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onCancel = () => ctrl.abort();
+  cancel.addEventListener("abort", onCancel, { once: true });
   const none = (lasting: boolean): Answer => ({ asset: null, noModel: lasting });
   try {
-    const res = await fetchFn(url, { signal: ctrl.signal, credentials: "omit", headers: { Accept: "model/gltf-binary, application/json" } });
+    // Low priority: a model only replaces a picture that is already drawn, so the page's own requests go first.
+    const res = await fetchFn(url, { signal: ctrl.signal, credentials: "omit", priority: "low", headers: { Accept: "model/gltf-binary, application/json" } });
     if (!res.ok) return none(false);
     const type = res.headers.get("content-type") ?? "";
     if (/json/i.test(type)) {
@@ -99,6 +130,7 @@ async function fetchModel(fetchFn: FetchLike, url: string, timeoutMs: number): P
     return none(false);
   } finally {
     clearTimeout(timer);
+    cancel.removeEventListener("abort", onCancel);
   }
 }
 

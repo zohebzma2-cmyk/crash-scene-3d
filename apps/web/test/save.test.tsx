@@ -71,6 +71,35 @@ describe("step 4: save", () => {
     expect(text()).toContain("Saved to your device: scene file.");
   });
 
+  it("a save that outlasts the tap window: the second-tap button is announced and focused, then focus comes back to Save", async () => {
+    const { services, build } = makeServices();
+    // A slow device: building the files takes longer than the browser lets a tap start a download.
+    let t = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => t);
+    build.mockImplementation(async () => { t += 5000; return bundle(); });
+    app = await renderApp(services, example);
+    await flush(900);
+    const clicks: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicks.push(this.download); });
+    const live = get("[data-testid=save-ready]");
+    expect(live.getAttribute("aria-live")).toBe("polite");
+    expect(live.textContent).toBe("");
+    click(get("button", /Save to my device/));
+    await flush();
+    expect(clicks).toEqual([]);
+    const again = get("button", /Download your files/);
+    expect(document.activeElement).toBe(again);
+    expect(live.textContent).toBe("Your files are ready. Press “Download your files” to save them.");
+    expect(live.className).toContain("hint");   // shown too, and it stays (a toast times out)
+    // Said once: the toast (also a live region) doesn't repeat it.
+    expect(document.querySelector(".toast")?.textContent ?? "").not.toMatch(/files are ready/i);
+    click(again);
+    await flush();
+    expect(clicks).toEqual(["crash-scene.json"]);
+    expect(live.textContent).toBe("");
+    expect(document.activeElement).toBe(get("button", /Save to my device/));
+  });
+
   it("marks the stamp stale when the scene changes after saving", async () => {
     const { services, build } = makeServices();
     build.mockResolvedValue(bundle());

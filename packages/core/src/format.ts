@@ -79,13 +79,30 @@ export function streetName(name: string | null | undefined): string | null {
 }
 
 /**
+ * The road a vehicle was on, for "… on <road>": its name ("Main Street"), else the description of an unnamed road
+ * from the roads at the pin ("the parking aisle (west one)"), else null. The direction list, the compass line, the
+ * summary and the PDF all say it this way.
+ */
+export function roadWords(t: { readonly roadName: string | null; readonly roadDesc?: string | null | undefined }): string | null {
+  return streetName(t.roadName) ?? streetName(t.roadDesc);
+}
+
+/** A direction choice's label: "northbound on Main Street", "northbound on the parking aisle (west one)", "northbound". */
+export function travelLabel(bound: ReturnType<typeof boundWord>, t: { readonly roadName: string | null; readonly roadDesc?: string | null | undefined }): string {
+  const road = roadWords(t);
+  return road ? `${bound} on ${road}` : bound;
+}
+
+/**
  * Road-relative direction caption, e.g. "Northbound on Main Street",
- * "Backing up, facing east on Park Street", "Parked, facing south".
+ * "Backing up, facing east on Park Street", "Parked, facing south",
+ * "Northbound on the parking aisle (west one)" (an unnamed road, told apart by its description).
  * Sentence case for the first word only; street names keep their case.
  */
 export function directionCaption(v: Pick<SceneVehicle, "action" | "travel">): string {
   const bound = boundWord(v.travel.bearingDeg);
-  const on = streetName(v.travel.roadName) ? ` on ${streetName(v.travel.roadName)}` : "";
+  const road = roadWords(v.travel);
+  const on = road ? ` on ${road}` : "";
   switch (v.action) {
     case "parked": return `Parked, facing ${FACING[bound]}${on}`;
     case "backing": return `Backing up, facing ${FACING[bound]}${on}`;

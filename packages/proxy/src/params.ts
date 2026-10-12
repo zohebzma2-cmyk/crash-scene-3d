@@ -1,5 +1,6 @@
 // Strict request validation. Anything not listed here is rejected (never forwarded).
 import { z } from "zod";
+import { VPIC_MAKE_TEXT } from "@csd/core";
 
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const text = (min: number, max: number) =>
@@ -65,7 +66,7 @@ export const noParams = z.strictObject({});
  * "Scuderia Cameron Glickenhaus (SCG)", "Hunter Design Group, LLC"); up to 60 characters, as the picker allows.
  */
 export const MAKE_MAX_CHARS = 60;
-export const VEHICLE_MAKE = /^[A-Za-z0-9][A-Za-z0-9 .&'/(),!-]{0,59}$/;
+export const VEHICLE_MAKE = VPIC_MAKE_TEXT;   // core's, so the browser checks a make with the same pattern before asking
 export const modelsParams = (currentYear: number) =>
   z.strictObject({
     make: text(1, MAKE_MAX_CHARS).refine((s) => VEHICLE_MAKE.test(s)),

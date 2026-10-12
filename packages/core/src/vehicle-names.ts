@@ -174,6 +174,12 @@ function matchOne(q: string, qWords: readonly string[], nameWords: readonly stri
   return null;
 }
 
+/** Does an alias send this name (normalized) to another, popular name in the list? The same rule as resolveName. */
+function redirected(key: string, aliases: Readonly<Record<string, string>>, popular: ReadonlyMap<string, number>, byKey: ReadonlyMap<string, string>): boolean {
+  const target = aliases[key];
+  return target !== undefined && target !== key && popular.has(target) && byKey.has(target);
+}
+
 /**
  * Names that match the typed text, best first: exact (including a full alias such as "chevy"), then names that
  * start with it, then a later word that starts with it, then alias prefixes, then names the text starts with,
@@ -197,6 +203,9 @@ export function rankNames(text: string, names: readonly string[], opts: RankOpti
     const key = idx.keys[i] as string;
     if (seen.has(name)) return;
     seen.add(name);
+    // A name that is itself an alias of a popular name in the list can't be picked (resolveName sends it there, as
+    // leaving the field does): vPIC's rare "HARLEY" row is Harley-Davidson. It isn't offered.
+    if (redirected(key, aliases, popular, idx.byKey)) return;
     const pop = popular.get(key) ?? Number.POSITIVE_INFINITY;
     if (!q) { out.push({ name, kind: "prefix", dist: 0, pop, len: name.length }); return; }
     let best: { kind: MatchKind; dist: number } | null = null;
@@ -242,6 +251,24 @@ export function resolveName(text: string, names: readonly string[], opts: Pick<R
   }
   return null;
 }
+
+/** Letters that NFKD doesn't take apart into a plain letter and an accent. */
+const PLAIN_LETTERS: Readonly<Record<string, string>> = { ø: "o", Ø: "O", æ: "ae", Æ: "AE", œ: "oe", Œ: "OE", ß: "ss", ł: "l", Ł: "L", đ: "d", Đ: "D", þ: "th", Þ: "Th" };
+
+/**
+ * A typed make (or model) with its accents taken off, for the /api vehicle lookups, whose patterns are plain ASCII:
+ * "Citroën" is "Citroen", "Škoda" is "Skoda". Everything else is kept as typed. The picker still shows what was typed.
+ */
+export function asciiName(s: string): string {
+  return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[øØæÆœŒßłŁđĐþÞ]/g, (c) => PLAIN_LETTERS[c] ?? c);
+}
+
+/**
+ * A make the proxy's vehicle routes take (packages/proxy params): as vPIC spells them, letters and digits first, then
+ * also spaces and . & ' / - ( ) , ! ("TH!NK", "Hunter Design Group, LLC"); up to 60 characters. Plain ASCII only, so
+ * a typed make goes through asciiName first.
+ */
+export const VPIC_MAKE_TEXT = /^[A-Za-z0-9][A-Za-z0-9 .&'/(),!-]{0,59}$/;
 
 /** The first model year vPIC has models for. */
 export const FIRST_VPIC_YEAR = 1981;

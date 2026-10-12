@@ -80,9 +80,9 @@ export function pickDirectionText(v: Pick<SceneVehicle, "id" | "action">): strin
 }
 
 /** What identifies the details the claimant has accepted warnings for. */
-/** Road ids are left out: filling one in after the roads load must not undo "See it anyway". */
+/** Road ids and unnamed roads' words are left out: filling them in after the roads load must not undo "See it anyway". */
 export const docKey = (doc: Pick<Doc, "scene" | "located">): string =>
-  `${doc.located ? "1" : "0"}${canonicalJson({ ...doc.scene, vehicles: doc.scene.vehicles.map((v) => ({ ...v, travel: { ...v.travel, roadId: null } })) })}`;
+  `${doc.located ? "1" : "0"}${canonicalJson({ ...doc.scene, vehicles: doc.scene.vehicles.map((v) => ({ ...v, travel: { ...v.travel, roadId: null, roadDesc: undefined } })) })}`;
 
 interface FlowValue {
   readonly step: StepKey;

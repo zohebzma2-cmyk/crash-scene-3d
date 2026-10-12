@@ -111,9 +111,9 @@ describe("scene store reducer", () => {
 
 describe("road-relative travel", () => {
   const choices = [
-    { roadId: "w1", roadName: "Main Street", bearingDeg: 342, bound: "northbound", label: "northbound on Main Street" },
-    { roadId: "w1", roadName: "Main Street", bearingDeg: 162, bound: "southbound", label: "southbound on Main Street" },
-    { roadId: "w2", roadName: "Park Street", bearingDeg: 252, bound: "westbound", label: "westbound on Park Street" },
+    { roadId: "w1", roadName: "Main Street", roadDesc: null, bearingDeg: 342, bound: "northbound", label: "northbound on Main Street" },
+    { roadId: "w1", roadName: "Main Street", roadDesc: null, bearingDeg: 162, bound: "southbound", label: "southbound on Main Street" },
+    { roadId: "w2", roadName: "Park Street", roadDesc: null, bearingDeg: 252, bound: "westbound", label: "westbound on Park Street" },
   ] as const;
   const v = (travel: Partial<Doc["scene"]["vehicles"][0]["travel"]>) => ({ ...initialDoc().scene.vehicles[0]!, travel: { bearingDeg: 0, roadId: null, roadName: null, lane: null, ...travel } });
 
@@ -134,6 +134,22 @@ describe("road-relative travel", () => {
     expect(wrongWay.travel.roadId).toBeNull();
   });
 
+  it("keeps an unnamed road's words current: refreshed after any pin move, cleared in the working scene when the road is gone", () => {
+    const aisles = [
+      { roadId: "a1", roadName: null, roadDesc: "the parking aisle (east one)", bearingDeg: 37, bound: "northbound" as const, label: "northbound on the parking aisle (east one)" },
+    ];
+    const stale = v({ roadId: "a1", roadDesc: "the parking aisle (west one)", bearingDeg: 37 });
+    expect(reconcileTravel(stale, aisles).travel.roadDesc).toBe("the parking aisle (east one)");
+    // A "move the pin" fix doesn't tidy road ids (reconcile off), but the words still follow the new pin.
+    expect(reconcileTravel(stale, aisles, false).travel.roadDesc).toBe("the parking aisle (east one)");
+    expect(reconcileTravel(stale, aisles, false).travel.roadId).toBe("a1");
+    // The road isn't at the pin any more: its pin-relative words go (working scene); an opened file is left alone.
+    const gone = v({ roadId: "a9", roadDesc: "the parking aisle (west one)", bearingDeg: 37 });
+    expect(reconcileTravel(gone, aisles).travel.roadDesc).toBeUndefined();
+    expect(reconcileTravel(gone, aisles, false)).toBe(gone);
+    expect(reconcileTravel(reconcileTravel(stale, aisles), aisles).travel).toEqual(reconcileTravel(stale, aisles).travel);
+  });
+
   it("starts with no direction picked, and a travel patch is what marks one as picked", () => {
     let d = initialDoc();
     expect(d.directionSet).toEqual([false, false]);
@@ -149,7 +165,7 @@ describe("road-relative travel", () => {
     const opened = docFromScene(tbone, "x");
     expect(opened.reconcile).toBe(false);
     expect(opened.directionSet).toEqual([true, true]);
-    const choicesMain = [{ roadId: "w1", roadName: "Main Street", bearingDeg: 342, bound: "northbound" as const, label: "northbound on Main Street" }];
+    const choicesMain = [{ roadId: "w1", roadName: "Main Street", roadDesc: null, bearingDeg: 342, bound: "northbound" as const, label: "northbound on Main Street" }];
     expect(reducer(opened, { type: "reconcile-travel", choices: choicesMain })).toBe(opened);
     // a file saved with no road name and bearing 90 reopens exactly as saved
     const odd = { ...tbone, vehicles: tbone.vehicles.map((x, i) => (i === 1 ? { ...x, travel: { bearingDeg: 90, roadId: null, roadName: null, lane: null } } : x)) };
