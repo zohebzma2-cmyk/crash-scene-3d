@@ -96,7 +96,7 @@ describe("vehicle picker: keyboard", () => {
     await settle(10);
     expect(model.value).toBe("Silverado 1500");
     expect(model.getAttribute("aria-expanded")).toBe("false");
-    expect(get("radio", /^Pickup/, card("B")).getAttribute("aria-checked")).toBe("true");
+    expect(card("B").querySelector(".type-auto strong")?.textContent).toBe("Pickup");   // filled in, no question asked
     expect(card("B").querySelector(".lookup")?.textContent).toContain("Pickup from NHTSA vPIC (Truck). Weight and size: pickup class average.");
     expect(stored()[1]).toMatchObject({ year: 2019, make: "Chevrolet", model: "Silverado 1500", type: "pickup", typeSource: "vpic" });
 
@@ -153,7 +153,7 @@ describe("vehicle picker: keyboard", () => {
     await settle();
     act(() => model.blur());
     expect(model.value).toBe("Jetta");
-    expect(get("radio", /^Car/, card("B")).getAttribute("aria-checked")).toBe("true");
+    expect(card("B").querySelector(".type-auto strong")?.textContent).toBe("Car");   // filled in, no question asked
   });
 });
 
@@ -248,7 +248,7 @@ describe("vehicle picker: details", () => {
     expect(rowNames(model)[0]).toBe("Silverado 1500");
     key(model, "Enter");
     expect(model.value).toBe("Silverado 1500");
-    expect(get("radio", /^Pickup/, card("B")).getAttribute("aria-checked")).toBe("true");
+    expect(card("B").querySelector(".type-auto strong")?.textContent).toBe("Pickup");   // filled in, no question asked
     await typeLikeAPerson(field("B", "make"), "harley");
     expect(rowNames(field("B", "make"))[0]).toBe("Harley-Davidson");
   });
@@ -287,7 +287,7 @@ describe("vehicle picker: requests", () => {
     key(field("B", "model"), "Enter");
     await settle();
     expect(field("B", "model").value).toBe("Silverado");
-    expect(get("radio", /^Pickup/, card("B")).getAttribute("aria-checked")).toBe("true");
+    expect(card("B").querySelector(".type-auto strong")?.textContent).toBe("Pickup");   // filled in, no question asked
     const mine = urls.slice(claimCalls);
     expect(mine).toEqual([`${PROXY_ROUTES.models}?make=Chevrolet&year=2019`]);
     // Vehicle C, the same make and year: no new request (the session cache).

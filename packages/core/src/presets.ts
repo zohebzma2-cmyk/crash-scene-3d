@@ -43,12 +43,25 @@ export const PRESETS: Readonly<Record<VehicleType, Preset>> = Object.freeze({
     length: { value: 9.2, unit: "m", source: AASHTO_SU, verified: false }, width: { value: 2.4, unit: "m", source: AASHTO_SU, verified: false } },
 });
 
+/**
+ * Vans by model name. vPIC's model lists (GetModelsForMakeYear) give only VehicleTypeName, not BodyClass (that
+ * needs a VIN: DecodeVin), so an MPV or Truck is split by this curated table: these are vans, other MPVs are SUVs.
+ */
+export const VAN_MODELS = /\b(odyssey|sienna|transit|pacifica|carnival|sedona|(grand )?caravan|express|savana|sprinter|promaster|metris|quest|town (&|and) country|routan|previa|nv ?200|nv (cargo|passenger)|e-?series|econoline|van)\b/i;
+/** Pickups by model name: a vPIC Truck with one of these names is a pickup; any other Truck (box, chassis cab) is a truck. */
+export const PICKUP_MODELS = /\b(f-?(150|250|350)|silverado|sierra|(ram )?[123]500|tacoma|tundra|ranger|colorado|canyon|frontier|titan|ridgeline|maverick|gladiator|santa cruz|cybertruck|r1t|dakota|s-?10|sonoma|avalanche|t100|lightning|pickup)\b/i;
+
 /** Map a vPIC VehicleTypeName (and model name) to our class; null = ask the claimant. */
 export function typeFromVpic(vehicleTypeName: string, modelName = ""): VehicleType | null {
   const n = vehicleTypeName.toLowerCase();
   if (n.includes("motorcycle")) return "motorcycle";
   if (n.includes("passenger car")) return "car";
-  if (n.includes("multipurpose")) return /van|odyssey|sienna|pacifica|carnival|sedona|quest|caravan|transit|sprinter|promaster|express|savana|metris/i.test(modelName) ? "van" : "suv";
-  if (n.includes("truck")) return /transit|sprinter|promaster|express|savana/i.test(modelName) ? "van" : /\b(f-?[4-9]\d0|[4-6]500(?:hd|xd)?|box|cutaway|chassis)\b/i.test(modelName) ? "truck" : "pickup";
+  if (n.includes("multipurpose")) return VAN_MODELS.test(modelName) ? "van" : "suv";
+  if (n.includes("truck")) {
+    // Heavy-duty chassis numbers ("4500HD", "5500XD") are trucks even though "[123]500" pickups match nearby.
+    if (/\b[4-6]500(hd|xd)?\b/i.test(modelName)) return "truck";
+    if (PICKUP_MODELS.test(modelName)) return "pickup";
+    return VAN_MODELS.test(modelName) ? "van" : "truck";
+  }
   return null;
 }

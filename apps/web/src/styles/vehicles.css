@@ -36,6 +36,9 @@
 .lookup .icon { color: var(--color-success-text); }
 .lookup.is-warn { color: var(--color-warning-text); }
 .lookup.is-warn .icon { color: var(--color-warning-text); }
+/* The type vPIC picked: shown as a line with an override button, never as a required question. */
+.type-auto { font-size: var(--text-sm); color: var(--color-text-secondary); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.type-auto strong { color: var(--color-text); }
 .add-vehicle { align-self: flex-start; }
 
 .direction { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; }
