@@ -2,11 +2,14 @@
 // The lead can swap any piece here; nothing else in the app imports @csd/mapdata or @csd/exports.
 import { checkScene, placeVehicles, poseAt, simulate, streetsAtPin, suggestFixes, toLatLon, toLocal } from "@csd/core";
 import { mergeSearchResults, parseOverpass, splitCrossingQuery } from "@csd/mapdata";
-import type { CanvasFactory } from "@csd/exports";
-import type { ExportRequest } from "@csd/core";
+import type { buildExports as BuildExports } from "@csd/exports";
 
-/** pdf-lib and the exports are a lazy chunk: only a save needs them (the save step starts it early). */
-const buildExports = (req: ExportRequest, canvas: CanvasFactory) => import("@csd/exports").then((m) => m.buildExports(req, canvas));
+/**
+ * pdf-lib and the exports are a lazy chunk: only a save needs them (the save step starts it early). Every argument
+ * is passed on (typed as the real function, so none can be dropped): the third is the stock photo provider, and
+ * leaving it out once made every saved PDF and still lose its photos (2026-10-11).
+ */
+const buildExports: typeof BuildExports = (...args) => import("@csd/exports").then((m) => m.buildExports(...args));
 import { createBrowserCanvasFactory, loadBrandFonts } from "../exports/browser-canvas";
 import { createExportsService } from "./exports";
 import {

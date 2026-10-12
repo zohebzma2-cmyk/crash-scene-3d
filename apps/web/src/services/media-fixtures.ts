@@ -43,13 +43,14 @@ export function createFixtureMediaFetch(mode: FixtureMediaMode, load: (name: str
       ? new Response(JSON.stringify({ fallback: true, reason: "no-model" }), { status: 200, headers: { "content-type": "application/json", [MEDIA_HEADERS.fallback]: "no-model" } })
       : new Response(null, { status: 204, headers: { [MEDIA_HEADERS.fallback]: "no-image", [MEDIA_HEADERS.image]: "none" } });
     if (mode === "off") return fallback();
-    const name = path === PROXY_ROUTES.vehicleModel ? "car.glb" : path === PROXY_ROUTES.makeLogo ? "logo.png" : "car.png";
+    // Photos come as WebP, as production's do (CarImages' free plan is WebP only), so the browser's WebP-to-PNG step runs.
+    const name = path === PROXY_ROUTES.vehicleModel ? "car.glb" : path === PROXY_ROUTES.makeLogo ? "logo.png" : "car.webp";
     const bytes = await load(name);
     if (!bytes) return fallback();
     const headers: Record<string, string> =
       path === PROXY_ROUTES.vehicleModel ? { "content-type": "model/gltf-binary", [MEDIA_HEADERS.watermarked]: "false" }
       : path === PROXY_ROUTES.makeLogo ? { "content-type": "image/png", [MEDIA_HEADERS.logoSource]: "carimages" }
-      : { "content-type": "image/png", [MEDIA_HEADERS.image]: "exact", [MEDIA_HEADERS.view]: "front34" };
+      : { "content-type": "image/webp", [MEDIA_HEADERS.image]: "exact", [MEDIA_HEADERS.view]: "front34" };
     return new Response(bytes as BodyInit, { status: 200, headers });
   };
 }

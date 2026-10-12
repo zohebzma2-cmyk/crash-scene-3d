@@ -119,7 +119,10 @@ describe("media client fallbacks", () => {
     expect(fixtureMediaMode("?fixtures=1")).toBe("off");
     const load = async (name: string) => fixture(name);
     const on = createMediaService(createFixtureMediaFetch("on", load));
-    expect((await on.probe(vehicleImageUrl(F150)!))?.bytes).toEqual(CAR_PNG);
+    // Photos come as WebP, like production's (the browser converts them to PNG for the PDF and the stills).
+    const photo = await on.probe(vehicleImageUrl(F150)!);
+    expect(photo?.contentType).toBe("image/webp");
+    expect(photo?.bytes).toEqual(fixture("car.webp"));
     expect((await on.probe(vehicleModelUrl(F150)!))?.contentType).toBe("model/gltf-binary");
     const busy = createFixtureMediaFetch("busy", load);
     expect((await busy(vehicleImageUrl(F150)!)).status).toBe(429);
