@@ -85,3 +85,12 @@
 - **Catalog GLBs:** `/api/vehicles/model` (roundB/images' route; `MODEL_ROUTE` in `apps/web/src/services/vehicle-models.ts` until it moves to `PROXY_ROUTES`), swapped in over our model when loaded, fitted to the footprint, tinted (named material / largest material / shader recolour of a paint baked in the texture / none for a dark paint), freed on change and unmount. Fixtures: `apps/web/fixtures/models/*.glb` from `node scripts/make-fixture-glb.mjs`.
 - **Checks:** typecheck, lint, 1,660 unit tests, design tokens; e2e `colors`, `csp-steps`, `download` green on all four projects; `viewer-clear` green except the phone "Wide @ End: B Stopped label over B" flake, which also fails on b7edec1 (5 of 60 runs there).
 - **Open for the owner:** dents are not drawn on catalog models; watermarked previews appear in the 3D stills; a dark catalog paint can't be retinted; README "Next version" round B line still says not started (update when the round B branches meet).
+
+## fix/vehicles-step (2026-10-11, from live 71a69bf; not merged or deployed)
+- **Late makes list:** a nickname typed while "Loading the makes…" is ranked again when the list lands; a make or model already left is resolved then (claim's own A make/model never renamed).
+- **Catalog GLBs:** asked for on Review only; leaving Review cancels downloads still running (the service now aborts once every caller has given up) and they go at low priority. `?models=proxy` (fixture builds) puts them on the network for e2e.
+- **Direction list:** unnamed roads are told apart by kind and place ("Northbound on the parking aisle (west one)"); `TravelChoice.roadDesc` and an optional `travel.roadDesc` (additive, fingerprints unchanged); core `roadWords`/`directionCaption` is the one formatter (list, caption, summary, PDF, fixes).
+- **Phones:** colours are one sideways-scrolling row under 480 px (fades, picked swatch in view, arrow keys); type/action tiles put the icon beside the label from 380 to 479 px. T-bone Vehicles step at 390: 5217 -> 4465 px.
+- **Picker leftovers:** alias-shadowed makes (vPIC "Harley") not listed; accents dropped before lookups (`asciiName`, `VPIC_MAKE_TEXT` shared with the proxy); "No matches. Press Enter to use what you typed."
+- **Save second tap:** "Download your files" is focused and announced.
+- **Not done here:** design/ (prototype, canvas) not updated for the phone layout (locked; owner's call).
