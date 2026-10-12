@@ -149,6 +149,18 @@ describe("streetsAtPin: unnamed roads are told apart (vehicles step fixes, 2026-
     expect(four.directions.find((d) => d.roadId === "e")!.roadDesc).toBe("the parking aisle (second nearest the pin)");
   });
 
+  it("one diagonal unnamed road stored as two pieces split near the pin is one road, wherever the pin is", () => {
+    const at = (s: number) => ({ x: s * Math.sin(Math.PI / 9), y: s * Math.cos(Math.PI / 9) });   // 20° east of north
+    const piece = (id: string, s0: number, s1: number): RoadWay => ({
+      id, name: null, ref: null, kind: "service", oneway: false, lanesForward: 1, lanesBackward: 1, laneWidthM: 3,
+      centerline: [at(s0), at(s1)], speedLimitMph: null, osmWayIds: [],
+    });
+    const net = { ...parkingLotNet(), ways: [piece("s1", -100, 15), piece("s2", 15, 100)] };
+    for (const pin of [{ x: 3, y: 0 }, { x: 0, y: 0 }, { x: -2, y: 10 }]) {
+      expect(labels(streetsAtPin(net, pin))).toEqual(["northbound on the unnamed service road", "southbound on the unnamed service road"]);
+    }
+  });
+
   it("the caption, the summary and the PDF say the same words (directionCaption is the one formatter)", () => {
     const travel = { bearingDeg: 37, roadId: "w1", roadName: null, roadDesc: "the parking aisle (west one)", lane: null };
     expect(directionCaption({ action: "straight", travel })).toBe("Northbound on the parking aisle (west one)");

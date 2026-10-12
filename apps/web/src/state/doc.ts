@@ -112,15 +112,17 @@ export function selectedChoice(travel: SceneVehicle["travel"], choices: readonly
  * After the roads change, fill in a missing road id for a road the claimant already picked
  * (same name, same direction). Never changes a bearing, never changes or clears a road name.
  */
-export function reconcileTravel(v: SceneVehicle, choices: readonly TravelChoice[]): SceneVehicle {
+export function reconcileTravel(v: SceneVehicle, choices: readonly TravelChoice[], tidy = true): SceneVehicle {
   const t = v.travel;
   if (t.roadId != null && t.roadName == null) {
-    // An unnamed road's description follows the roads at the pin ("(west one)" may change when the pin moves).
+    // An unnamed road's description follows the roads at the pin ("(west one)" may change when the pin moves, by hand or
+    // by a "move the pin" fix). It is words only (never drawn), so it is kept current even where road ids aren't tidied.
     const same = choices.find((c) => c.roadId === t.roadId && c.roadName == null && angleDiffDeg(c.bearingDeg, t.bearingDeg) <= 25);
-    const desc = same?.roadDesc ?? undefined;
-    return same && desc !== t.roadDesc ? { ...v, travel: { ...t, roadDesc: desc } } : v;
+    // A road no longer at the pin: its pin-relative words no longer hold (the claimant's working scene only).
+    const desc = same ? same.roadDesc ?? undefined : tidy ? undefined : t.roadDesc;
+    return desc !== t.roadDesc ? { ...v, travel: { ...t, roadDesc: desc } } : v;
   }
-  if (t.roadId != null || t.roadName == null) return v;
+  if (!tidy || t.roadId != null || t.roadName == null) return v;
   const match = choices.find((c) => c.roadName === t.roadName && angleDiffDeg(c.bearingDeg, t.bearingDeg) <= 25);
   return match ? { ...v, travel: { ...t, roadId: match.roadId } } : v;
 }
@@ -175,10 +177,10 @@ export function reducer(doc: Doc, a: Action): Doc {
       return { ...doc, scene: { ...s, vehicles }, vehicleKeys: doc.vehicleKeys.filter((_, i) => i !== at), directionSet: doc.directionSet.filter((_, i) => i !== at) };
     }
     case "reconcile-travel": {
-      if (!doc.reconcile) return doc;
+      // Road ids are tidied only in the claimant's working scene; an unnamed road's words are kept current everywhere.
       let changed = false;
       const vehicles = s.vehicles.map((v) => {
-        const n = doc.directionSet[s.vehicles.indexOf(v)] ? reconcileTravel(v, a.choices) : v;
+        const n = doc.directionSet[s.vehicles.indexOf(v)] ? reconcileTravel(v, a.choices, doc.reconcile) : v;
         if (n !== v) changed = true;
         return n;
       });

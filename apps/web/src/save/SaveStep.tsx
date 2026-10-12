@@ -95,7 +95,8 @@ export function SaveStep() {
       // ask for one more tap instead of failing silently.
       if (performance.now() - started > ACTIVATION_WINDOW_MS) {
         setReady({ item, sceneKey });
-        showToast([`Your files are ready. Tap "Download your files" to save ${what}.`, ...more].join(" "));
+        // The line by the button says so (and stays, where a toast would time out); the toast only carries the notes.
+        if (more.length) showToast(more.join(" "));
         return;
       }
       downloadFile(item);
@@ -226,8 +227,9 @@ export function SaveStep() {
               <button ref={primaryRef} type="button" className="btn btn-primary" aria-busy={saving || undefined} disabled={!outcome?.ok} onClick={() => void save()}><Icon name="download" className="icon-sm" />Save to my device</button>
             )}
           </div>
-          {/* Always in the page (a region added with its text is often not read): says so when the second tap is needed. */}
-          <p className="visually-hidden" aria-live="polite" data-testid="save-ready">{secondTap ? SECOND_TAP_TEXT : ""}</p>
+          {/* Always in the page (a region added with its text is often not read): shown and read out when the second tap is
+              needed, and it stays until then (a toast would time out). The one place that says it, so it is read once. */}
+          <p className={secondTap ? "hint save-ready" : "visually-hidden"} aria-live="polite" data-testid="save-ready">{secondTap ? SECOND_TAP_TEXT : ""}</p>
         </div>
       </div>
     </section>

@@ -134,6 +134,22 @@ describe("road-relative travel", () => {
     expect(wrongWay.travel.roadId).toBeNull();
   });
 
+  it("keeps an unnamed road's words current: refreshed after any pin move, cleared in the working scene when the road is gone", () => {
+    const aisles = [
+      { roadId: "a1", roadName: null, roadDesc: "the parking aisle (east one)", bearingDeg: 37, bound: "northbound" as const, label: "northbound on the parking aisle (east one)" },
+    ];
+    const stale = v({ roadId: "a1", roadDesc: "the parking aisle (west one)", bearingDeg: 37 });
+    expect(reconcileTravel(stale, aisles).travel.roadDesc).toBe("the parking aisle (east one)");
+    // A "move the pin" fix doesn't tidy road ids (reconcile off), but the words still follow the new pin.
+    expect(reconcileTravel(stale, aisles, false).travel.roadDesc).toBe("the parking aisle (east one)");
+    expect(reconcileTravel(stale, aisles, false).travel.roadId).toBe("a1");
+    // The road isn't at the pin any more: its pin-relative words go (working scene); an opened file is left alone.
+    const gone = v({ roadId: "a9", roadDesc: "the parking aisle (west one)", bearingDeg: 37 });
+    expect(reconcileTravel(gone, aisles).travel.roadDesc).toBeUndefined();
+    expect(reconcileTravel(gone, aisles, false)).toBe(gone);
+    expect(reconcileTravel(reconcileTravel(stale, aisles), aisles).travel).toEqual(reconcileTravel(stale, aisles).travel);
+  });
+
   it("starts with no direction picked, and a travel patch is what marks one as picked", () => {
     let d = initialDoc();
     expect(d.directionSet).toEqual([false, false]);

@@ -90,6 +90,9 @@ describe("step 4: save", () => {
     const again = get("button", /Download your files/);
     expect(document.activeElement).toBe(again);
     expect(live.textContent).toBe("Your files are ready. Press “Download your files” to save them.");
+    expect(live.className).toContain("hint");   // shown too, and it stays (a toast times out)
+    // Said once: the toast (also a live region) doesn't repeat it.
+    expect(document.querySelector(".toast")?.textContent ?? "").not.toMatch(/files are ready/i);
     click(again);
     await flush();
     expect(clicks).toEqual(["crash-scene.json"]);

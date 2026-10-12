@@ -8,7 +8,7 @@ import { createFixtureVehicles } from "../src/services/fixtures";
 import { vehicleModelUrl } from "../src/services/media";
 import { createVehiclesService } from "../src/services/vehicles";
 import type { VehiclesService } from "../src/services/types";
-import { initialDoc, reducer, type Doc } from "../src/state/doc";
+import { docFromScene, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { key, renderApp, setValue } from "./helpers";
 import { makeServices, tbone } from "./fakes";
 
@@ -127,6 +127,23 @@ describe("a typed nickname and a late makes list", () => {
     await settle();
     await late.land();
     expect(field("A", "make").value).toBe("chevy");
+    expect(field("B", "make").value).toBe("Chevrolet");
+  });
+});
+
+describe("an opened file is drawn as it was saved", () => {
+  it("a 'chevy' in an opened file isn't renamed when the list lands, only once the claimant types in it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const late = lateMakes();
+    const { services } = makeServices({ vehicles: late.vehicles });
+    const opened = docFromScene({ ...tbone, vehicles: tbone.vehicles.map((v) => (v.id === "B" ? { ...v, make: "chevy", model: "" } : v)) }, tbone.location.label);
+    app = await renderApp(services, { hash: "#vehicles", storage: opened });
+    await settle();
+    await late.land();
+    expect(field("B", "make").value).toBe("chevy");
+    await typeLikeAPerson(field("B", "make"), "chevy");
+    act(() => field("B", "make").blur());
+    await settle(200);
     expect(field("B", "make").value).toBe("Chevrolet");
   });
 });

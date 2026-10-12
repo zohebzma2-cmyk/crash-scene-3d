@@ -394,8 +394,16 @@ function unnamedDescriptions(ways: readonly NearWay[], pin: Vec2): Map<string, s
     const kind = unnamedKind(w.way.kind);
     const key = `${kind}|${ns ? "ns" : "ew"}`;
     const list = buckets.get(key) ?? [];
-    // West to east for a north–south road, south to north for an east–west one.
-    list.push({ id: w.way.id, offset: ns ? pr.point.x - pin.x : pr.point.y - pin.y, dist: pr.dist });
+    // How far the road's line sits from the pin, sideways: measured to the line of the piece's nearest segment (not
+    // its nearest point), so two pieces of one straight road split at a junction have the same offset wherever that
+    // junction is. Signed west to east for a north–south road, south to north for an east–west one.
+    let i = 0;
+    while (i < poly.pts.length - 2 && poly.cum[i + 1]! < pr.s - 1e-9) i++;
+    const a = poly.pts[i]!;
+    const u = unit(sub(poly.pts[i + 1]!, a));
+    let n = { x: u.y, y: -u.x };
+    if ((ns && n.x < 0) || (!ns && n.y < 0)) n = { x: -n.x, y: -n.y };
+    list.push({ id: w.way.id, offset: dot(sub(a, pin), n), dist: pr.dist });
     buckets.set(key, list);
   }
   for (const [key, list] of buckets) {
