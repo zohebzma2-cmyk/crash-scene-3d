@@ -20,9 +20,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.DEMO_PORT ?? 4521);
 const BASE = `http://localhost:${PORT}`;
 const FFMPEG = process.env.FFMPEG ?? "ffmpeg";
-const FPS = Number(process.env.DEMO_FPS ?? 11);
+// The full flow is longer than record-demo.mjs's T-bone walk, so its GIF is sped up more and uses fewer colours to
+// stay under 2.5 MB; the MP4 keeps record-demo.mjs's 1.35x.
+const FPS = Number(process.env.DEMO_FPS ?? 9);
 const WIDTH = Number(process.env.DEMO_WIDTH ?? 960);
-const SPEED = Number(process.env.DEMO_SPEED ?? 1.35);
+const SPEED = Number(process.env.DEMO_SPEED ?? 1.35);          // MP4
+const GIF_SPEED = Number(process.env.DEMO_GIF_SPEED ?? 1.75);  // GIF (about 38 s from a 66 s recording)
+const GIF_COLORS = Number(process.env.DEMO_GIF_COLORS ?? 48);
 const stillsArg = process.argv.find((a) => a.startsWith("--stills="));
 const STILLS = stillsArg ? stillsArg.split("=")[1] : null;   // "desktop" | "phone" | null (video)
 const MEDIA = resolve(root, "docs/media");
@@ -223,15 +227,15 @@ try {
     const webm = await video.path();
     renameSync(webm, join(work, "demo.webm"));
     mkdirSync(MEDIA, { recursive: true });
-    const vf = `setpts=PTS/${SPEED},fps=${FPS},scale=${WIDTH}:-1:flags=lanczos`;
+    const vf = `setpts=PTS/${GIF_SPEED},fps=${FPS},scale=${WIDTH}:-1:flags=lanczos`;
     const ss = ["-ss", tStart.toFixed(2)];
     const src = ["-i", join(work, "demo.webm")];
     const mp4 = join(MEDIA, "demo-flow.mp4");
     execFileSync(FFMPEG, ["-y", ...ss, ...src, "-vf", `setpts=PTS/${SPEED},scale=1280:-2`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "30", "-preset", "slow", "-movflags", "+faststart", "-an", mp4], { stdio: "ignore" });
     const gif = join(MEDIA, "demo-flow.gif");
     const palette = join(work, "palette.png");
-    execFileSync(FFMPEG, ["-y", ...ss, ...src, "-vf", `${vf},palettegen=max_colors=128:stats_mode=diff`, palette], { stdio: "ignore" });
-    execFileSync(FFMPEG, ["-y", ...ss, ...src, "-i", palette, "-lavfi", `${vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, "-loop", "0", gif], { stdio: "ignore" });
+    execFileSync(FFMPEG, ["-y", ...ss, ...src, "-vf", `${vf},palettegen=max_colors=${GIF_COLORS}:stats_mode=diff`, palette], { stdio: "ignore" });
+    execFileSync(FFMPEG, ["-y", ...ss, ...src, "-i", palette, "-lavfi", `${vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`, "-loop", "0", gif], { stdio: "ignore" });
     for (const f of [mp4, gif]) console.log(`wrote ${f} (${(statSync(f).size / 1e6).toFixed(2)} MB)`);
   } else {
     for (const f of readdirSync(STEPS_DIR).filter((f) => f.startsWith(STILLS))) console.log(`${f} ${(statSync(join(STEPS_DIR, f)).size / 1e3).toFixed(0)} KB`);
