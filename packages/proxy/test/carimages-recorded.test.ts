@@ -215,3 +215,41 @@ describe("CarImages as documented: the 3D model chain", () => {
     expect(t.logs.some((l) => l.includes("/model -> 200 with fallback: true"))).toBe(true);
   });
 });
+
+describe("review fixes: only the documented REST asset links are fetched keyed", () => {
+  it("N2: a catalog picture link to another REST path is refused: never fetched, no token spent, 'no-image'", async () => {
+    const t = setup(provider({
+      [`${API}/makes/chevrolet/models/silverado`]: keyed(() => jsonText(JSON.stringify({
+        generations: [{ slug: "gmt-t1xx-2019-2024", year_start: 2019, year_end: 2024, images: { webp: `${API}/account/keys?redirect=1` } }],
+      }))),
+    }));
+    const r = await t.get(image(SILVERADO));
+    expect(r.status).toBe(204);
+    expect(r.headers.get(MEDIA_HEADERS.fallback)).toBe("no-image");
+    expect(t.calls.some((c) => c.url.includes("/account/"))).toBe(false);
+    expect(t.tokenKeys.filter((k) => k === "quota:carimages")).toHaveLength(3); // makes, models, generations only
+    expect(t.logs.some((l) => l.includes("refused a catalog link into the REST API") && l.includes("/api/v1/account/keys?redirect"))).toBe(true);
+  });
+
+  it("N2: a model URL of /api/v1/makes?redirect=1 is refused the same way ('no-model')", async () => {
+    const t = setup(provider({ [`${GEN}/model`]: keyed(() => jsonText(JSON.stringify({ url: `${API}/makes?redirect=1`, watermarked: true, fallback: false }))) }));
+    const r = await t.get(model(SILVERADO));
+    expect(await r.json()).toEqual({ fallback: true, reason: "no-model" });
+    expect(t.calls.filter((c) => c.url.startsWith(`${API}/makes?`))).toHaveLength(0);
+    expect(t.tokenKeys.filter((k) => k === "quota:carimages")).toHaveLength(4); // makes, models, generations, model info
+  });
+
+  it("N2: the documented motorcycle thumbnail link is a keyed link", async () => {
+    const t = setup(provider({
+      [`${API}/libraries`]: keyed(() => jsonText(JSON.stringify({ your_access: { plan: "pro_combined", car: true, moto: true } }))),
+      [`${API}/motos/makes`]: keyed(() => jsonText(JSON.stringify({ data: [{ slug: "ducati", name: "Ducati" }] }))),
+      [`${API}/motos/makes/ducati/models`]: keyed(() => jsonText(JSON.stringify({ data: [{ slug: "ducati_panigale_v4", name: "Panigale V4", thumbnail: `${API}/motos/ducati/ducati_panigale_v4/2024/image?redirect=1&size=400&format=webp` }] }))),
+      [`${API}/motos/ducati/ducati_panigale_v4/2024/image`]: keyed(() => redirect(`${CDN}/m/ducati/panigale-v4.webp?expires=1&sig=2`)),
+      [`${CDN}/m/ducati/panigale-v4.webp`]: () => file(WEBP_SIDE, "image/webp"),
+    }));
+    const r = await t.get(image({ make: "Ducati", model: "Panigale V4", year: "2024", type: "moto" }));
+    expect(r.status).toBe(200);
+    expect(t.calls.find((c) => c.url.includes("/motos/ducati/ducati_panigale_v4/2024/image"))!.headers.get("x-api-secret")).toBe(SECRET);
+    expect(hasCredential(t.calls.find((c) => c.url.startsWith(`${CDN}/m/`))!)).toBe(false);
+  });
+});

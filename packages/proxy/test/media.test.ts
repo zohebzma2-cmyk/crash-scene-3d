@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MEDIA_HEADERS, PROXY_ROUTES, type ProviderConfig } from "@csd/core";
 import { createProxy, defaultProviderConfig, isGlb, memoryStore, type KvStore, type SecretName } from "../src";
 import { START, settle } from "./helpers";
+import { endpointForLog } from "../src/media";
 
 beforeEach(() => { vi.useFakeTimers({ now: START }); });
 afterEach(() => { vi.useRealTimers(); });
@@ -710,5 +711,33 @@ describe("quota answers say which cap refused them", () => {
     expect(t.logs).toContain("proxy: carimages quota -> refused by the provider's own 429 (cooldown started); answering the fallback");
     expect(t.logs).toContain("proxy: carimages quota -> refused by the cooldown after the provider's 429 (15 min); answering the fallback");
     expect(t.logs.filter((l) => l.includes("quota ->"))).toHaveLength(2); // once per distinct line
+  });
+});
+
+describe("review fixes: diagnostics", () => {
+  it("B1: a chunk ending exactly on the 1,024-byte read with more after it still drops the cut-off last word", async () => {
+    const canary = ["CANARY", "SECRET", "unprefixed", String(START).slice(-5)].join("");
+    // 21 long words + one more and a space: the secret starts right after a space at byte 1,013.
+    const head = `${`${"w".repeat(45)} `.repeat(21)}${"w".repeat(46)} `;
+    expect(head.length).toBe(1013);
+    const full = new TextEncoder().encode(`${head}${canary} and more text after it`);
+    const first = full.subarray(0, 1024); // ends 11 characters into the secret
+    const rest = full.subarray(1024);
+    const stream = () => new ReadableStream<Uint8Array>({ start(c) { c.enqueue(first); c.enqueue(rest); c.close(); } });
+    const t = setup(catalog({ [`${CI}/makes`]: () => new Response(stream(), { status: 500 }) }), { secrets: { ...SECRETS, CARIMAGES_API_SECRET: canary } });
+    await t.get(image(F150));
+    expect(t.logs.some((l) => l.includes("/api/v1/makes -> 500"))).toBe(true);
+    for (const l of t.logs) {
+      expect(l).not.toContain("CANARY");
+      expect(l).not.toContain(canary.slice(0, 4));
+    }
+  });
+
+  it("N4: query parameter names that could carry a credential are not logged", () => {
+    const enc = encodeURIComponent(`api_key=${KEY}`);
+    const line = endpointForLog(`${CDN}/v/x.webp?${enc}=1&format=webp&averyveryverylongname=2&${SECRET.slice(0, 8)}=3`, [KEY, SECRET]);
+    expect(line).toBe(`${CDN}/v/x.webp?<redacted>,format`);
+    expect(line).not.toContain(KEY.slice(0, 6));
+    expect(line).not.toContain(SECRET.slice(0, 6));
   });
 });

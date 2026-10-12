@@ -273,7 +273,10 @@ export function endpointForLog(raw: string, secrets: readonly string[]): string 
   let u: URL;
   try { u = new URL(raw); } catch { return "<unreadable URL>"; }
   const path = u.pathname.split("/").map((seg) => (seg.length >= 32 ? "<redacted>" : seg)).join("/");
-  const names = [...new Set(u.searchParams.keys())].map((k) => k.replace(/[^\w-]/g, "").slice(0, 24)).filter(Boolean);
+  // A name is kept only when it looks like a parameter name (16 letters, digits, "_" or "-" at most) and isn't part of
+  // a secret: anything else ("api_key=ci_…" sent percent-encoded as a name) could carry a credential.
+  const plainName = (k: string) => /^[A-Za-z0-9_-]{1,16}$/.test(k) && !secrets.some((x) => k.length >= 4 && x.toLowerCase().includes(k.toLowerCase()));
+  const names = [...new Set([...new Set(u.searchParams.keys())].map((k) => (plainName(k) ? k : "<redacted>")))];
   return redactForLog(`${u.protocol}//${u.host}${path}${names.length ? `?${names.join(",")}` : ""}`, secrets, false);
 }
 
@@ -394,10 +397,22 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
    * that way ("https://carimagesapi.com/api/v1/vehicles/bmw/3-series/g20/image?redirect=1&format=png"), and that
    * endpoint wants the key and secret like every REST call (unkeyed it answers 401); it then 302s to the CDN.
    */
-  const keyedLink = (url: string): URL | null => {
+  const SLUG = "[a-z0-9][a-z0-9._-]{0,80}";
+  /**
+   * The documented REST asset links, and only those: a car generation's picture or 3D model
+   * (/api/v1/vehicles/{make}/{model}/{gen}/image|model) and a motorcycle generation's picture
+   * (/api/v1/motos/{make}/{model}/{gen}/image, the models list's `thumbnail`).
+   */
+  const KEYED_ASSET = new RegExp(`^${escapeRe(apiBase.pathname)}/(?:vehicles/${SLUG}/${SLUG}/${SLUG}/(?:image|model)|motos/${SLUG}/${SLUG}/${SLUG}/image)$`, "i");
+  /** Any link into the REST API (keyed shape or not). */
+  const apiLink = (url: string): URL | null => {
     let u: URL;
     try { u = new URL(url); } catch { return null; }
-    return u.origin === apiBase.origin && u.pathname.startsWith(`${apiBase.pathname}/`) ? u : null;
+    return u.origin === apiBase.origin && (u.pathname === apiBase.pathname || u.pathname.startsWith(`${apiBase.pathname}/`)) ? u : null;
+  };
+  const keyedLink = (url: string): URL | null => {
+    const u = apiLink(url);
+    return u && KEYED_ASSET.test(u.pathname) ? u : null;
   };
 
   /**
@@ -411,6 +426,11 @@ export function createMediaRoutes(config: ProviderConfig, deps: ProxyDeps, badRe
     keys?: { key: string; secret: string },
   ): Promise<Entry> {
     const keyed = service === "carimages" ? keyedLink(url) : null;
+    if (service === "carimages" && !keyed && apiLink(url)) {
+      // Into the REST API but not a documented picture or model link: never fetched, keyed or not, and no token spent.
+      logOnce(`proxy: carimages refused a catalog link into the REST API that is not a picture or model: ${endpointForLog(url, knownSecrets())}`);
+      return Promise.reject(new NoMatch("no-image"));
+    }
     if (keyed && !keys) return Promise.reject(new NoMatch("not-configured"));
     if (keyed && !keyed.searchParams.has("redirect")) keyed.searchParams.set("redirect", "1");
     const call: UpstreamCall = keyed && keys

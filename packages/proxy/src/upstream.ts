@@ -197,7 +197,9 @@ async function bodyStart(res: Response, max: number): Promise<{ body: string; tr
     at += part.byteLength;
     if (at >= all.byteLength) break;
   }
-  return { body: new TextDecoder().decode(all), truncated: n > max };
+  // Reading stopped at the limit: more may have followed even when a chunk ended exactly on it, so the last word may
+  // be cut short (a body of exactly `max` bytes loses its last word to this; that is the safe side).
+  return { body: new TextDecoder().decode(all), truncated: n >= max };
 }
 
 /** Tell the call's onError hook, never letting the hook break the request. */
