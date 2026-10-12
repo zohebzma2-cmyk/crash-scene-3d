@@ -25,13 +25,16 @@
   - Fixer v2: wider fixes in a Web Worker, a regression corpus, and a "remembered fixes" memory that stays on the device.
 - **Secrets set on Netlify (values never read):** `PROXY_USER_SALT`, plus two logo.dev keys for round B, which isn't built.
 - **`./check.sh` on the final commit:**
-  - 1,583 unit and property tests;
-  - 353 browser tests on Chromium and WebKit at 1440 and 390;
+  - 1,938 unit and property tests;
+  - 481 browser tests on Chromium and WebKit at 1440 and 390;
   - 34 skipped (WebKit runs the `@xb` subset; plus the known fixme and opt-in cases).
 - **Live checks after each deploy:**
   - `BASE_URL=https://crash-scene-3d.netlify.app npm run e2e:live`, which covers search near the claim and, since 2026-10-11, typing two vehicles (`e2e/live/vehicles.live.spec.ts`; run once, see the hard rules);
   - `e2e/csp-steps.spec.ts` and `e2e/viewer-clear.spec.ts` against the live URL;
   - the examples, ZIP and fingerprint check on Chromium and WebKit, desktop and phone.
+
+## 2026-10-11 night deploy
+- Vehicle picker, photos/logos/GLB, colours, vPIC auto-type, loading state, PDF polish, busy-message fix, README demo. Road features + optional questions (codex/questions, 8d4c463) are NOT in this deploy: reviewed, waiting on the first-frame time fix.
 
 ## What's next (in order)
 1. **The owner's polish list (2026-10-10, after close-out):**
