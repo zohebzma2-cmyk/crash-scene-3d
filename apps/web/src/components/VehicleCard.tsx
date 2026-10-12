@@ -109,6 +109,16 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   const [matchNote, setMatchNote] = useState<{ key: string; model: string; text: string; warn: boolean } | null>(null);
   /** The make text was left (picked, Tab, Enter, a tap elsewhere), not still being typed. */
   const [makeDone, setMakeDone] = useState(v.make.trim() !== "");
+  /** The model text was left (picked, Tab, Enter), not still being typed. */
+  const [modelDone, setModelDone] = useState(v.model.trim() !== "");
+  /**
+   * A type picked by hand on the type tiles ("Not right? Change type") is kept for that model, through a year change,
+   * until the model is changed: the model's normalized name when it was picked. A saved scene's hand-picked type
+   * (typeSource "manual" with a model) counts as one.
+   */
+  const override = useRef<string | null>(v.typeSource === "manual" && v.model.trim() ? normName(v.model) : null);
+  /** The type tiles, opened as an override; otherwise they show only when vPIC has no answer. */
+  const [changeOpen, setChangeOpen] = useState(override.current != null);
   const latest = useRef(v);
   useEffect(() => { latest.current = v; });
   const makeRef = useRef<HTMLInputElement>(null);
@@ -192,11 +202,22 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, askable, vehicles]);
 
+  /** A different model ends a hand-picked type: vPIC picks again for the new one. */
+  function dropOverride(modelText: string) {
+    if (override.current != null && normName(modelText) !== override.current) { override.current = null; setChangeOpen(false); }
+  }
+
   function applyModel(models: readonly VehicleModelResult[], modelText: string, asked: string, make: string | null) {
     const m = findModel(models, modelText, make);
     if (!m) { setMatchNote(null); return; }
-    if (m.type) {
+    const kept = override.current;
+    if (m.type && kept != null && (kept === normName(m.name) || kept === normName(modelText))) {
+      // The claimant's own pick for this model stands; vPIC's answer is shown beside it.
+      const mine = PRESETS[latest.current.type].label;
+      setMatchNote({ key: asked, model: m.name, warn: false, text: `${mine}, your pick. NHTSA vPIC says ${PRESETS[m.type].label} (${m.vpicType}).` });
+    } else if (m.type) {
       const label = PRESETS[m.type].label;
+      override.current = null;
       dispatch({ type: "vehicle", id: latest.current.id, patch: { type: m.type, typeSource: "vpic" } });
       setMatchNote({ key: asked, model: m.name, warn: false, text: `${label} from NHTSA vPIC (${m.vpicType}). Weight and size: ${label.toLowerCase()} class average.` });
     } else {
@@ -214,17 +235,22 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   const note = matchNote && matchNote.key === key && typedModel?.name === matchNote.model ? matchNote : null;
   // A make still being typed (not one of vPIC's, field not left) gets no "Looking up…" yet.
   const settledMake = resolvedMake != null || makeDone;
-  if (badYear) { lookupText = "Check the year. Pick the type below."; warn = true; }
-  else if (current?.state === "warn") { lookupText = current.text; warn = true; }
-  else if (note) { lookupText = note.text; warn = note.warn; matched = !note.warn; }
+  /** vPIC has no answer for this vehicle: the type tiles are shown (never otherwise required). */
+  let noAnswer = false;
+  if (badYear) { lookupText = "Check the year. Pick the type below."; warn = true; noAnswer = true; }
+  else if (current?.state === "warn") { lookupText = current.text; warn = true; noAnswer = true; }
+  else if (note) { lookupText = note.text; warn = note.warn; matched = !note.warn && override.current == null; noAnswer = note.warn; }
   else if (current?.state === "ok" && v.year != null) {
-    if (current.models.length) lookupText = `${current.models.length} ${lookupMake} models for ${v.year}. Pick yours to fill in the type.`;
-    else { lookupText = noModelsText(lookupMake ?? typedMake, v.year); warn = !resolvedMake; }
+    if (current.models.length === 0) { lookupText = noModelsText(lookupMake ?? typedMake, v.year); warn = !resolvedMake; noAnswer = true; }
+    // A typed model vPIC doesn't list: no answer, so the type tiles (a claim's own type is an answer).
+    else if (v.model.trim() && modelDone && !typedModel && v.typeSource !== "claim") { lookupText = `‘${v.model.trim()}’ isn't in NHTSA vPIC's ${lookupMake} list for ${v.year}. Pick the type below.`; noAnswer = true; }
+    else lookupText = `${current.models.length} ${lookupMake} models for ${v.year}. Pick yours to fill in the type.`;
   }
   else if (askable && settledMake) { lookupText = `Looking up ${lookupMake} models for ${v.year}…`; loading = true; }
-  else if (makeNames && makeDone && typedMake && !resolvedMake && v.year == null) { lookupText = notInVpic(typedMake); warn = true; }
-  else if (v.typeSource === "claim") lookupText = `${PRESETS[v.type].label}, from your claim. Change it if it's wrong.`;
-  else lookupText = "Enter the year, make and model to fill in the type, or pick it below.";
+  else if (makeNames && makeDone && typedMake && !resolvedMake && v.year == null) { lookupText = notInVpic(typedMake); warn = true; noAnswer = true; }
+  else if (v.typeSource === "claim") lookupText = `${PRESETS[v.type].label}, from your claim.`;
+  else lookupText = "Enter the year, make and model to fill in the type.";
+  const showTiles = changeOpen || noAnswer;
 
   // ---- year ----
   const yearItems: ComboItem[] = rankYears(yearText, years).map((y) => ({ id: `${ids}-y${y}`, value: String(y), main: String(y) }));
@@ -322,15 +348,20 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
               value={v.model} items={modelItems} status={modelStatus}
               onType={(text) => {
                 typedIn.current.model = true;
+                setModelDone(false);
+                dropOverride(text);
                 patch({ model: text });
                 if (current?.state === "ok") applyModel(current.models, text, key, lookupMake);
               }}
               onPick={(item) => {
+                setModelDone(true);
+                dropOverride(item.value);
                 if (item.value !== latest.current.model) patch({ model: item.value });
                 if (current?.state === "ok") applyModel(current.models, item.value, key, lookupMake);
               }}
               onCommit={() => {
                 const now = latest.current.model;
+                setModelDone(now.trim() !== "");
                 const m = current?.state === "ok" ? findModel(current.models, now, lookupMake) : undefined;
                 if (m && m.name !== now && current?.state === "ok") {
                   patch({ model: m.name });
@@ -343,12 +374,24 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
             {loading ? <span className="spinner" aria-hidden="true" /> : warn ? <Icon name="info" className="icon-sm" /> : matched ? <Icon name="check" className="icon-sm" /> : null}
             <span>{lookupText}</span>
           </p>
-          <fieldset className="group">
-            <legend className="field-sub">Type</legend>
-            <RadioGroup className="tiles tiles-6 tiles-compact" aria-label={`Type of vehicle ${v.id}`} values={VEHICLE_TYPES} value={v.type} onChange={(t: VehicleType) => patch({ type: t, typeSource: "manual" })}>
-              {VEHICLE_TYPES.map((t) => <Tile key={t} value={t} icon={PRESETS[t].icon} label={PRESETS[t].label} badge={t === v.type && v.typeSource === "vpic" ? <span className="auto">vPIC</span> : null} />)}
-            </RadioGroup>
-          </fieldset>
+          {showTiles ? (
+            <fieldset className="group">
+              <legend className="field-sub">Type</legend>
+              <RadioGroup className="tiles tiles-6 tiles-compact" aria-label={`Type of vehicle ${v.id}`} values={VEHICLE_TYPES} value={v.type} onChange={(t: VehicleType) => {
+                override.current = normName(latest.current.model);
+                setChangeOpen(true);
+                patch({ type: t, typeSource: "manual" });
+                if (note && typedModel?.type) setMatchNote({ ...note, warn: false, text: `${PRESETS[t].label}, your pick. NHTSA vPIC says ${PRESETS[typedModel.type].label} (${typedModel.vpicType}).` });
+              }}>
+                {VEHICLE_TYPES.map((t) => <Tile key={t} value={t} icon={PRESETS[t].icon} label={PRESETS[t].label} badge={t === v.type && v.typeSource === "vpic" ? <span className="auto">vPIC</span> : null} />)}
+              </RadioGroup>
+            </fieldset>
+          ) : (
+            <p className="type-auto" data-type={v.type}>
+              <span>Type: <strong>{PRESETS[v.type].label}</strong></span>
+              <button className="btn btn-quiet btn-sm" type="button" aria-expanded="false" aria-label={`Not right? Change the type of vehicle ${v.id}`} onClick={() => setChangeOpen(true)}>Not right? Change type</button>
+            </p>
+          )}
           <ColorPicker vehicle={v} onChange={(color) => patch({ color: color ?? undefined })} />
         </div>
 

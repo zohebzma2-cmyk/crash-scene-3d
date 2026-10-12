@@ -71,7 +71,8 @@ test.describe("full flow on the default claim", () => {
     await expect(b.locator(".lookup")).toContainText("Ford models for 2018");
     await b.getByLabel("Model").fill("Escape");
     await expect(b.locator(".lookup")).toContainText("from NHTSA vPIC");
-    await expect(b.getByRole("radio", { name: /SUV/ })).toHaveAttribute("aria-checked", "true");
+    await expect(b.locator(".type-auto")).toContainText("SUV");
+    await expect(b.getByRole("button", { name: /Not right\? Change the type/ })).toBeVisible();
     // Changing the make clears the model.
     await b.getByLabel("Make").fill("Toyota");
     await expect(b.getByLabel("Model")).toHaveValue("");

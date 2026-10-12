@@ -198,19 +198,28 @@ const TRUCK = "Truck";
 const MOTO = "Motorcycle";
 type FixtureModel = readonly [name: string, vpicType: string, from: number, to?: number];
 const MODELS: Readonly<Record<string, readonly FixtureModel[]>> = {
-  Chevrolet: [["Silverado 1500", TRUCK, 1999], ["Silverado 2500HD", TRUCK, 2001], ["Colorado", TRUCK, 2004], ["Malibu", CAR, 1997, 2025], ["Equinox", MPV, 2005], ["Tahoe", MPV, 1995], ["Corvette", CAR, 1981], ["Camaro", CAR, 1981, 2024], ["Express", TRUCK, 1996]],
+  Chevrolet: [["Silverado 1500", TRUCK, 1999], ["Silverado 2500HD", TRUCK, 2001], ["4500HD", TRUCK, 2019], ["Colorado", TRUCK, 2004], ["Malibu", CAR, 1997, 2025], ["Equinox", MPV, 2005], ["Tahoe", MPV, 1995], ["Corvette", CAR, 1981], ["Camaro", CAR, 1981, 2024], ["Express", TRUCK, 1996]],
   Honda: [["Accord", CAR, 1981], ["Civic", CAR, 1981], ["CR-V", MPV, 1997], ["HR-V", MPV, 2016], ["Odyssey", MPV, 1995], ["Pilot", MPV, 2003], ["Ridgeline", TRUCK, 2006], ["Gold Wing", MOTO, 1981]],
-  Ford: [["F-150", TRUCK, 1981], ["F-250", TRUCK, 1981], ["F-650", TRUCK, 2000], ["Escape", MPV, 2001], ["Explorer", MPV, 1991], ["Mustang", CAR, 1981], ["Fusion", CAR, 2006, 2020], ["Ranger", TRUCK, 1983], ["Transit", TRUCK, 2015]],
+  Ford: [["F-150", TRUCK, 1981], ["F-250", TRUCK, 1981], ["F-350", TRUCK, 1981], ["F-650", TRUCK, 2000], ["E-450", TRUCK, 1992], ["Maverick", TRUCK, 2022], ["Escape", MPV, 2001], ["Explorer", MPV, 1991], ["Mustang", CAR, 1981], ["Fusion", CAR, 2006, 2020], ["Ranger", TRUCK, 1983], ["Transit", TRUCK, 2015]],
   Volkswagen: [["Jetta", CAR, 1981], ["Golf", CAR, 1985], ["Passat", CAR, 1990], ["Beetle", CAR, 1998, 2019], ["Tiguan", MPV, 2009], ["Atlas", MPV, 2018]],
   "Harley-Davidson": [["Street Glide", MOTO, 2006], ["Road King", MOTO, 1994], ["Sportster", MOTO, 1981], ["Fat Boy", MOTO, 1990]],
   Toyota: [["Camry", CAR, 1983], ["Corolla", CAR, 1981], ["RAV4", MPV, 1996], ["Highlander", MPV, 2001], ["4Runner", MPV, 1984], ["Sienna", MPV, 1998], ["Tacoma", TRUCK, 1995], ["Tundra", TRUCK, 2000]],
   Subaru: [["Outback", MPV, 1995], ["Impreza", CAR, 1993], ["Forester", MPV, 1998]],
   Ram: [["1500", TRUCK, 2011], ["2500", TRUCK, 2011], ["ProMaster", TRUCK, 2014]],
-  Nissan: [["Altima", CAR, 1993], ["Rogue", MPV, 2008], ["Frontier", TRUCK, 1998]],
+  Nissan: [["Altima", CAR, 1993], ["Rogue", MPV, 2008], ["Frontier", TRUCK, 1998], ["Titan", TRUCK, 2004]],
+  Tesla: [["Model 3", CAR, 2017], ["Model S", CAR, 2012], ["Model Y", MPV, 2020], ["Cybertruck", TRUCK, 2024]],
+  Isuzu: [["NPR", TRUCK, 1984], ["NQR", TRUCK, 1995]],
+  GMC: [["Sierra 1500", TRUCK, 1999], ["Canyon", TRUCK, 2004], ["Savana", TRUCK, 1996], ["Yukon", MPV, 1992], ["Acadia", MPV, 2007]],
+  Chrysler: [["Pacifica", MPV, 2004], ["300", CAR, 2005]],
+  Kia: [["Carnival", MPV, 2022], ["Sedona", MPV, 2002, 2021], ["Sorento", MPV, 2003], ["Forte", CAR, 2010]],
+  Dodge: [["Grand Caravan", MPV, 1987, 2020], ["Durango", MPV, 1998], ["Charger", CAR, 2006]],
+  Jeep: [["Gladiator", TRUCK, 2020], ["Wrangler", MPV, 1987], ["Grand Cherokee", MPV, 1993]],
+  Hyundai: [["Santa Cruz", TRUCK, 2022], ["Elantra", CAR, 1992], ["Tucson", MPV, 2005]],
+  "Mercedes-Benz": [["Sprinter", TRUCK, 2010], ["Metris", MPV, 2016, 2023], ["C-Class", CAR, 1994]],
 };
 const OTHER_MAKES = [
-  "Acura", "Audi", "BMW", "Buick", "Cadillac", "Champion Bus", "Chang Jiang", "Chrysler", "Dodge", "GMC", "Hyundai", "Jeep", "Kia",
-  "Land Rover", "Lexus", "Mazda", "Mercedes-Benz", "Merch Motorcycle Co.", "Mercury", "Mini", "Ram Transcorp", "Tesla", "Toyo Motors", "Volvo",
+  "Acura", "Audi", "BMW", "Buick", "Cadillac", "Champion Bus", "Chang Jiang",
+  "Land Rover", "Lexus", "Mazda", "Merch Motorcycle Co.", "Mercury", "Mini", "Ram Transcorp", "Toyo Motors", "Volvo",
 ];
 
 export function createFixtureVehicles(): VehiclesService {
