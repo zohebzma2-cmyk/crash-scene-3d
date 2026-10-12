@@ -1,7 +1,7 @@
 // Step 4: what do you want to save? Format options, previews, the stamp, and opening a saved
 // scene file. Files are made in the browser and saved to the device; nothing is uploaded.
 import { stillsFor } from "../review/stills";
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { MAX_SCENE_BYTES, canonicalJson, formatStamp, parseScene, parseSceneFile, sha256Hex, shortFingerprint, type ExportBundle, type ExportFile, type ExportFormat } from "@csd/core";
 import { Tab, TabList, TabPanel } from "../a11y/roving";
 import { Icon } from "../icons/Icon";
@@ -28,6 +28,9 @@ export const PREVIEW_UNAVAILABLE_TEXT = "This file isn't available to preview in
 export const tooBigText = (bytes: number): string =>
   `That file is too big to be a scene file (${(bytes / 1e6).toFixed(1)} MB; the limit is ${MAX_SCENE_BYTES / 1e6} MB).`;
 
+/** Read out (and focus moved to the button) when building outlasted the tap window and one more tap is needed. */
+export const SECOND_TAP_TEXT = "Your files are ready. Press “Download your files” to save them.";
+
 /** How long after a tap a page may still start a download (browsers allow about 5 s; stay well inside). */
 const ACTIVATION_WINDOW_MS = 3000;
 
@@ -51,6 +54,15 @@ export function SaveStep() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const sceneKey = canonicalJson(scene);
+  const secondTap = ready && ready.sceneKey === sceneKey ? ready : null;
+  // The primary button changes under the person (Save to my device <-> Download your files): focus goes with it, so a
+  // keyboard or screen reader user lands on the button that now does the job (the live region below says why).
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const hadSecondTap = useRef(false);
+  useEffect(() => {
+    if (hadSecondTap.current !== (secondTap != null)) primaryRef.current?.focus();
+    hadSecondTap.current = secondTap != null;
+  }, [secondTap]);
   const current = lastExport && lastExport.sceneKey === sceneKey ? lastExport : null;
   const stale = lastExport != null && current == null;
 
@@ -208,12 +220,14 @@ export function SaveStep() {
 
           <div className="actions">
             <button type="button" className="btn btn-quiet" onClick={() => flow.go("review")}><Icon name="arrow-left" className="icon-sm" />Back</button>
-            {ready && ready.sceneKey === sceneKey ? (
-              <button type="button" className="btn btn-primary" onClick={() => { downloadFile(ready.item); setReady(null); showToast("Saved to your device."); }}><Icon name="download" className="icon-sm" />Download your files</button>
+            {secondTap ? (
+              <button ref={primaryRef} type="button" className="btn btn-primary" onClick={() => { downloadFile(secondTap.item); setReady(null); showToast("Saved to your device."); }}><Icon name="download" className="icon-sm" />Download your files</button>
             ) : (
-              <button type="button" className="btn btn-primary" aria-busy={saving || undefined} disabled={!outcome?.ok} onClick={() => void save()}><Icon name="download" className="icon-sm" />Save to my device</button>
+              <button ref={primaryRef} type="button" className="btn btn-primary" aria-busy={saving || undefined} disabled={!outcome?.ok} onClick={() => void save()}><Icon name="download" className="icon-sm" />Save to my device</button>
             )}
           </div>
+          {/* Always in the page (a region added with its text is often not read): says so when the second tap is needed. */}
+          <p className="visually-hidden" aria-live="polite" data-testid="save-ready">{secondTap ? SECOND_TAP_TEXT : ""}</p>
         </div>
       </div>
     </section>
