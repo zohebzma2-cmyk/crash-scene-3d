@@ -75,12 +75,14 @@ export function VehicleCombobox({
   // list once typing settles, and empties when the list closes.
   const matches = items.filter((i) => !i.free).length;
   const freeRow = items.some((i) => i.free);
+  // While the list itself is loading there is no count to give ("No matches" would be wrong): the status line says so.
+  const listLoading = status?.kind === "loading";
   const [said, setSaid] = useState("");
   useEffect(() => {
     if (!announce) return;
-    const timer = window.setTimeout(() => setSaid(visible ? suggestionsCount(matches, freeRow) : ""), ANNOUNCE_DELAY_MS);
+    const timer = window.setTimeout(() => setSaid(visible && !listLoading ? suggestionsCount(matches, freeRow) : ""), ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [announce, visible, matches, freeRow]);
+  }, [announce, visible, matches, freeRow, listLoading]);
 
   const pick = (item: ComboItem) => {
     setOpen(false);

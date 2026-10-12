@@ -161,6 +161,22 @@ describe("streetsAtPin: unnamed roads are told apart (vehicles step fixes, 2026-
     }
   });
 
+  it("a Y-fork of unnamed service roads at the pin (straight north, and 30° east of north) is two roads, all four choices offered", () => {
+    const road = (id: string, deg: number): RoadWay => {
+      const r = (deg * Math.PI) / 180;
+      return {
+        id, name: null, ref: null, kind: "service", oneway: false, lanesForward: 1, lanesBackward: 1, laneWidthM: 3,
+        centerline: [{ x: 0, y: 0 }, { x: 80 * Math.sin(r), y: 80 * Math.cos(r) }].map((p, i) => (i === 0 ? { x: -40 * Math.sin(r), y: -40 * Math.cos(r) } : p)), speedLimitMph: null, osmWayIds: [],
+      };
+    };
+    const r = streetsAtPin({ ...parkingLotNet(), ways: [road("straight", 0), road("fork", 30)] }, { x: 0, y: 1 });
+    expect(r.directions).toHaveLength(4);
+    expect(new Set(r.directions.map((d) => d.label)).size).toBe(4);
+    expect(new Set(r.directions.map((d) => d.roadId))).toEqual(new Set(["straight", "fork"]));
+    expect(r.directions.find((d) => d.roadId === "fork")!.roadDesc).toBe("the unnamed service road (east one)");
+    expect(r.directions.find((d) => d.roadId === "straight")!.roadDesc).toBe("the unnamed service road (west one)");
+  });
+
   it("the caption, the summary and the PDF say the same words (directionCaption is the one formatter)", () => {
     const travel = { bearingDeg: 37, roadId: "w1", roadName: null, roadDesc: "the parking aisle (west one)", lane: null };
     expect(directionCaption({ action: "straight", travel })).toBe("Northbound on the parking aisle (west one)");

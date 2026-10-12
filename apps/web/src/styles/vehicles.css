@@ -144,8 +144,8 @@
   .vehicle .tiles-compact .tile .icon { flex: none; width: var(--size-icon); height: var(--size-icon); }
   .vehicle .tiles-compact .tile .auto { top: var(--space-0); right: var(--space-1); }
 }
-/* Under 380 px a third of the card is too narrow for an icon beside "Motorcycle": the tiles stack icon over label again. */
-@media (max-width: 379px) {
+/* Under 400 px a third of the card is too narrow for an icon beside "Motorcycle": the tiles stack icon over label again. */
+@media (max-width: 399px) {
   .vehicle .tiles-compact .tile { flex-direction: column; justify-content: center; min-height: var(--size-tile-min); padding: var(--space-2) var(--space-1); text-align: center; }
   .vehicle .tiles-compact .tile .auto { top: var(--space-1); }
 }

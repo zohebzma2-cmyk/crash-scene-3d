@@ -52,6 +52,9 @@ describe("a typed nickname and a late makes list", () => {
     const make = field("B", "make");
     await typeLikeAPerson(make, "chevy");
     expect(rowNames(make)).toEqual(["Use ‘chevy’ as typed"]);
+    // No count while the makes load ("No matches" would be wrong): the loading line speaks for it.
+    await settle(700);
+    expect(make.closest(".vcombo")?.querySelector("[aria-live=polite]")?.textContent).toBe("");
     await late.land();
     expect(rowNames(make)[0]).toBe("Chevrolet");
     expect(active(make)).toBe("Chevrolet");

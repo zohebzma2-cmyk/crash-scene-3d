@@ -375,6 +375,8 @@ const UNNAMED_KIND: Partial<Record<RoadKind, string>> = { parking_aisle: "the pa
 const unnamedKind = (k: RoadKind): string => UNNAMED_KIND[k] ?? "the unnamed road";
 /** Pieces whose sideways offsets from the pin are this close are one road (meters). */
 const SAME_LINE_M = 2;
+/** …and whose axes are this close (degrees, either way along the road). */
+const SAME_AXIS_DEG = 10;
 const ORDINALS = ["nearest the pin", "second nearest the pin", "third nearest the pin", "fourth nearest the pin", "fifth nearest the pin", "sixth nearest the pin"];
 
 /**
@@ -385,7 +387,7 @@ const ORDINALS = ["nearest the pin", "second nearest the pin", "third nearest th
  */
 function unnamedDescriptions(ways: readonly NearWay[], pin: Vec2): Map<string, string> {
   const out = new Map<string, string>();
-  const buckets = new Map<string, Array<{ id: string; offset: number; dist: number }>>();
+  const buckets = new Map<string, Array<{ id: string; offset: number; lean: number; dist: number }>>();
   for (const w of ways) {
     const poly = makePoly(w.way.centerline);
     const pr = project(poly, pin);
@@ -403,18 +405,23 @@ function unnamedDescriptions(ways: readonly NearWay[], pin: Vec2): Map<string, s
     const u = unit(sub(poly.pts[i + 1]!, a));
     let n = { x: u.y, y: -u.x };
     if ((ns && n.x < 0) || (!ns && n.y < 0)) n = { x: -n.x, y: -n.y };
-    list.push({ id: w.way.id, offset: dot(sub(a, pin), n), dist: pr.dist });
+    // How far its axis leans from due north (or due east), degrees, signed toward east (or north): -90 to 90.
+    const lean = ns ? ((bearing + 90) % 180) - 90 : 90 - ((bearing % 180 + 180) % 180);
+    list.push({ id: w.way.id, offset: dot(sub(a, pin), n), lean, dist: pr.dist });
     buckets.set(key, list);
   }
   for (const [key, list] of buckets) {
     const kind = key.slice(0, key.lastIndexOf("|"));
     const ns = key.endsWith("|ns");
-    list.sort((a, b) => a.offset - b.offset);
-    // Pieces of one road: consecutive offsets within SAME_LINE_M.
+    // West to east (south to north); roads that cross near the pin (a Y-fork: the same offset) by which way they lean.
+    list.sort((a, b) => (Math.abs(a.offset - b.offset) <= SAME_LINE_M ? a.lean - b.lean : 0) || a.offset - b.offset);
+    // Pieces of one road: the same axis (within SAME_AXIS_DEG) and the same sideways offset (within SAME_LINE_M). Two
+    // roads through the pin at different angles both have offset 0 and stay two roads.
     const lines: Array<typeof list> = [];
     for (const r of list) {
       const last = lines[lines.length - 1];
-      if (last && r.offset - last[last.length - 1]!.offset <= SAME_LINE_M) last.push(r); else lines.push([r]);
+      const prev = last?.[last.length - 1];
+      if (last && prev && Math.abs(r.offset - prev.offset) <= SAME_LINE_M && Math.abs(r.lean - prev.lean) <= SAME_AXIS_DEG) last.push(r); else lines.push([r]);
     }
     const n = lines.length;
     const [lo, hi] = ns ? ["west one", "east one"] : ["south one", "north one"];

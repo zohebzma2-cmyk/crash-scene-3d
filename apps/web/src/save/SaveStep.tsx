@@ -60,7 +60,10 @@ export function SaveStep() {
   const primaryRef = useRef<HTMLButtonElement>(null);
   const hadSecondTap = useRef(false);
   useEffect(() => {
-    if (hadSecondTap.current !== (secondTap != null)) primaryRef.current?.focus();
+    // Only when focus is nowhere in particular or already on that button: never pulled away from what the person is using.
+    const el = primaryRef.current;
+    const free = document.activeElement == null || document.activeElement === document.body || document.activeElement === el;
+    if (hadSecondTap.current !== (secondTap != null) && free) el?.focus();
     hadSecondTap.current = secondTap != null;
   }, [secondTap]);
   const current = lastExport && lastExport.sceneKey === sceneKey ? lastExport : null;
