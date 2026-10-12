@@ -135,6 +135,20 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   // Two of vPIC's ~2,100 makes are longer than the proxy takes (60 characters): no request it would refuse.
   const askable = yearOk && lookupMake != null && lookupMake.length <= MAKE_MAX_CHARS;
   const current = lookup && lookup.key === key ? lookup : null;
+  /** Vehicle A still holds the claim's own make or model: never renamed behind the claimant's back. */
+  const claimOwn = (field: "make" | "model") => latest.current.id === "A" && latest.current[field] === claim[field];
+
+  // The makes list can land after "chevy" was typed and the field left (Tab, a tap elsewhere, Enter on "Use ‘chevy’
+  // as typed" while only that row was there): resolve it now, as leaving the field would have. The text in a field
+  // that still has focus is left alone (the list re-ranks it, best match first). The model is kept: same make.
+  useEffect(() => {
+    if (!makeNames || claimOwn("make") || document.activeElement === makeRef.current) return;
+    const now = latest.current;
+    const name = resolveName(now.make, makeNames, MAKE_MATCH);
+    if (name && name !== now.make) dispatch({ type: "vehicle", id: now.id, patch: { make: name, model: now.model, typeSource: now.typeSource } });
+    // Runs when the list lands; the vehicle is read through `latest`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [makeNames]);
 
   // vPIC models for this year and make, once the make is known: one request per make and year, cached for the
   // session by the service (which retries a busy answer first). Changing the make clears the model (in the
@@ -152,7 +166,11 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
         (models) => {
           if (keyRef.current !== asked) return;
           setLookup({ key: asked, state: "ok", models });
-          applyModel(models, latest.current.model, asked, make);
+          // A model typed while the list was loading and then left is resolved now ("silverado 1500" is "Silverado 1500").
+          const typedModel = latest.current.model;
+          const m = !claimOwn("model") && document.activeElement !== modelRef.current ? findModel(models, typedModel, make) : undefined;
+          if (m && m.name !== typedModel) dispatch({ type: "vehicle", id: latest.current.id, patch: { model: m.name } });
+          applyModel(models, m?.name ?? typedModel, asked, make);
         },
         (e: unknown) => {
           // The service has already retried a busy answer; here one plain line worded for the vehicle list.

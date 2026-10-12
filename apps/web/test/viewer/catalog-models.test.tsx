@@ -106,6 +106,36 @@ describe("the vehicle models service (PROXY_ROUTES.vehicleModel, roundB/images' 
     await expect(p).rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("the download stops once every caller has given up (leaving Review), at low priority, and the next viewer asks afresh", async () => {
+    const seen: Array<{ signal: AbortSignal; priority: unknown }> = [];
+    const fetchFn = vi.fn((_url: string, init?: RequestInit) => {
+      seen.push({ signal: init!.signal!, priority: init?.priority });
+      return new Promise<Response>((_res, rej) => init!.signal!.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError"))));
+    });
+    const s = createVehicleModelsService(fetchFn);
+    const a = new AbortController();
+    const b = new AbortController();
+    const pa = s.load(Q, a.signal).catch((e: unknown) => e);
+    const pb = s.load(Q, b.signal).catch((e: unknown) => e);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(seen[0]!.priority).toBe("low");
+    a.abort();
+    expect(seen[0]!.signal.aborted).toBe(false);   // B still wants it
+    b.abort();
+    expect(seen[0]!.signal.aborted).toBe(true);
+    expect(await pa).toMatchObject({ name: "AbortError" });
+    expect(await pb).toMatchObject({ name: "AbortError" });
+    void s.load(Q, new AbortController().signal).catch(() => undefined);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    // A caller without a signal keeps the download going whatever the others do.
+    const s2 = createVehicleModelsService(fetchFn);
+    const c = new AbortController();
+    void s2.load(Q, c.signal).catch(() => undefined);
+    void s2.load(Q);
+    c.abort();
+    expect(seen[2]!.signal.aborted).toBe(false);
+  });
+
   it("fixtures mode: the synthetic models answer the model route like the proxy (watermarked); everything else goes on to images' fixtures", async () => {
     const assets = vi.fn(async () => glbResponse());
     vi.stubGlobal("fetch", assets);

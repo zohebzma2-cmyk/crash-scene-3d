@@ -2,7 +2,9 @@
 //  5b. a direction not picked yet is a missing detail ("Pick which way your car was going."), never "don't fit together";
 //  5a. details that don't fit together on the Vehicles step get the same one-tap fixes as the Review refusal, from the
 //      fixer's Web Worker; a tap changes the details, the warning goes away, and "See it anyway" / "Fix the details" stay.
-import { expect, fillDefaultClaim, freshStart, searchAndPick, test } from "./helpers";
+import type { Page } from "@playwright/test";
+import { expect, fillDefaultClaim, freshStart, openExample, searchAndPick, test } from "./helpers";
+import { routeVehiclesToFakeProxy } from "./fake-proxy";
 
 test.describe("the Vehicles step's warnings", () => {
   test("@xb an unpicked direction reads as missing, with no fixes and no 'See it anyway'", async ({ page, pageErrors }) => {
@@ -74,6 +76,112 @@ test.describe("the Vehicles step's warnings", () => {
     // "See it anyway" still goes on to the picture as entered.
     await gate.getByRole("button", { name: "See it anyway" }).click();
     await expect(page.locator("#app")).toHaveAttribute("data-step", "review");
+    expect(pageErrors()).toEqual([]);
+  });
+});
+
+// Vehicles step fixes (2026-10-11), item 2: catalog 3D models (/api/vehicles/model) are for Review only. Nothing on
+// the Vehicles step asks for one, and leaving Review cancels the ones still on their way, so the makes list is never
+// queued behind them. ?models=proxy (fixture builds) sends the model requests over the network, where the test holds them.
+/** The catalog model route (not /api/vehicles/models, the vPIC model list). */
+const MODEL_URL = /\/api\/vehicles\/model\?/;
+
+test.describe("catalog models stay on Review", () => {
+  test("@xb the Vehicles step asks for no catalog model, and leaving Review cancels the ones in flight", async ({ page, pageErrors }) => {
+    test.setTimeout(120_000);
+    const asked: Array<{ url: string; step: string }> = [];
+    const aborted: string[] = [];
+    let held = 0;
+    // The makes and models lists from the real proxy code; registered first, so the model route below wins for its URLs.
+    await routeVehiclesToFakeProxy(page);
+    // Hold every model request (a slow catalog): it either is cancelled by the page or never answers.
+    await page.route(MODEL_URL, async (route) => {
+      const step = await page.locator("#app").getAttribute("data-step").catch(() => "?");
+      asked.push({ url: route.request().url(), step: step ?? "?" });
+      held += 1;
+      await new Promise(() => undefined);
+    });
+    page.on("requestfailed", (r) => { if (MODEL_URL.test(r.url())) aborted.push(r.url()); });
+
+    // An example opens on Review: its two vehicles' models are asked for there.
+    await openExample(page, "t-bone-intersection", "&models=proxy&vehicles=proxy");
+    await expect.poll(() => held).toBe(2);
+    expect(asked.every((a) => a.step === "review")).toBe(true);
+
+    // Edit details: the Vehicles step. The held model requests are cancelled, the makes list is asked for and answers.
+    const makesAnswer = page.waitForResponse((r) => r.url().includes("/api/vehicles/makes"));
+    await page.getByRole("button", { name: "Edit details" }).click();
+    await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
+    expect((await makesAnswer).status()).toBe(200);
+    await expect.poll(() => aborted.length, { message: "model requests still open on the Vehicles step" }).toBe(2);
+    // The 3D code loads in the background after 2 s on this step; still no model is asked for.
+    await page.waitForTimeout(3000);
+    expect(asked.filter((a) => a.step !== "review")).toEqual([]);
+    expect(pageErrors()).toEqual([]);
+  });
+
+  test("@xb a fresh claim reaches the Vehicles step and types a vehicle without one catalog model request", async ({ page, pageErrors }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => { if (MODEL_URL.test(r.url())) asked.push(r.url()); });
+    await routeVehiclesToFakeProxy(page);
+    await freshStart(page, "/?models=proxy&vehicles=proxy#location");
+    await searchAndPick(page);
+    await page.getByRole("button", { name: /Next: vehicles/ }).click();
+    await expect(page.locator("#vehicle-A")).toBeVisible();
+    const b = page.locator("#vehicle-B");
+    await b.getByLabel("Year").fill("2019");
+    await b.getByLabel("Make").fill("Ford");
+    await b.getByLabel("Make").press("Tab");
+    await b.getByLabel("Model").fill("F-150");
+    await b.getByLabel("Model").press("Tab");
+    await expect(b.locator(".lookup")).toContainText("Pickup from NHTSA vPIC", { timeout: 10_000 });
+    await page.waitForTimeout(3000);
+    expect(asked).toEqual([]);
+    expect(pageErrors()).toEqual([]);
+  });
+});
+
+// Item 1: "chevy" typed while the card still says "Loading the makes…" is matched once the makes list lands.
+test.describe("a nickname typed before the makes list lands", () => {
+  /** Step 1 to the Vehicles step with the makes list held until the returned release is called (a slow first answer). */
+  async function toVehiclesWithMakesHeld(page: Page): Promise<() => void> {
+    await routeVehiclesToFakeProxy(page);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    // Registered last, so it runs before the fake proxy's route; it hands the request on once released.
+    await page.route(/\/api\/vehicles\/makes$/, async (route) => { await gate; await route.fallback(); });
+    await freshStart(page, "/?vehicles=proxy#location");
+    await searchAndPick(page);
+    await page.getByRole("button", { name: /Next: vehicles/ }).click();
+    await expect(page.locator("#vehicle-B")).toBeVisible();
+    return release;
+  }
+
+  test("@xb is ranked again when the list lands: Chevrolet first and highlighted, so Enter takes it", async ({ page, pageErrors }) => {
+    const release = await toVehiclesWithMakesHeld(page);
+    const b = page.locator("#vehicle-B");
+    const make = b.getByLabel("Make");
+    await make.click();
+    await make.pressSequentially("chevy", { delay: 60 });
+    const list = b.getByRole("listbox", { name: "Suggestions" }).first();
+    await expect(b.locator(".combo-note")).toContainText("Loading the makes…");
+    await expect(list.getByRole("option")).toHaveText(["Use ‘chevy’ as typed"]);
+    release();
+    await expect(list.getByRole("option").first()).toHaveText("Chevrolet");
+    await expect(list.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+    await make.press("Enter");
+    await expect(make).toHaveValue("Chevrolet");
+    expect(pageErrors()).toEqual([]);
+  });
+
+  test("@xb left while the list loads, it becomes Chevrolet when the list lands", async ({ page, pageErrors }) => {
+    const release = await toVehiclesWithMakesHeld(page);
+    const make = page.locator("#vehicle-B").getByLabel("Make");
+    await make.fill("chevy");
+    await make.press("Tab");
+    await expect(make).toHaveValue("chevy");
+    release();
+    await expect(make).toHaveValue("Chevrolet");
     expect(pageErrors()).toEqual([]);
   });
 });
