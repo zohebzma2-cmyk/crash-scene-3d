@@ -114,6 +114,12 @@ export function selectedChoice(travel: SceneVehicle["travel"], choices: readonly
  */
 export function reconcileTravel(v: SceneVehicle, choices: readonly TravelChoice[]): SceneVehicle {
   const t = v.travel;
+  if (t.roadId != null && t.roadName == null) {
+    // An unnamed road's description follows the roads at the pin ("(west one)" may change when the pin moves).
+    const same = choices.find((c) => c.roadId === t.roadId && c.roadName == null && angleDiffDeg(c.bearingDeg, t.bearingDeg) <= 25);
+    const desc = same?.roadDesc ?? undefined;
+    return same && desc !== t.roadDesc ? { ...v, travel: { ...t, roadDesc: desc } } : v;
+  }
   if (t.roadId != null || t.roadName == null) return v;
   const match = choices.find((c) => c.roadName === t.roadName && angleDiffDeg(c.bearingDeg, t.bearingDeg) <= 25);
   return match ? { ...v, travel: { ...t, roadId: match.roadId } } : v;

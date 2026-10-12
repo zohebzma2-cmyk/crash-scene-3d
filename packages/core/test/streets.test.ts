@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { streetsAtPin } from "../src";
+import { directionCaption, streetsAtPin, toLocal, type RoadNetwork, type RoadWay, type Scene } from "../src";
 import { angleDiffDeg } from "./physics-helpers";
 import { highwayNet, intersectionNet, parkingLotNet } from "./roads-fixtures";
 
@@ -103,5 +104,57 @@ describe("streetsAtPin: direction choices", () => {
       expect(d.roadName).toBeNull();
       expect(d.label).not.toMatch(/null|undefined/);
     }
+  });
+});
+
+describe("streetsAtPin: unnamed roads are told apart (vehicles step fixes, 2026-10-11)", () => {
+  const net = JSON.parse(readFileSync(new URL("./data/parking-lot-backing-roads.json", import.meta.url), "utf8")) as RoadNetwork;
+  const scene = JSON.parse(readFileSync(new URL("../../../examples/parking-lot-backing/scene.json", import.meta.url), "utf8")) as Scene;
+
+  it("the parking example's six choices on three parallel aisles all read differently, from west to east", () => {
+    const r = streetsAtPin(net, toLocal(net.frame, scene.location));
+    expect(r.directions).toHaveLength(6);
+    expect(new Set(r.directions.map((d) => d.label)).size).toBe(6);
+    expect(labels(r)).toEqual([
+      "northbound on the parking aisle (east one)", "northbound on the parking aisle (middle)", "northbound on the parking aisle (west one)",
+      "southbound on the parking aisle (east one)", "southbound on the parking aisle (middle)", "southbound on the parking aisle (west one)",
+    ]);
+    // The aisle the pin is on is the middle one; never a made-up name.
+    const onPin = r.directions.find((d) => d.roadId === r.roads[0]!.roadId)!;
+    expect(onPin.roadDesc).toBe("the parking aisle (middle)");
+    for (const d of r.directions) expect(d.roadName).toBeNull();
+  });
+
+  it("one unnamed road of its kind is just its kind; a named road keeps its name and no description", () => {
+    const r = streetsAtPin(parkingLotNet(), { x: 10, y: -1 });
+    expect(labels(r)).toEqual(["eastbound on the parking aisle", "westbound on the parking aisle"]);
+    const named = streetsAtPin(intersectionNet(), { x: 5, y: 8 });
+    for (const d of named.directions) { expect(d.roadDesc).toBeNull(); expect(d.label).toMatch(/ on (Main|Park) Street$/); }
+  });
+
+  it("two pieces of one unnamed aisle are one road; four side by side are told apart by how near the pin they are", () => {
+    const aisle = (id: string, x: number, y0: number, y1: number): RoadWay => ({
+      id, name: null, ref: null, kind: "parking_aisle", oneway: false, lanesForward: 1, lanesBackward: 1, laneWidthM: 3,
+      centerline: [{ x, y: y0 }, { x, y: y1 }], speedLimitMph: null, osmWayIds: [],
+    });
+    const base = parkingLotNet();
+    const split = streetsAtPin({ ...base, ways: [aisle("a1", 0, -30, 0), aisle("a2", 0, 0, 30), aisle("b", 12, -30, 30)] }, { x: 1, y: 0 });
+    expect(labels(split)).toEqual([
+      "northbound on the parking aisle (east one)", "northbound on the parking aisle (west one)",
+      "southbound on the parking aisle (east one)", "southbound on the parking aisle (west one)",
+    ]);
+    const four = streetsAtPin({ ...base, ways: [aisle("w", -14, -30, 30), aisle("p", 0, -30, 30), aisle("e", 9, -30, 30), aisle("f", 20, -30, 30)] }, { x: 1, y: 0 });
+    expect(new Set(four.directions.map((d) => d.label)).size).toBe(8);
+    expect(four.directions.find((d) => d.roadId === "p")!.roadDesc).toBe("the parking aisle (nearest the pin)");
+    expect(four.directions.find((d) => d.roadId === "e")!.roadDesc).toBe("the parking aisle (second nearest the pin)");
+  });
+
+  it("the caption, the summary and the PDF say the same words (directionCaption is the one formatter)", () => {
+    const travel = { bearingDeg: 37, roadId: "w1", roadName: null, roadDesc: "the parking aisle (west one)", lane: null };
+    expect(directionCaption({ action: "straight", travel })).toBe("Northbound on the parking aisle (west one)");
+    expect(directionCaption({ action: "parked", travel })).toBe("Parked, facing north on the parking aisle (west one)");
+    // A name always wins over a description; neither: just the bound.
+    expect(directionCaption({ action: "straight", travel: { ...travel, roadName: "Main Street" } })).toBe("Northbound on Main Street");
+    expect(directionCaption({ action: "straight", travel: { ...travel, roadDesc: undefined } })).toBe("Northbound");
   });
 });

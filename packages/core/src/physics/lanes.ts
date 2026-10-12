@@ -24,10 +24,10 @@
 //  - streetsAtPin() lists a street once per direction, whichever pieces carry it on
 //    either side of a junction; TravelChoice.roadId is the piece that carries the
 //    vehicle into the pin.
-import type { LanePath, Leg, RoadNetwork, RoadWay, StreetsAtPin, TravelChoice } from "../contracts/roads";
+import type { LanePath, Leg, RoadKind, RoadNetwork, RoadWay, StreetsAtPin, TravelChoice } from "../contracts/roads";
 import type { Vec2 } from "../contracts/geometry";
 import { LIMITS } from "../contracts/scene";
-import { boundWord } from "../format";
+import { boundWord, travelLabel } from "../format";
 import { FRICTION, MPH_TO_MPS } from "./constants";
 import { approachFor, brakeDecel } from "./model";
 import {
@@ -351,14 +351,74 @@ export function streetsAtPin(rawNet: RoadNetwork, pin: Vec2): StreetsAtPin {
       if (byLabel.get(bound) !== c) continue;
       byLabel.delete(bound);
       const name = streetName(c.way);
-      directions.push({ roadId: c.way.id, roadName: name, bearingDeg, bound, label: name ? `${bound} on ${name}` : bound });
+      directions.push({ roadId: c.way.id, roadName: name, roadDesc: null, bearingDeg, bound, label: travelLabel(bound, { roadName: name }) });
     }
   }
-  // An unnamed road that is two separate pieces would repeat; keep each label once per road id.
+  // Unnamed roads are told apart by kind and place ("northbound on the parking aisle (west one)"), never by a made-up
+  // name. Two pieces of the same unnamed road get the same words and so the same label: each label is kept once.
+  const descs = unnamedDescriptions(grouped.filter((w) => streetName(w.way) === null), pin);
   const seen = new Set<string>();
-  const unique = directions.filter((d) => { const k = d.roadName ? d.label : `${d.roadId}|${d.label}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  const unique: TravelChoice[] = [];
+  for (const d of directions) {
+    const roadDesc = d.roadName === null ? descs.get(d.roadId) ?? null : null;
+    const label = travelLabel(d.bound, { roadName: d.roadName, roadDesc });
+    if (seen.has(label)) continue;
+    seen.add(label);
+    unique.push({ ...d, roadDesc, label });
+  }
 
   return { pin, roads, legs: legsNear(net, pin), directions: unique };
+}
+
+/** What an unnamed road is called in captions: its kind only. */
+const UNNAMED_KIND: Partial<Record<RoadKind, string>> = { parking_aisle: "the parking aisle", service: "the unnamed service road" };
+const unnamedKind = (k: RoadKind): string => UNNAMED_KIND[k] ?? "the unnamed road";
+/** Pieces whose sideways offsets from the pin are this close are one road (meters). */
+const SAME_LINE_M = 2;
+const ORDINALS = ["nearest the pin", "second nearest the pin", "third nearest the pin", "fourth nearest the pin", "fifth nearest the pin", "sixth nearest the pin"];
+
+/**
+ * Words that tell unnamed roads at the pin apart, by way id: the kind ("the parking aisle"), and when several of that
+ * kind run the same way (north–south or east–west at the pin), where each one sits: "(west one)", "(middle)", "(east
+ * one)" for two or three side by side ("(south one)" … "(north one)" for east–west roads), or how near the pin it is
+ * for more. Pieces of one road (the same sideways offset) share their words. Only what the map says: never a name.
+ */
+function unnamedDescriptions(ways: readonly NearWay[], pin: Vec2): Map<string, string> {
+  const out = new Map<string, string>();
+  const buckets = new Map<string, Array<{ id: string; offset: number; dist: number }>>();
+  for (const w of ways) {
+    const poly = makePoly(w.way.centerline);
+    const pr = project(poly, pin);
+    const bearing = toDeg(wrap2Pi(localBearing(w.way, pin, true)));
+    const ns = boundWord(bearing) === "northbound" || boundWord(bearing) === "southbound";
+    const kind = unnamedKind(w.way.kind);
+    const key = `${kind}|${ns ? "ns" : "ew"}`;
+    const list = buckets.get(key) ?? [];
+    // West to east for a north–south road, south to north for an east–west one.
+    list.push({ id: w.way.id, offset: ns ? pr.point.x - pin.x : pr.point.y - pin.y, dist: pr.dist });
+    buckets.set(key, list);
+  }
+  for (const [key, list] of buckets) {
+    const kind = key.slice(0, key.lastIndexOf("|"));
+    const ns = key.endsWith("|ns");
+    list.sort((a, b) => a.offset - b.offset);
+    // Pieces of one road: consecutive offsets within SAME_LINE_M.
+    const lines: Array<typeof list> = [];
+    for (const r of list) {
+      const last = lines[lines.length - 1];
+      if (last && r.offset - last[last.length - 1]!.offset <= SAME_LINE_M) last.push(r); else lines.push([r]);
+    }
+    const n = lines.length;
+    const [lo, hi] = ns ? ["west one", "east one"] : ["south one", "north one"];
+    const byNear = [...lines].sort((a, b) => Math.min(...a.map((r) => r.dist)) - Math.min(...b.map((r) => r.dist)));
+    lines.forEach((line, i) => {
+      const where = n === 1 ? null
+        : n <= 3 ? (i === 0 ? lo : i === n - 1 ? hi : "middle")
+        : ORDINALS[byNear.indexOf(line)] ?? `number ${byNear.indexOf(line) + 1} from the pin`;
+      for (const r of line) out.set(r.id, where ? `${kind} (${where})` : kind);
+    });
+  }
+  return out;
 }
 
 /** Split the roads at every junction within reach of the pin into legs with outward bearings. */

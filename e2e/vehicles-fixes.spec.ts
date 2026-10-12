@@ -185,3 +185,21 @@ test.describe("a nickname typed before the makes list lands", () => {
     expect(pageErrors()).toEqual([]);
   });
 });
+
+// Item 3: unnamed roads get words that tell them apart, the same in the list, the compass line and the summary.
+test("@xb the parking example's direction list tells its three unnamed aisles apart, and the caption says the same", async ({ page, pageErrors }) => {
+  await openExample(page, "parking-lot-backing");
+  await page.getByRole("button", { name: "Edit details" }).click();
+  await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
+  const a = page.locator("#vehicle-A");
+  const group = a.locator("[data-fix-direction]");
+  const radios = group.getByRole("radio");
+  await expect(radios).toHaveCount(6);
+  const names = await radios.allInnerTexts();
+  expect(new Set(names).size, names.join(" | ")).toBe(6);
+  for (const n of names) expect(n).toMatch(/^(North|South)bound on the parking aisle \((west one|middle|east one)\)$/);
+  const pick = group.getByRole("radio", { name: "Northbound on the parking aisle (west one)" });
+  await pick.click();
+  await expect(group.locator(".dir-caption")).toHaveText("Northbound on the parking aisle (west one)");
+  expect(pageErrors()).toEqual([]);
+});

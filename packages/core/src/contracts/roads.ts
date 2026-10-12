@@ -98,7 +98,13 @@ export interface TravelChoice {
   readonly bearingDeg: number;
   /** "northbound", "southbound", "eastbound", "westbound" (nearest of the four). */
   readonly bound: "northbound" | "southbound" | "eastbound" | "westbound";
-  /** Plain label: "northbound on Main Street". */
+  /**
+   * An unnamed road told apart from what we know of it, never a name: its kind, and where it sits among the
+   * unnamed roads of that kind at the pin ("the parking aisle (west one)", "the unnamed service road"). Null
+   * when the road has a name.
+   */
+  readonly roadDesc: string | null;
+  /** Plain label: "northbound on Main Street", "northbound on the parking aisle (west one)". */
   readonly label: string;
 }
 

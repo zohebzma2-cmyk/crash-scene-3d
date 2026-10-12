@@ -111,9 +111,9 @@ describe("scene store reducer", () => {
 
 describe("road-relative travel", () => {
   const choices = [
-    { roadId: "w1", roadName: "Main Street", bearingDeg: 342, bound: "northbound", label: "northbound on Main Street" },
-    { roadId: "w1", roadName: "Main Street", bearingDeg: 162, bound: "southbound", label: "southbound on Main Street" },
-    { roadId: "w2", roadName: "Park Street", bearingDeg: 252, bound: "westbound", label: "westbound on Park Street" },
+    { roadId: "w1", roadName: "Main Street", roadDesc: null, bearingDeg: 342, bound: "northbound", label: "northbound on Main Street" },
+    { roadId: "w1", roadName: "Main Street", roadDesc: null, bearingDeg: 162, bound: "southbound", label: "southbound on Main Street" },
+    { roadId: "w2", roadName: "Park Street", roadDesc: null, bearingDeg: 252, bound: "westbound", label: "westbound on Park Street" },
   ] as const;
   const v = (travel: Partial<Doc["scene"]["vehicles"][0]["travel"]>) => ({ ...initialDoc().scene.vehicles[0]!, travel: { bearingDeg: 0, roadId: null, roadName: null, lane: null, ...travel } });
 
@@ -149,7 +149,7 @@ describe("road-relative travel", () => {
     const opened = docFromScene(tbone, "x");
     expect(opened.reconcile).toBe(false);
     expect(opened.directionSet).toEqual([true, true]);
-    const choicesMain = [{ roadId: "w1", roadName: "Main Street", bearingDeg: 342, bound: "northbound" as const, label: "northbound on Main Street" }];
+    const choicesMain = [{ roadId: "w1", roadName: "Main Street", roadDesc: null, bearingDeg: 342, bound: "northbound" as const, label: "northbound on Main Street" }];
     expect(reducer(opened, { type: "reconcile-travel", choices: choicesMain })).toBe(opened);
     // a file saved with no road name and bearing 90 reopens exactly as saved
     const odd = { ...tbone, vehicles: tbone.vehicles.map((x, i) => (i === 1 ? { ...x, travel: { bearingDeg: 90, roadId: null, roadName: null, lane: null } } : x)) };
