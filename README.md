@@ -1,10 +1,10 @@
 # crash-scene-3d
 
-![Demo: the T-bone example from search to save. Search "Main Street and Park Street, Nashua NH", pick the crossing and set the pin, choose each vehicle's direction and where it was hit, play the 3D timeline on Review, switch to the Aftermath view, then save the files as one ZIP.](docs/demo.gif)
+![Demo: the full flow. Search "Main Street and Park Street, Nashua NH" and pick the crossing; on Vehicles type 2019 Chevrolet Silverado 1500 (red) for A and 2021 Honda Accord (blue) for B, with their stock photos, directions and hit sides; play the 3D timeline to the impact on Review, switch to Aftermath, press "Looks right: save it" and save the files as one ZIP.](docs/media/demo-flow.gif)
 
-Made-up claim on real public roads; illustration only.
+A recording of a local fixtures build (`VITE_FIXTURES=1`) with synthetic data: a made-up claim on real public roads, a synthetic car photo and 3D model, illustration only. [MP4 version](docs/media/demo-flow.mp4) · [shorter T-bone GIF](docs/demo.gif)
 
-<sub>Regenerate the GIF: `FFMPEG=/path/to/ffmpeg node scripts/record-demo.mjs` (builds with `VITE_FIXTURES=1`, serves on port 4333, records 1280x720 with Playwright, writes `docs/demo.gif`; add `--no-build` to reuse an earlier build).</sub>
+<sub>Regenerate: `FFMPEG=/path/to/ffmpeg node scripts/record-demo-full.mjs` (builds with `VITE_FIXTURES=1`, serves on port 4521, records 1280x720 with Playwright, writes `docs/media/demo-flow.gif` and `.mp4`); `--stills=desktop` and `--stills=phone` write the step screenshots under `docs/media/steps/`; add `--no-build` to reuse an earlier build. The shorter T-bone GIF comes from `node scripts/record-demo.mjs` (port 4333, `docs/demo.gif`).</sub>
 
 crash-scene-3d is a browser tool for InsurifyAI. A claimant enters the place, the vehicles, their directions and speeds, and where each vehicle was hit. The tool draws a 3D recreation on the real road layout from OpenStreetMap. It runs a small, fixed physics model so the vehicles arrive, touch and come to rest in a plausible way. It saves a PDF, PNG pictures and a scene file, all made in the browser. It is an illustration of what the claimant described. It does not find out what happened.
 
@@ -20,7 +20,50 @@ Both texts are DESIGN.md section 3, word for word. They are the constants `DISCL
 
 ## Screenshots
 
-The demo GIF at the top walks through the T-bone example from search to save. To see any step yourself, open an example on the live site: [T-bone](https://crash-scene-3d.netlify.app/?example=t-bone-intersection), [highway rear-end](https://crash-scene-3d.netlify.app/?example=highway-rear-end), [parking lot](https://crash-scene-3d.netlify.app/?example=parking-lot-backing).
+The GIF at the top walks through the whole flow. The stills below come from the same script on a local fixtures build (`node scripts/record-demo-full.mjs --stills=desktop` and `--stills=phone`), so the car photo, badge and 3D model are the synthetic fixture files (`?media=on`), not real pictures.
+
+### How it works, step by step
+
+1. **Location.** Search "Main Street and Park Street, Nashua NH", pick the crossing, and the pin lands where the two streets meet (drag it to where the vehicles hit).
+
+   ![Step 1, Location: the search result "Main Street & Park Street" picked and the pin set on the crossing](docs/media/steps/desktop-location.png)
+
+2. **Vehicles.** Type year, make and model (NHTSA vPIC fills the type and size class), pick a colour, then the direction and where each vehicle was hit.
+
+   ![Step 2, Vehicles: card A filled in as a 2019 Chevrolet Silverado 1500, pickup from NHTSA vPIC, colour Red, with the synthetic stock photo](docs/media/steps/desktop-vehicles.png)
+
+3. **Review at impact.** The 3D recreation in the Top view, with the timeline set to the moment of impact.
+
+   ![Step 3, Review: Top view at the impact, the red pickup A northbound on Main Street hit on its right side by the blue car B westbound on Park Street](docs/media/steps/desktop-review.png)
+
+4. **Aftermath.** One tap shows where both vehicles came to rest, with the path before impact dashed.
+
+   ![Step 3, Review: the Aftermath view, both vehicles at final rest](docs/media/steps/desktop-aftermath.png)
+
+5. **Save.** "Looks right: save it" leads to the save step; "Save to my device" makes the PDF, PNGs and scene file in the browser and saves them as one ZIP.
+
+   ![Step 4, Save: the files to save and the Save to my device button](docs/media/steps/desktop-save.png)
+
+6. **The PDF.** Page 1 of the saved report: place, top-down diagram, vehicles with stock photos, key measurements, assumptions, the long disclaimer and the SHA-256 fingerprint.
+
+   ![Page 1 of the saved PDF, rendered at 110 dpi](docs/media/steps/desktop-pdf.png)
+
+On a phone (390 px, Pixel 7), the same steps:
+
+![The same five steps at phone width: location, vehicles, review at impact, aftermath, save](docs/media/steps/phone-strip.png)
+
+### Best cases to try
+
+- [T-bone at an intersection](https://crash-scene-3d.netlify.app/?example=t-bone-intersection#review): a side impact at a crossing: play the timeline, tap the Impact mark, then compare the Top, Wide and driver views.
+- [Highway rear-end](https://crash-scene-3d.netlify.app/?example=highway-rear-end#review): a same-direction hit at highway speed: the Measure tab shows how far each vehicle moved after the impact.
+- [Parking lot backing](https://crash-scene-3d.netlify.app/?example=parking-lot-backing#review): a slow backing collision in a lot: look at Aftermath, where low speeds mean little movement after the touch.
+- The auto-fix: start the [default claim](https://crash-scene-3d.netlify.app/), pick the Main & Park crossing and go to the vehicles step. Mark A hit on the left (A northbound on Main, B westbound on Park) and the vehicles step offers "Change A's hit side to Right side", the side that fits the directions; one tap applies it.
+
+### What's real vs illustrated
+
+- **Real:** road layouts and features (lanes, crossings, buildings) from OpenStreetMap; vehicle data (makes, models, body type) from NHTSA vPIC.
+- **Catalog, not the vehicles involved:** stock photos and 3D models from CarImages (watermarked on the free plan). In the recordings above they are synthetic fixture files.
+- **Illustrated:** the physics. A small fixed model makes the vehicles arrive, touch and come to rest plausibly from the details entered. It is an illustration, not an expert reconstruction, and it does not decide fault.
 
 ## Live URL
 
