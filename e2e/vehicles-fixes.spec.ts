@@ -135,6 +135,8 @@ test.describe("catalog models stay on Review", () => {
     await b.getByLabel("Model").fill("F-150");
     await b.getByLabel("Model").press("Tab");
     await expect(b.locator(".lookup")).toContainText("Pickup from NHTSA vPIC", { timeout: 10_000 });
+    await expect(b.locator(".type-auto")).toContainText("Pickup");
+    await expect(b.getByRole("radiogroup", { name: "Type of vehicle B" })).toHaveCount(0);
     await page.waitForTimeout(3000);
     expect(asked).toEqual([]);
     expect(pageErrors()).toEqual([]);

@@ -69,7 +69,9 @@ test.describe("the vehicle picker", () => {
     await models.first().click();
     await expect(model).toHaveValue("Silverado 1500");
     await expect(model).toHaveAttribute("aria-expanded", "false");
-    await expect(a.getByRole("radio", { name: /Pickup/ })).toHaveAttribute("aria-checked", "true");
+    // The type is filled in, not asked: no type tiles, just the type and "Not right? Change type".
+    await expect(a.locator(".type-auto")).toContainText("Pickup");
+    await expect(a.getByRole("radiogroup", { name: "Type of vehicle A" })).toHaveCount(0);
     await expect(a.locator(".lookup")).toContainText("Pickup from NHTSA vPIC (Truck). Weight and size: pickup class average.");
     await expect(a.locator(".vehicle-sub")).toContainText("2019 Chevrolet Silverado 1500");
 
@@ -90,7 +92,7 @@ test.describe("the vehicle picker", () => {
     await expect((await optionsOf(fieldOf(b, "Model"), page)).first()).toContainText("Jetta");
     await page.keyboard.press("Enter");
     await expect(fieldOf(b, "Model")).toHaveValue("Jetta");
-    await expect(b.getByRole("radio", { name: /^Car/ })).toHaveAttribute("aria-checked", "true");
+    await expect(b.locator(".type-auto")).toContainText("Car");
     await page.keyboard.press("Escape");
     await shot(page, info, "picker-done");
 

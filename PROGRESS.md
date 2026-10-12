@@ -41,6 +41,7 @@
    4. The diagram: the scale bar moved off the north arrow. **Merged (reviewed), not yet deployed.**
    5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together". **Merged (reviewed), not yet deployed.**
    6. The vehicles step no longer says "a lot of map requests" when you type a make and model: vPIC has its own buckets, every route retries before a busy message, wording is per topic, our live tests stub vehicles and tiles (docs/PROXY-BUSY.md, decision 0010). **Merged (reviewed), not yet deployed.** After the deploy, run `e2e/live/vehicles.live.spec.ts` once. Decision for the owner: extend CLAUDE.md hard rule 6's exception to vPIC (2/s global with bursts).
+   7. The vehicle type is picked from vPIC, never asked (branch `fix/vpic-auto`): VehicleTypeName plus curated van/pickup model tables in core (no BodyClass without a VIN); tiles only behind "Not right? Change type" or when vPIC has no answer; a hand pick stands for its model through a year change. **Local commits only, not reviewed or merged.**
 2. **The camera framing fixes** from docs/VISIBILITY-SWEEP.md, in this order:
    1. fit into the unobstructed view, which matters most on phones;
    2. the 900 m orbit clamp;
