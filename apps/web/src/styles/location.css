@@ -111,3 +111,7 @@
 .map-dialog .map-tools { right: calc(var(--space-3) + env(safe-area-inset-right)); top: calc(var(--space-3) + env(safe-area-inset-top)); }
 .map-dialog .map-hint { left: calc(var(--space-3) + env(safe-area-inset-left)); top: calc(var(--space-3) + var(--size-touch) + var(--space-3) + env(safe-area-inset-top)); }
 .map-dialog .map-attrib { padding-right: calc(var(--space-2) + env(safe-area-inset-right)); padding-bottom: env(safe-area-inset-bottom); }
+
+/* The optional claim number (DESIGN.md section 5, step 1): a label styled as the group title, a full-width text field. */
+label.group-label { display: block; }
+.claim-number-input { max-width: var(--size-dialog-max); }

@@ -60,8 +60,10 @@ export function validateScene(scene: unknown): PlainMessage[] {
     const travel = isObj(v["travel"]) ? v["travel"] : {};
     if (!isNum(travel["bearingDeg"])) bad("bad-direction", "Pick which way the vehicle was going.");
     else if (travel["bearingDeg"] < 0 || travel["bearingDeg"] >= 360) bad("bad-direction", "The direction has to be between 0 and 360 degrees.");
+    const fromDriveway = travel["fromDriveway"];
+    if (fromDriveway !== undefined && fromDriveway !== null && typeof fromDriveway !== "boolean") bad("bad-direction", "Say whether the vehicle came out of a driveway or parking lot.");
     const lane = travel["lane"];
-    if (lane !== null && lane !== undefined && !(Number.isInteger(lane) && (lane as number) >= 0 && (lane as number) <= 7)) {
+    if (lane !== null && lane !== undefined && !(Number.isInteger(lane) && (lane as number) >= 0 && (lane as number) <= 19)) {
       bad("bad-lane", "The lane has to be a whole number, counting from the right.");
     }
 

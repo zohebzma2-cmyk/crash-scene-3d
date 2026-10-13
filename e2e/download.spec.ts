@@ -129,7 +129,7 @@ for (const example of EXAMPLES) {
     const short = sha.slice(0, 16).match(/.{4}/g)!.join(" ");
     const scene = JSON.parse(text) as { disclaimer: string; claim: { number: string }; createdAt: string; schemaVersion: number };
     expect(scene.claim.number).toBe(claim);
-    expect(scene.schemaVersion).toBe(3);
+    expect(scene.schemaVersion).toBe(4);
     expect(scene.disclaimer).toBe(DISCLAIMER_LONG);
     expect(scene.createdAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
     const stampLocal = await page.evaluate((iso) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" }).format(new Date(iso)), scene.createdAt);

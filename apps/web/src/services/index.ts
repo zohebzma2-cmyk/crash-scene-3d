@@ -1,6 +1,6 @@
 // Wires the UI's service interfaces to the real functions (and, in fixtures mode, to the examples).
 // The lead can swap any piece here; nothing else in the app imports @csd/mapdata or @csd/exports.
-import { checkScene, placeVehicles, poseAt, simulate, streetsAtPin, suggestFixes, toLatLon, toLocal } from "@csd/core";
+import { checkScene, directionChoices, placeVehicles, poseAt, roadFitProblems, simulate, streetsAtPin, suggestFixes, toLatLon, toLocal } from "@csd/core";
 import { mergeSearchResults, parseOverpass, splitCrossingQuery } from "@csd/mapdata";
 import type { buildExports as BuildExports } from "@csd/exports";
 
@@ -13,7 +13,7 @@ const buildExports: typeof BuildExports = (...args) => import("@csd/exports").th
 import { createBrowserCanvasFactory, loadBrandFonts } from "../exports/browser-canvas";
 import { createExportsService } from "./exports";
 import {
-  fakeBuildExports, fakeCheckScene, fakeSuggestFixes, fakeMergeSearchResults, fakeParseOverpass, fakePlaceVehicles, fakePoseAt,
+  fakeBuildExports, fakeCheckScene, fakeDirectionChoices, fakeRoadFitProblems, fakeSuggestFixes, fakeMergeSearchResults, fakeParseOverpass, fakePlaceVehicles, fakePoseAt,
   fakeSimulate, fakeSplitCrossingQuery, fakeStreetsAtPin, fakeToLatLon, fakeToLocal,
 } from "./fakes";
 import { withFallback } from "./fallbacks";
@@ -82,6 +82,8 @@ export function createServices(opts: CreateServicesOptions): Services {
     simulate: withFallback(simulate, fakeSimulate, fx),
     poseAt: withFallback(poseAt, fakePoseAt, fx),
     checkScene: withFallback(checkScene, fakeCheckScene, fx),
+    directionChoices: withFallback(directionChoices, fakeDirectionChoices, fx),
+    roadFitProblems: withFallback(roadFitProblems, fakeRoadFitProblems, fx),
     suggestFixes: withFallback(suggestFixes, fakeSuggestFixes, fx),
   };
   // A module worker built by Vite into its own file on this origin (CSP worker-src 'self'); none where the browser has no Worker.

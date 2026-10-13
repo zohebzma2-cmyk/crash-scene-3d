@@ -1,9 +1,8 @@
 // Screen-space helpers shared by the live label layer and the still-image capture: where a vehicle's
 // box lands on screen, and what its label says.
 import { Vector3, type Camera } from "three";
-import { formatSpeed, type Pose, type SceneVehicle, type Units } from "@csd/core";
+import { formatSpeed, roleWords, vehicleTag, type Pose, type SceneVehicle, type Units } from "@csd/core";
 import { headingToYaw, toThree, type Rect } from "./math";
-import { roleName } from "../lib/text";
 
 /** Label anchor sits this far above the roof, meters. */
 const ANCHOR_LIFT_M = 0.15;
@@ -108,11 +107,14 @@ export function projectRing(camera: Camera, size: { w: number; h: number }, cent
   return { rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY }, strips: valid ? stripsOf(hull(pts), minY, maxY) : [], valid };
 }
 
-/** Name and speed for a vehicle's label at the moment `pose` describes. */
-export function vehicleLabel(sv: SceneVehicle | undefined, id: string, pose: Pose, timeS: number, units: Units): { name: string; speed: string; text: string } {
-  const name = sv ? roleName(sv) : id === "A" ? "Your car" : `Vehicle ${id}`;
+/**
+ * Name and speed for a vehicle's label at the moment `pose` describes. `full` is core's one label, "A · Your car · 25 mph";
+ * the pill shows the letter in its badge and `text` ("Your car · 25 mph") beside it.
+ */
+export function vehicleLabel(sv: SceneVehicle | undefined, id: string, pose: Pose, timeS: number, units: Units): { name: string; speed: string; text: string; full: string } {
+  const name = roleWords({ id });
   let speed: string;
   if (pose.speedMps < STOPPED_MPS) speed = sv?.action === "parked" && timeS <= 0 ? "Parked" : "Stopped";
   else speed = `${sv?.speed.kind === "unsure" ? "~" : ""}${formatSpeed(pose.speedMps, { units }).text}`;
-  return { name, speed, text: `${name} ${speed}` };
+  return { name, speed, text: `${name} · ${speed}`, full: vehicleTag({ id }, speed) };
 }

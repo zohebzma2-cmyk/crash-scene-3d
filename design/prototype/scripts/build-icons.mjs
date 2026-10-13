@@ -24,7 +24,8 @@ const sprite = `<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style
 await writeFile(new URL("prototype/icons.svg", root), sprite);
 
 const tokens = await readFile(new URL("tokens.css", root), "utf8");
-const html = `<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700&display=swap"><style>${tokens}
+const font = await readFile(new URL("../node_modules/@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-500-normal.woff2", root));
+const html = `<!doctype html><meta charset="utf-8"><style>@font-face{font-family:'Plus Jakarta Sans';src:url(data:font/woff2;base64,${font.toString("base64")})}${tokens}
 :root{color-scheme:light} body{margin:0;padding:var(--space-8);background:var(--color-surface);font-family:var(--font-sans);color:var(--color-text);width:1100px}
 h2{font-size:var(--text-sm);font-weight:var(--weight-bold);margin:var(--space-6) 0 var(--space-3);color:var(--color-text-secondary)}
 .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:var(--space-3)}

@@ -54,8 +54,9 @@ function GatePanelBody({ fixes }: { fixes: boolean }) {
     fixRef.current?.scrollIntoView?.({ block: "center" });
     fixRef.current?.focus({ preventScroll: true });
   }, []);
-  // One-tap fixes only for details that don't fit together: a missing or unusable detail is the claimant's to give.
-  const offerFixes = fixes && !flow.blocking && flow.problems.some((p) => p.kind === "conflict");
+  // One-tap fixes only for details that don't fit together (a direction off the roads among them, which blocks): a missing or
+  // unusable detail is the claimant's to give.
+  const offerFixes = fixes && flow.problems.some((p) => p.kind === "conflict") && !flow.problems.some((p) => p.blocking && p.kind !== "conflict");
   return (
     <div className="warnings" data-testid="gate-panel">
       <div className="warnings-body" role="alert">

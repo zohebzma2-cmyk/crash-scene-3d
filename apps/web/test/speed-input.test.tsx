@@ -4,12 +4,12 @@ import { LIMITS, parseScene, type Scene } from "@csd/core";
 import { SPEED_BELOW_TEXT, SPEED_EMPTY_TEXT, SPEED_NAN_TEXT, SPEED_TENTHS_TEXT, SPEED_TOO_FAST_TEXT, parseSpeedText } from "../src/components/SpeedInput";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { click, flush, get, renderApp, setValue, text } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAnswers } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.unstubAllGlobals(); });
 
-const located = (): Doc => ({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+const located = (): Doc => withAnswers({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
 const card = (id: string) => document.getElementById(`vehicle-${id}`) as HTMLElement;
 const field = () => card("A").querySelector<HTMLInputElement>("input[inputmode=decimal]")!;
 const stored = () => (JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}") as Doc).scene.vehicles[0]?.speed;

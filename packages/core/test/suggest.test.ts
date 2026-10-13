@@ -1,7 +1,7 @@
 // suggestFixes: when the picture can't be drawn, the closest details that do draw (DESIGN.md section 18).
 import { describe, expect, it } from "vitest";
 import type { RoadNetwork, Scene } from "../src";
-import { ACTION_LABELS, MAX_FIXES, PIN_FIX_MAX_M, ZONE_WORDS, boundWord, simulate, streetsAtPin, suggestFixes, toLocal, whySentence } from "../src";
+import { ACTION_LABELS, MAX_FIXES, PIN_FIX_MAX_M, ZONE_WORDS, facingWords, goingWords, simulate, streetsAtPin, suggestFixes, toLocal, whySentence } from "../src";
 import { sampleScene } from "./fixtures";
 import { NETWORKS, loadRoads, loadScene, randomScene, rng } from "./suggest-sweep";
 
@@ -70,7 +70,7 @@ function expectSound(scene: Scene, roads: RoadNetwork | null, again = true) {
       if (c.field === "zone") expect(c.to.toLowerCase()).toBe(ZONE_WORDS[after.zone]);
       if (c.field === "action") expect(c.to.startsWith(ACTION_LABELS[after.action])).toBe(true);
       if (c.field === "action" && scene.vehicles.find((v) => v.id === c.vehicleId)!.action === "parked" && after.action !== "parked") expect(c.to).toMatch(/ at (\d+(\.\d)? mph|a speed the picture picks)$/);
-      if (c.field === "direction") expect(c.to.toLowerCase()).toContain(after.action === "parked" || after.action === "backing" ? `facing ${boundWord(after.travel.bearingDeg).replace("bound", "")}` : boundWord(after.travel.bearingDeg));
+      if (c.field === "direction") expect(c.to.toLowerCase()).toContain(after.action === "parked" || after.action === "backing" ? `facing ${facingWords(after.travel.bearingDeg)}` : goingWords(after.travel.bearingDeg));
     }
   }
   expect(new Set(s.fixes.map((f) => f.id)).size).toBe(s.fixes.length);

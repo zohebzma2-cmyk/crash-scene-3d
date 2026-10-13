@@ -182,19 +182,19 @@ describe("the vehicle card's photo and logo", () => {
     expect(document.querySelector(".logo-credit")).toBeNull();
   });
 
-  it("round B: with a colour picked, the catalog photo has a 'Picked: Red' chip under it; none for Not sure or without a photo", async () => {
+  it("round B: the catalog photo always says it is the catalog's ('Catalog photo'), with the picked colour once there is one", async () => {
     const b = await pickF150(async (url) => new Response((url.startsWith(PROXY_ROUTES.makeLogo) ? LOGO_PNG : CAR_PNG) as BodyInit, { headers: { "content-type": "image/png", [MEDIA_HEADERS.image]: "exact", [MEDIA_HEADERS.logoSource]: "carimages" } }));
     expect(b.querySelector(".vehicle-photo")?.getAttribute("data-photo")).toBe("photo");
-    expect(b.querySelector(".paint-chip")).toBeNull();
+    expect(b.querySelector(".vehicle-photo-wrap .paint-chip")?.textContent).toBe("Catalog photo");
     const radio = (name: string) => [...b.querySelectorAll<HTMLElement>('[data-paint-picker] [role="radio"]')].find((r) => (r.getAttribute("aria-label") ?? r.textContent) === name)!;
     radio("Red").click();
     await flush();
     const chip = b.querySelector(".vehicle-photo-wrap .paint-chip");
-    expect(chip?.textContent).toBe("Picked: Red");
+    expect(chip?.textContent).toBe("Catalog photo · Picked: Red");
     expect(b.querySelector(".vehicle-photo-wrap .vehicle-photo")?.getAttribute("data-photo")).toBe("photo");
     radio("Not sure of the colour").click();
     await flush();
-    expect(b.querySelector(".paint-chip")).toBeNull();
+    expect(b.querySelector(".vehicle-photo-wrap .paint-chip")?.textContent).toBe("Catalog photo");
   });
 
   it("over quota (429): our icons, no error text", async () => {

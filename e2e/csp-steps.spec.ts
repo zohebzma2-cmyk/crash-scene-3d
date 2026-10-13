@@ -26,6 +26,13 @@ test("@xb no CSP violation on any step: location, vehicles, review (measure, aft
     expect(v, `${browserName} ${info.project.name}: CSP violations by the end of "${step}"`).toEqual([]);
   };
 
+  // The first-visit welcome (fixtures mode shows it only with ?welcome=1), with its fade-in, then Dismiss.
+  await page.goto("/?welcome=1");
+  await expect(page.getByRole("dialog", { name: "See what happened, in 3D" })).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await where("welcome");
+
   // Step 1 and step 2, as a first visit sees them (tips on): hide one tip, hide all, show again.
   await goStep(page, "location");
   await where("location");

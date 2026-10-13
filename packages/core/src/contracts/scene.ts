@@ -11,7 +11,28 @@ import { MAX_PAINT_NAME, PAINT_HEX } from "../vehicle-color";
 // runs first in the module, so no consumer can build a schema ahead of it).
 z.config({ jitless: true });
 
-export const SCHEMA_VERSION = 3 as const;
+export const SCHEMA_VERSION = 4 as const;
+
+export const LIGHTING = ["daylight", "dusk-dawn", "dark-lit", "dark-unlit", "not-sure"] as const;
+export const WEATHER = ["clear", "rain", "snow", "fog", "not-sure"] as const;
+export const CONTROL = ["green", "yellow", "red", "flashing", "stop", "yield", "none", "not-sure"] as const;
+export const YES_NO = ["yes", "no", "not-sure"] as const;
+export const VISIBILITY = ["sun-glare", "parked-cars", "hedges", "none", "not-sure"] as const;
+export const ConditionsSchema = z.object({
+  lighting: z.enum(LIGHTING).optional(),
+  weather: z.enum(WEATHER).optional(),
+  visibility: z.array(z.enum(VISIBILITY)).max(5).optional(),
+});
+export const VehicleAccountSchema = z.object({
+  /** Separates an answer to the new question from a legacy placement lane. */
+  lane: z.enum(["entered", "not-sure"]).optional(),
+  control: z.enum(CONTROL).optional(),
+  signaled: z.enum(YES_NO).optional(),
+  braking: z.enum(YES_NO).optional(),
+  swerving: z.enum(YES_NO).optional(),
+  airbags: z.enum(YES_NO).optional(),
+  towed: z.enum(YES_NO).optional(),
+});
 
 /** Largest scene file we'll read. Checked on the raw bytes before parsing. */
 export const MAX_SCENE_BYTES = 1_000_000;
@@ -106,11 +127,19 @@ const TravelSchema = z.object({
    */
   roadDesc: text("The road description", 120).nullable().transform((d) => d ?? undefined).optional(),
   /** Lane for its direction, 0 = rightmost. null = choose automatically. */
-  lane: z.number({ error: "The lane should be a number from 0 to 7." }).int({ error: "The lane should be a whole number from 0 to 7." })
-    .min(0, { error: "The lane should be a number from 0 to 7." }).max(7, { error: "The lane should be a number from 0 to 7." }).nullable(),
+  lane: z.number({ error: "The lane should be a number from 0 to 19." }).int({ error: "The lane should be a whole number from 0 to 19." })
+    .min(0, { error: "The lane should be a number from 0 to 19." }).max(19, { error: "The lane should be a number from 0 to 19." }).nullable(),
+  /**
+   * The vehicle came out of a driveway or parking lot beside the road (`roadId`) rather than along it: its path starts a
+   * short way off the road, from a stop. Additive: absent (or false, or null) in older v3 files and left out of the
+   * canonical JSON then, so their fingerprints don't change.
+   */
+  fromDriveway: z.boolean({ error: "Say whether the vehicle came out of a driveway or parking lot." }).nullable()
+    .transform((d) => (d === true ? true : undefined)).optional(),
 }, { error: "Each vehicle needs a direction of travel." });
 
 const VehicleSchema = z.object({
+  account: VehicleAccountSchema.optional(),
   id: z.enum(VEHICLE_IDS, { error: "Vehicles are lettered A to D." }),
   role: z.enum(["claimant", "other"], { error: "Say whether this is the claimant's vehicle or the other one." }),
   year: z.number({ error: "The year should be a number." }).int({ error: "The year should be a whole number." })
@@ -158,6 +187,7 @@ function latestAllowedDate(): string {
 const NOT_A_SCENE ="That doesn't look like a crash scene.";
 
 export const SceneSchema = z.object({
+  conditions: ConditionsSchema.optional(),
   schemaVersion: z.literal(SCHEMA_VERSION, {
     error: (iss) => (iss.input == null
       ? "This file doesn't say which version of the tool saved it, so it can't be opened."
@@ -261,7 +291,7 @@ function plainFailure(issues: readonly z.core.$ZodIssue[], input: unknown): stri
 }
 
 export function parseScene(input: unknown): ParseResult<Scene> {
-  const r = SceneSchema.safeParse(input);
+  const r = SceneSchema.safeParse(migrateScene(input));
   return r.success ? { ok: true, value: r.data } : { ok: false, errors: plainFailure(r.error.issues, input) };
 }
 
@@ -282,6 +312,14 @@ export function parseSceneFile(bytes: Uint8Array): ParseResult<SceneFile> {
   } catch {
     return { ok: false, errors: ["That file isn't a scene file we can read (it isn't valid JSON)."] };
   }
-  const r = SceneFileSchema.safeParse(json);
+  const r = SceneFileSchema.safeParse(migrateScene(json));
   return r.success ? { ok: true, value: r.data } : { ok: false, errors: plainFailure(r.error.issues, json) };
+}
+
+/** v3 already carries the same physics inputs. Do not invent answers or change those inputs. */
+export function migrateScene(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const old = input as Record<string, unknown>;
+  if (old.schemaVersion !== 3) return input;
+  return { ...old, schemaVersion: SCHEMA_VERSION };
 }

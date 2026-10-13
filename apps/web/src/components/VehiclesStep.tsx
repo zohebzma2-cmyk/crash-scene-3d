@@ -6,6 +6,7 @@ import { Icon } from "../icons/Icon";
 import { usePhone } from "../lib/dom";
 import { useServices } from "../services/context";
 import { useDoc } from "../state/DocProvider";
+import { unansweredOf } from "../state/doc";
 import { useFlow } from "../state/Flow";
 import { useUi } from "../state/Ui";
 import { Tips } from "../tips/Tips";
@@ -66,7 +67,7 @@ export function VehiclesStep() {
         <div className="split-main">
           <div className="vehicle-list">
             {scene.vehicles.map((v, i) => (
-              <VehicleCard key={doc.vehicleKeys[i] ?? v.id} vehicle={v} canRemove={v.id !== "A" && scene.vehicles.length > LIMITS.minVehicles} directionSet={doc.directionSet[i] === true} onRemove={() => remove(v.id)} makes={makes} />
+              <VehicleCard key={doc.vehicleKeys[i] ?? v.id} vehicle={v} canRemove={v.id !== "A" && scene.vehicles.length > LIMITS.minVehicles} directionSet={doc.directionSet[i] === true} unanswered={unansweredOf(doc, i)} onRemove={() => remove(v.id)} makes={makes} />
             ))}
           </div>
           <LogoCredit />

@@ -5,7 +5,7 @@
 import {
   APPROACH_S, DEFAULT_LIMIT_MPH, DISCLAIMER_LONG, FRICTION, MPH_TO_MPS, PHYSICS_VERSION, PRESETS, RANGE_HALF_MPH,
   boundWord, canonicalJson, sha256Hex, shortFingerprint,
-  type Building, type ExportBundle, type LanePath, type LatLon, type LocalFrame, type ParkingArea, type PlacedVehicle,
+  type Action, type Building, type DirectionChoice, type ExportBundle, type LanePath, type LatLon, type LocalFrame, type ParkingArea, type PlacedVehicle,
   type PlacementOutcome, type PlainMessage, type Pose, type Range, type RoadKind, type RoadNetwork, type RoadWay,
   type FixSuggestions, type Scene, type SceneVehicle, type SimulationOutcome, type SimulationResult, type StreetsAtPin, type TravelChoice,
   type VehicleResult, type Vec2, type Zone,
@@ -13,6 +13,7 @@ import {
 import { angleDiffDeg, bearingDeg, DEG, dist, nearestOnPolyline, offsetPolyline, unitFromBearing } from "../lib/geometry";
 import { poseFromTrack } from "../lib/track";
 import type { ExportInput } from "./types";
+import { exportBaseName } from "@csd/exports/names";
 
 const M_PER_DEG = 111_320;
 
@@ -99,6 +100,20 @@ export function fakeStreetsAtPin(net: RoadNetwork, pin: Vec2): StreetsAtPin {
   }
   directions.sort((a, b) => (a.roadName ?? "").localeCompare(b.roadName ?? "") || a.bearingDeg - b.bearingDeg);
   return { pin, roads, legs, directions };
+}
+
+/** The direction list from the fake streets: each road's two ways (no turns or driveways); a compass with no roads. */
+export function fakeDirectionChoices(net: RoadNetwork | null, pin: Vec2, _action: Action): DirectionChoice[] {
+  const dirs = net ? fakeStreetsAtPin(net, pin).directions : [];
+  if (!dirs.length) {
+    return ([[0, "North"], [90, "East"], [180, "South"], [270, "West"]] as const).map(([bearingDeg, label]) => ({ kind: "compass" as const, label, travel: { bearingDeg, roadId: null, roadName: null } }));
+  }
+  return dirs.map((d) => ({ kind: "road" as const, label: `${d.label.charAt(0).toUpperCase()}${d.label.slice(1)}`, travel: { bearingDeg: d.bearingDeg, roadId: d.roadId, roadName: d.roadName } }));
+}
+
+/** The fakes always fit their roads. */
+export function fakeRoadFitProblems(_scene: Scene, _roads: RoadNetwork | null): readonly PlainMessage[] {
+  return [];
 }
 
 /* ---------- Placement and simulation (straight lines through the pin) ---------- */
@@ -317,7 +332,7 @@ export async function fakeBuildExports(input: ExportInput): Promise<ExportBundle
   const text = canonicalJson({ ...input.scene, createdAt, disclaimer: DISCLAIMER_LONG, derived: { physicsVersion: input.sim.physicsVersion } });
   const hex = await sha256Hex(text);
   const stamp = { createdAt, fingerprintHex: hex, fingerprintShort: shortFingerprint(hex) };
-  return { stamp, files: input.formats.includes("json") ? [{ name: `crash-scene-${input.scene.claim.number}.json`, mime: "application/json", bytes: new TextEncoder().encode(text) }] : [], skipped: [], notes: [] };
+  return { stamp, files: input.formats.includes("json") ? [{ name: `${exportBaseName(input.scene.claim.number, createdAt)}.json`, mime: "application/json", bytes: new TextEncoder().encode(text) }] : [], skipped: [], notes: [] };
 }
 
 export { offsetPolyline };

@@ -245,7 +245,7 @@ for (const name of EXAMPLES) {
       // Both are placed in one layoutLabels pass (apps/web/src/viewer/Viewer.tsx:206); the pill (prefer "C",
       // maxDistance PILL_REACH_PX) ends up on B's label. Only that one collision is set aside here, by exact
       // pattern, so every other view, time and example stays strict; it is checked on its own below.
-      const known = /^Driver A @ End: label: B Vehicle B Stopped {2}<-> {2}label: \d+ about /;
+      const known = /^Driver A @ End: label: B Other car · Stopped {2}<-> {2}label: \d+ about /;
       const knownHits = name === "parking-lot-backing" ? problems.filter((p) => known.test(p)) : [];
       expect(problems.filter((p) => !knownHits.includes(p))).toEqual([]);
       if (knownHits.length) test.info().annotations.push({ type: "known bug", description: knownHits.join("; ") });

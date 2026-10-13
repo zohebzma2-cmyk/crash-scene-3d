@@ -85,11 +85,11 @@ export function findCrossings(overpassJson: unknown, a: string, b: string, prefe
 
   // 1. Shared OSM nodes: a real junction.
   const aNodes = new Map<number, LatLon>();
-  for (const w of aWays) w.nodes.forEach((n, i) => aNodes.set(n, w.geometry[i] as LatLon));
+  for (const w of aWays) w.nodes.forEach((n, i) => { if (n !== undefined) aNodes.set(n, w.geometry[i] as LatLon); });
   const shared: LatLon[] = [];
   for (const w of bWays) {
     w.nodes.forEach((n, i) => {
-      const p = aNodes.get(n);
+      const p = n === undefined ? undefined : aNodes.get(n);
       if (p) shared.push(p);
       void i;
     });

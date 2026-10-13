@@ -3,6 +3,7 @@
 // -z forward. Every conversion between the two happens here, nowhere else.
 import type { Pose, RoadNetwork, SimulationResult, TerrainGrid, Vec2, VehicleResult } from "@csd/core";
 import { AFTERMATH_ELEVATION_DEG, AFTERMATH_FILL, aftermathBox } from "./effects/aftermath";
+import { ringOutline } from "./ring";
 import type { CameraView } from "./types";
 
 /** Local ENU (meters) + height → three.js position [x, y(up), z]. North is −z. */
@@ -63,9 +64,13 @@ export function approachPose(sim: SimulationResult, v: VehicleResult): Pose | un
   return v.impactPose;
 }
 
-/** The corners of every vehicle's box at the poses worth framing (impact, rest, and in "wide" the last WIDE_APPROACH_S of the approach), plus the impact point. */
+/**
+ * The corners of every vehicle's box at the poses worth framing (impact, rest, and in "wide" the last WIDE_APPROACH_S of the
+ * approach), plus the impact point and the impact ring's outline (the ring sits beside the cars, ring.ts; framed like the
+ * stills frame it, so on a phone it isn't at the edge where the vehicle labels have nowhere to go).
+ */
 export function framingPoints(sim: SimulationResult, wide: boolean): Vec2[] {
-  const pts: Vec2[] = [sim.impactPointM];
+  const pts: Vec2[] = [sim.impactPointM, ...ringOutline(sim)];
   for (const v of sim.vehicles) {
     const poses: Pose[] = [v.impactPose, v.restPose];
     const early = wide ? approachPose(sim, v) : undefined;
@@ -88,7 +93,14 @@ export function framingBounds(sim: SimulationResult, wide: boolean, marginM = 6)
   return { minX: Math.min(...xs) - marginM, minY: Math.min(...ys) - marginM, maxX: Math.max(...xs) + marginM, maxY: Math.max(...ys) + marginM };
 }
 
-export type Viewport = { readonly w: number; readonly h: number };
+export type Viewport = {
+  readonly w: number; readonly h: number;
+  /**
+   * Pixels along the bottom of the picture covered by the HUD (the legend and the zoom buttons; most of the picture on a
+   * phone). The Top view centres the crash in the part above it, so the vehicle labels have somewhere to go. 0 = none.
+   */
+  readonly bottomInset?: number;
+};
 
 export interface CameraSpec {
   /** Top is orthographic, so footprints read exactly (no perspective lean on tall boxes); the rest are perspective. */
@@ -208,8 +220,13 @@ export function cameraFor(view: CameraView, sim: SimulationResult, pose: (id: "A
   const w = Math.max(b.maxX - b.minX, MIN_SPAN_M), h = Math.max(b.maxY - b.minY, MIN_SPAN_M);
   const ground = heightAt(terrain, c);
   if (!wide) {
-    const zoom = TOP_FILL * Math.min(viewport.w / w, viewport.h / h);
-    return { kind: "orthographic", position: [c.x, ground + 400, -c.y + 0.001], target: [c.x, ground, -c.y], fovDeg, zoom };
+    // The crash fills TOP_FILL of the part of the picture the HUD doesn't cover, and is centred there: on a phone the
+    // legend and zoom buttons take the bottom quarter, where a label that sat under a car would otherwise land on them.
+    const inset = Math.max(0, Math.min(viewport.bottomInset ?? 0, viewport.h / 2));
+    const zoom = TOP_FILL * Math.min(viewport.w / w, (viewport.h - inset) / h);
+    // Screen-up is north here (the +0.001 below): looking (inset / 2) px further south puts the crash's centre in the free part.
+    const cy = c.y - inset / 2 / zoom;
+    return { kind: "orthographic", position: [c.x, ground + 400, -cy + 0.001], target: [c.x, ground, -cy], fovDeg, zoom };
   }
   const az = wideAzimuth(sim);
   const dir: V3 = [Math.sin(az) * Math.cos(WIDE_ELEVATION_RAD), Math.sin(WIDE_ELEVATION_RAD), -Math.cos(az) * Math.cos(WIDE_ELEVATION_RAD)];

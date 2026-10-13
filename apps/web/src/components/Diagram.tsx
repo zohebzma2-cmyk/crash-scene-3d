@@ -3,7 +3,9 @@
 // meters; colors, fonts and line styles come from CSS classes that use tokens.
 import { memo, useMemo } from "react";
 import type { Building, RoadNetwork, RoadWay, Scene, SimulationResult, Vec2, VehicleResult, VehicleType } from "@csd/core";
+import { featureDescription, featureIcon, taggedTurnArrows, taggedCrosswalkPaint } from "@csd/core";
 import { offsetPolyline } from "../lib/geometry";
+import { useIconStrokes } from "../lib/lazy-core";
 import { templateAxes } from "../lib/streets";
 import type { PoseFn, ViewBox } from "../lib/diagramView";
 import { paintVars } from "../lib/paint";
@@ -120,10 +122,19 @@ export interface GroundProps {
 
 export const Ground = memo(function Ground({ scene, roads }: GroundProps) {
   const axes = useMemo(() => templateAxes(scene.vehicles), [scene.vehicles]);
+  const arrows = useMemo(() => roads ? [...taggedTurnArrows(roads), ...taggedCrosswalkPaint(roads)] : [], [roads]);
+  // The glyphs' strokes load on demand (only when there are tagged features); the keys' boxes and titles draw at once.
+  const iconStrokes = useIconStrokes(Boolean(roads?.features?.length));
+  const slots = new Map<string, number>();
   return (
     <g>
       <rect x={-BIG} y={-BIG} width={BIG * 2} height={BIG * 2} className="d-ground" />
       {roads ? <RoadsLayer roads={roads} /> : <TemplateLayer place={scene.location.place} axes={axes} />}
+      {arrows.map((a) => <polyline key={a.id} points={pts(a.points)} className="d-paint" strokeWidth={0.15} fill="none" />)}
+      {roads?.features?.map((f) => {
+        const key = `${f.source}-${f.osmId}`, slot = slots.get(key) ?? 0; slots.set(key, slot + 1);
+        return <g key={f.id} transform={`translate(${f.position.x + slot * 1.8} ${-f.position.y}) scale(0.07) translate(-12 -12)`} className="d-feature"><title>{featureDescription(f)}</title><rect width={24} height={24} rx={4} className="d-feature-bg" /><g transform={f.kind === "oneway" && f.facingDeg !== null ? `rotate(${f.facingDeg - 90} 12 12)` : undefined}>{(iconStrokes?.[featureIcon(f.kind)] ?? []).map((line, i) => <polyline key={i} points={line.map((p) => p.join(",")).join(" ")} fill="none" strokeWidth={2} />)}</g></g>;
+      })}
     </g>
   );
 });
@@ -226,4 +237,3 @@ export function Diagram({ scene, roads, vb, title = "Top-down picture of the veh
     </svg>
   );
 }
-

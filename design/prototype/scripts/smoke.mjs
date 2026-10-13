@@ -5,6 +5,8 @@ const b = await chromium.launch();
 for (const w of [1440, 390]) {
   const ctx = await b.newContext({ viewport: { width: w, height: w > 500 ? 900 : 844 }, userAgent: UA });
   const p = await ctx.newPage();
+  // The first-visit welcome (DESIGN.md section 19) is seen already, so the frames show the screens.
+  await ctx.addInitScript(() => { try { localStorage.setItem("csd.welcome.v1", JSON.stringify({ seen: true })); } catch { /* blocked */ } });
   const errs = [];
   p.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errs.push(`${m.type()}: ${m.text()}`); });
   p.on("pageerror", (e) => errs.push(`pageerror: ${e.message}`));

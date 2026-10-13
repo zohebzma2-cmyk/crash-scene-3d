@@ -5,9 +5,10 @@
 // Every other spec therefore starts with tips hidden (playwright.config.ts); this one starts clean.
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
-import { boxes, expect, intersections, isPhone, openExample, searchAndPick, test, toReview, waitForViewer } from "./helpers";
+import { DEFAULT_ANSWERS, answerVehicle, boxes, expect, intersections, isPhone, openExample, searchAndPick, test, toReview, waitForViewer } from "./helpers";
 
-// A real first visit: playwright.config.ts seeds tips hidden for every other spec.
+// A real first visit for the tips: playwright.config.ts seeds tips hidden for every other spec. (Fixtures mode keeps the
+// first-visit welcome away unless ?welcome=1; the last test here asks for it.)
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const tip = (page: Page): Locator => page.locator(".tip");
@@ -24,6 +25,8 @@ async function eachStep(page: Page, at: (step: "location" | "vehicles" | "review
   await expect(page.locator("#vehicle-A")).toBeVisible();
   await page.locator("#vehicle-A").getByRole("radio", { name: "Northbound on Main Street" }).click();
   await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
+  await answerVehicle(page, "A", { type: "Car", ...DEFAULT_ANSWERS.A });
+  await answerVehicle(page, "B", DEFAULT_ANSWERS.B);
   await at("vehicles");
   await toReview(page);
   await waitForViewer(page);
@@ -188,3 +191,26 @@ test("Review with a tip showing: labels, pills and the view controls never overl
   }
   expect(problems).toEqual([]);
 });
+
+// The welcome and the tips together on a real first visit (DESIGN.md section 19): the welcome comes first, over the
+// page with the Location tip already in it; after Dismiss the tip is there and works, and a reload keeps the tip, not the welcome.
+test("@xb first visit: the welcome first, then the Location tip after Dismiss", async ({ page }) => {
+  await page.goto("/?welcome=1");
+  const welcome = page.getByRole("dialog", { name: "See what happened, in 3D" });
+  await expect(welcome).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try an example" })).toBeFocused();
+  // The tip is already in the page behind the modal.
+  await expect(tip(page)).toHaveCount(1);
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect(welcome).toHaveCount(0);
+  await expect(page.locator("#app")).toHaveAttribute("data-step", "location");
+  await expect(tip(page)).toHaveCount(1);
+  await expect(tip(page)).toHaveAttribute("aria-label", "Tip: Finding the place");
+  await tip(page).getByRole("button", { name: /^Hide tip: / }).click();
+  await expect(tip(page)).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("main h1")).toHaveText("Where did it happen?");
+  await expect(showTips(page)).toBeVisible();
+  await expect(welcome).toHaveCount(0);
+});
+

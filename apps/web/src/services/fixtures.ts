@@ -54,6 +54,25 @@ async function nearestExample(p: LatLon): Promise<string | null> {
   return best?.name ?? null;
 }
 
+/**
+ * The synthetic road sites (apps/web/fixtures/roads/<site>/osm.json, written from packages/mapdata/test/synthetic-osm.ts):
+ * made-up road shapes (a curved road, a roundabout, …) for the e2e specs. Fixture builds only; no terrain.
+ */
+const siteModules = (FIXTURE_BUILD ? import.meta.glob("../../fixtures/roads/*/osm.json", { import: "default" }) : {}) as Record<string, () => Promise<unknown>>;
+let sitesPromise: Promise<FixtureOsm[]> | null = null;
+const allSites = () => (sitesPromise ??= Promise.all(Object.values(siteModules).map(async (load) => (await load()) as FixtureOsm)));
+
+/** The synthetic site whose centre is within about a kilometer of a point, or null. */
+async function nearestSite(p: LatLon): Promise<FixtureOsm | null> {
+  let best: { osm: FixtureOsm; d: number } | null = null;
+  for (const osm of await allSites()) {
+    if (!osm.center) continue;
+    const d = dist(fakeToLocal({ origin: osm.center }, p), { x: 0, y: 0 });
+    if (d < 1000 && (!best || d < best.d)) best = { osm, d };
+  }
+  return best?.osm ?? null;
+}
+
 export function createFixtureRoads(deps: RoadsDeps): RoadsService {
   return {
     async load(center, radiusM = 250, onProgress) {
@@ -61,7 +80,10 @@ export function createFixtureRoads(deps: RoadsDeps): RoadsService {
       const frame = { origin: center };
       const key = name ? Object.keys(osmModules).find((k) => exampleName(k) === name) : undefined;
       const loader = key ? osmModules[key] : undefined;
-      if (!name || !loader) return deps.parseOverpass({ elements: [] }, frame, radiusM, new Date().toISOString());
+      if (!name || !loader) {
+        const site = await nearestSite(center);
+        return deps.parseOverpass(site ?? { elements: [] }, frame, radiusM, site?.fetchedAt ?? new Date().toISOString());
+      }
       const osm = (await loader()) as FixtureOsm;
       const net = deps.parseOverpass(osm, frame, radiusM, osm.fetchedAt ?? new Date().toISOString());
       const terrain = await deps.terrain(frame, radiusM, countingTiles(center, radiusM, async (z, x, y) => {

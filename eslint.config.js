@@ -9,10 +9,18 @@ const noHtmlInjection = [
 ];
 
 export default tseslint.config(
-  { ignores: [".claude/**", "**/node_modules/**", "**/dist/**", "design/**", "playwright-report/**", "test-results/**", "examples/**", ".netlify/**"] },
+  { ignores: [".claude/**", "**/node_modules/**", "**/dist/**", "design/**", "playwright-report/**", "test-results/**", "qa-output/**", "examples/**", ".netlify/**"] },
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": ["error", ...noHtmlInjection],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+    },
+  },
+  {
+    // Plain Node scripts (scripts/*.mjs, their tests): same no-HTML rules, plus the smoke test's own bans.
+    files: ["scripts/**/*.mjs"],
     rules: {
       "no-restricted-syntax": ["error", ...noHtmlInjection],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],

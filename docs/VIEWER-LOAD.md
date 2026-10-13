@@ -222,3 +222,38 @@ Measured on the production build, with the model route answering at once or afte
 | WebKit 390 | 755 ms | 754 ms |
 
 So "Drawing the scene" hands over on the app's own models, and the GLB swaps in later.
+
+### Road features and questions (integ/with-codex, 2026-10-12)
+Codex's road features and optional questions (`8d4c463`) roughly doubled the time to the first 3D frame. This is the fix and its numbers.
+
+**Method.** A fixtures build (`VITE_FIXTURES=1`, vite preview), t-bone example opened straight on Review. Chromium (SwiftShader) with 4× CPU and no network throttle, median of 3. Base is main at `d4ae95c`, built and served from its own worktree. Each pair was run interleaved (one load each in turn) on the same shared machine. The clock is navigation start to the moment `data-ready` is set, stamped in the page by a MutationObserver (as above). Wall time is from `goto` until Playwright sees the attribute.
+
+| ms (median of 3) | 1440 | 390 |
+|---|---|---|
+| Before (`48e0ebd`), same run as After | 2,987 | 3,000 |
+| After, same run as Before | 1,595 | 1,558 |
+| Base (`d4ae95c`), same run as After | 1,527 | 1,530 |
+| After, same run as Base | 1,640 (+7%) | 1,543 (+1%) |
+
+- **Wall time:**
+  - Before vs After: 3,464 vs 1,665 ms at 1440, and 3,482 vs 2,036 ms at 390.
+  - Base vs After: 1,546 vs 2,071 ms at 1440, and 1,550 vs 2,018 ms at 390.
+  - A 5-run pair gave Base vs After 2,140 vs 2,110 ms at 1440, and 1,979 vs 2,047 ms at 390.
+  - The wall clock includes GPU-bound frames after `data-ready`, so it is noisier than the in-page stamp.
+- **Draw calls:** main 94, Before 113 to 116, After 106 to 107. With the road features there are 14 shader programs, against 13 on main.
+
+**Root cause.** The shaders at the first frame were the same as main's. One new program was the features' symbol (MeshBasicMaterial with a map). It linked inside the first frames, and three's link-status read waited about 1.3 s for SwiftShader to finish the frame.
+
+**Fix.**
+- **Road features after the first frame:** they mount once the view is shown, in idle time (at most 1.5 s later). They join the picture once `gl.compileAsync` has compiled their shaders on a layer no camera draws.
+  - Stills wait for them (at most 5 s).
+  - "Drawing the scene" still ends at the vehicles' first frame.
+  - The one task left, about 260 ms at 4× CPU, runs about 1.2 s after `data-ready`.
+- **Shared resources:** geometries and materials are shared per feature kind, with one texture per symbol.
+- **One draw for the paint:** the crosswalks and turn arrows are a single line-segments draw.
+- **Street lights:** lamps get point lights only for "Dark with street lights", at most 8, the nearest the impact.
+- **tz-lookup** (73 KB) and the icon strokes (57 KB) left the main bundle:
+  - Both now arrive with the 3D chunk.
+  - The scene questions load the estimate when their panel first opens.
+  - The core chunk went from 259 to 185 KB raw, and the fix worker from 252 to 180 KB.
+- **Result:** the renders are pixel-identical to `48e0ebd` (all three examples: Top at 1440 and 390, and Driver A).

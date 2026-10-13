@@ -4,7 +4,7 @@
 // E2E_SHOTS_DIR=<dir> also saves a screenshot of the card for each case.
 import type { Page, TestInfo } from "@playwright/test";
 import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { expect, flat, freshStart, openExample, pdfText, saveFiles, searchAndPick, test, toReview, waitForViewer, watchCsp } from "./helpers";
+import { expect, flat, freshStart, openExample, pdfText, saveFiles, searchAndPick, test, toReview, waitForViewer, watchCsp, enterVehicle } from "./helpers";
 
 async function toVehicles(page: Page, media: "on" | "busy"): Promise<void> {
   await freshStart(page, `/?media=${media}#location`);
@@ -12,6 +12,8 @@ async function toVehicles(page: Page, media: "on" | "busy"): Promise<void> {
   await expect(page.locator(".streets-here")).toContainText("Streets at the pin");
   await page.getByRole("button", { name: /Next: vehicles/ }).click();
   await expect(page.locator("#vehicle-A")).toBeVisible();
+  // A new visitor's A is empty: enter the car whose logo and photo are checked.
+  await enterVehicle(page, "A");
 }
 
 async function shot(page: Page, info: TestInfo, name: string): Promise<void> {

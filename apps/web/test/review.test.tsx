@@ -139,7 +139,7 @@ describe("step 3: review", () => {
     click(get("tab", "View"));
     click(get(".vlabel[data-id=B]"));
     expect(get("tab", "Vehicles").getAttribute("aria-selected")).toBe("true");
-    expect(document.querySelector(".summary-item[data-selected]")?.textContent).toContain("Vehicle B");
+    expect(document.querySelector(".summary-item[data-selected]")?.textContent).toContain("Other car");
   });
 
   it("says braking in the vehicle rows and in the summary (the highway example has both vehicles braking)", async () => {

@@ -107,6 +107,42 @@ export function approachFor(vImpactMps: number, brakeDecelMps2: number): Approac
   return { vImpactMps, vStartMps: k.v, distanceM: k.s };
 }
 
+/** An approach on a path with limited room behind the vehicle: how it moves, and whether it starts from a stop. */
+export interface RoomyApproach extends Approach {
+  /** The room behind was shorter than the approach: it starts from a stop `roomM` back and speeds up evenly. */
+  readonly fromRest: boolean;
+  /** Its even speed-up from the stop, m/s² (0 when not from a stop). */
+  readonly startAccelMps2: number;
+}
+
+/**
+ * Like approachBack, for a vehicle with only `roomM` of path behind its place at the impact (null = as much as it needs).
+ * When the usual approach (steady speed, then any braking) needs more room than that, the vehicle starts from a stop
+ * `roomM` back and speeds up evenly to its entered speed at the impact (never braking: it was just starting):
+ *   a = v² / (2 roomM); for tau <= v / a: v(tau) = v - a tau, s(tau) = v tau - a tau² / 2; earlier it stands at s = roomM.
+ */
+export function approachBackWithin(vImpactMps: number, a: number, roomM: number | null, tauS: number): { v: number; s: number } {
+  const accel = startAccel(vImpactMps, a, roomM);
+  if (accel === 0) return approachBack(vImpactMps, a, tauS);
+  const tStart = vImpactMps / accel;
+  if (tauS >= tStart) return { v: 0, s: roomM! };
+  return { v: vImpactMps - accel * tauS, s: vImpactMps * tauS - 0.5 * accel * tauS * tauS };
+}
+
+/** The even speed-up from a stop that the room behind forces (0 when there is room for the usual approach). */
+function startAccel(vImpactMps: number, a: number, roomM: number | null): number {
+  if (roomM === null || vImpactMps <= 1e-9) return 0;
+  if (approachBack(vImpactMps, a, APPROACH_S).s <= roomM + 1e-9) return 0;
+  return (vImpactMps * vImpactMps) / (2 * Math.max(roomM, 1e-3));
+}
+
+/** approachFor with limited room behind (see approachBackWithin). */
+export function approachWithin(vImpactMps: number, brakeDecelMps2: number, roomM: number | null): RoomyApproach {
+  const accel = startAccel(vImpactMps, brakeDecelMps2, roomM);
+  const k = approachBackWithin(vImpactMps, brakeDecelMps2, roomM, APPROACH_S);
+  return { vImpactMps, vStartMps: k.v, distanceM: k.s, fromRest: accel > 0, startAccelMps2: accel };
+}
+
 export const letterName = (id: string): string => `Vehicle ${id}`;
 
 /** The message for a scene where no vehicle moves (the same sentence checkScene gives). */

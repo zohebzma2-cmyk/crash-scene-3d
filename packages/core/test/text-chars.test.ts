@@ -40,7 +40,7 @@ function see(o: SimulationOutcome): SimulationOutcome {
   if (!o.ok) take(o.errors);
   else {
     take(o.result.warnings);
-    for (const a of o.result.assumptions) { seen.ids.add(a.id.replace(/^mass-.*/, "mass-*")); seen.texts.push(a.text); if (a.source) seen.texts.push(a.source); if (a.unit) seen.texts.push(a.unit); }
+    for (const a of o.result.assumptions) { seen.ids.add(a.id.replace(/^mass-.*/, "mass-*").replace(/^start-from-stop-.*/, "start-from-stop-*")); seen.texts.push(a.text); if (a.source) seen.texts.push(a.source); if (a.unit) seen.texts.push(a.unit); }
   }
   return o;
 }
@@ -138,17 +138,21 @@ function triggerEverything(): void {
   const braking: Scene = { ...flatTBoneScene({ aMph: 25, bSpeed: known(0.105) }) };
   const brakingB: Scene = { ...braking, vehicles: braking.vehicles.map((v) => (v.id === "B" ? { ...v, braking: true } : v)) };
   see(simulate(brakingB, null)); seeP(placeVehicles(brakingB, null, PIN)); // a braking crawl is just too slow
-  // A path that runs back past the end of its street (Park Street starts 20 m west of the junction).
+  // A street that starts behind a vehicle (Park Street starts 20 m west of the junction): it starts from a stop there, and
+  // at 40 mph that is more than a car can do.
   const base0 = intersectionNet({ corners: false });
   const shortPark = { ...base0, ways: base0.ways.map((w) => (w.id === "park" ? makeWay({ ...w, centerline: [{ x: -20, y: 0 }, { x: 0, y: 0 }, { x: 150, y: 0 }] }) : w)) };
   see(simulate(sceneOf([
     veh("A", { type: "car", bearingDeg: 0, ...MAIN, speed: known(25), zone: "left" }), veh("B", { type: "suv", bearingDeg: 90, ...PARK, speed: known(25), zone: "front" }),
   ]), shortPark));
+  see(simulate(sceneOf([
+    veh("A", { type: "car", bearingDeg: 0, ...MAIN, speed: known(25), zone: "left" }), veh("B", { type: "suv", bearingDeg: 90, ...PARK, speed: known(40), zone: "front" }),
+  ]), shortPark));
   // A real hole in the working speeds (a timing window: A would pass through C at the middle speeds only).
   const hole = holeScene(unsure(30));
   see(simulate(hole.scene, hole.net));
   // Each cause at each end of a cut: not every one is reachable by an ordinary scene, so the sentence builder is called directly.
-  for (const side of ["start", "end"] as const) for (const kind of ["closing", "pass", "building"] as const) seen.texts.push(cutSentence(side, kind, "B", "A", "22 mph", "22.5 mph"));
+  for (const side of ["start", "end"] as const) for (const kind of ["closing", "pass", "building", "start"] as const) seen.texts.push(cutSentence(side, kind, "B", "A", "22 mph", "22.5 mph"));
   seeP(placeVehicles({ ...flatTBoneScene(), vehicles: [flatTBoneScene().vehicles[0]!] }, null, PIN)); // too few vehicles
 
   // a backing vehicle entered facing the way the other one comes from: the mismatch sentence says it was backing up
@@ -170,7 +174,25 @@ function triggerEverything(): void {
   ]), null)); // stopped at a vehicle
   see(simulate(sceneOf([
     veh("A", { type: "car", bearingDeg: 45, speed: known(25), zone: "left" }), veh("B", { type: "suv", bearingDeg: 135, speed: known(25), zone: "front" }),
-  ]), intersectionNet({ corners: false }))); // path-not-on-road and off-road
+  ]), intersectionNet({ corners: false }))); // off-road-direction: a direction that follows no road at the pin
+  // a turn with no road to turn from: Main Street alone, B turning left onto it
+  const mainOnly = { ...intersectionNet({ corners: false }), ways: intersectionNet({ corners: false }).ways.filter((w) => w.id === "main") };
+  see(simulate(sceneOf([
+    veh("A", { type: "car", bearingDeg: 0, ...MAIN, speed: known(25), zone: "left" }), veh("B", { type: "suv", action: "turn-left", bearingDeg: 180, ...MAIN, speed: known(15), zone: "front" }),
+  ]), mainOnly));
+  // paths that don't meet: two one-way carriageways 14 m apart, A north on one and B south on the other
+  const divided = { ...intersectionNet({ corners: false }), ways: [
+    makeWay({ id: "nb", name: "Valley Highway", oneway: true, lanesForward: 2, lanesBackward: 0, centerline: [{ x: 7, y: -150 }, { x: 7, y: 150 }] }),
+    makeWay({ id: "sb", name: "Valley Highway", oneway: true, lanesForward: 2, lanesBackward: 0, centerline: [{ x: -7, y: 150 }, { x: -7, y: -150 }] }),
+  ] };
+  see(simulate(sceneOf([
+    veh("A", { type: "car", bearingDeg: 0, roadId: "nb", speed: known(25), zone: "front" }), veh("B", { type: "car", bearingDeg: 180, roadId: "sb", speed: known(25), zone: "front" }),
+  ]), divided));
+  // a truck hit square on its side on narrow lanes: its body runs over the edge of the road before the crash (off-road)
+  const narrow = { ...intersectionNet({ corners: false }), ways: intersectionNet({ corners: false }).ways.map((w) => ({ ...w, laneWidthM: 2.5 })) };
+  see(simulate(sceneOf([
+    veh("A", { type: "truck", bearingDeg: 0, ...MAIN, speed: known(20), zone: "left" }), veh("B", { type: "suv", bearingDeg: 90, ...PARK, speed: known(25), zone: "front" }),
+  ]), narrow));
   see(simulate(rear(known(22), unsure(25)), null)); // range-start
   see(simulate(rear(known(27), unsure(25)), null)); // picture-speed
   see(simulate(rear(unsure(25), known(27)), null)); // range-end
@@ -214,12 +236,12 @@ function expectOkResult(o: SimulationOutcome) {
 const EXPECTED_CODES = [
   "bad-direction", "bad-lane", "bad-location", "bad-pin", "bad-road-condition", "bad-speed", "bad-vehicle", "cannot-work-out", "no-road", "too-long", "too-many-vehicles",
   "cannot-meet", "moving-apart", "no-such-lane", "no-workable-speed", "not-moving-toward", "nothing-moving", "off-road", "on-building", "passes-through",
-  "path-not-on-road", "path-past-street-end", "picture-speed", "range-end", "range-gap", "range-start", "same-direction", "stopped-at-building", "stopped-at-vehicle",
+  "off-road-direction", "no-road-to-turn-from", "paths-dont-meet", "start-too-short", "picture-speed", "range-end", "range-gap", "range-start", "same-direction", "stopped-at-building", "stopped-at-vehicle",
   "too-few-vehicles", "too-slow", "wrong-way", "zone-mismatch", "zone-used", "zones-cannot-touch", "bodies-overlap",
 ].sort();
 const EXPECTED_IDS = [
   "braking-deceleration", "damage-illustrated", "entered-speed", "flat-ground", "friction", "inertia", "mass-*", "multi-impact", "no-braking-default", "post-impact-slide",
-  "restitution", "rigid-bodies", "speed-range", "time-step", "turn-radius-left", "turn-radius-right", "yaw",
+  "restitution", "rigid-bodies", "speed-range", "start-from-stop-*", "time-step", "turn-radius-left", "turn-radius-right", "yaw",
 ];
 const TEMPLATES: Array<[string, RegExp]> = [
   ["wrong way, one-way", /is going the wrong way on .*, which is one-way/],
@@ -242,7 +264,10 @@ const TEMPLATES: Array<[string, RegExp]> = [
   ["too long", /^This crash would take too long to play out\./],
   ["not moving toward", /isn't moving toward vehicle . at 0 mph\. Check .'s speed or what it was doing/],
   ["too slow", /is moving too slowly to reach vehicle .\./],
-  ["past the end of the street", /path runs past where its street ends, so part of it is drawn straight/],
+  ["starts from a stop", /has about .* of road or lot behind it, so the picture starts it from a stop there and speeds it up evenly to .* at the crash, at /],
+  ["start too short", /would have to reach .* from a stop in about .* from where its road or lot starts, faster than a car can speed up\./],
+  ["no road to turn from", /is turning onto Main Street, but no road at the pin leads into that turn\./],
+  ["paths don't meet", /are on paths that don't meet near the pin, so they couldn't have touched there\./],
   ["a hole in the speeds", /would also work, but speeds that don't work lie between them and the ones shown, so they are left out/],
   ["moving apart", /would already have been moving apart before they touched/],
   ["nothing moving", /^None of the vehicles is moving/],
@@ -251,8 +276,8 @@ const TEMPLATES: Array<[string, RegExp]> = [
   ["no workable speed", /^At no speed in the range entered would the crash work\./],
   ["stopped at a building", /would have slid into a building after the crash/],
   ["stopped at a vehicle", /would have slid into vehicle . after the crash\. The picture stops it where they touch\./],
-  ["not on a road", /doesn't line up with a road near the pin/],
-  ["off the road", /off the road and any parking lot/],
+  ["direction follows no road", /'s direction doesn't follow any road at the pin\. Pick the road it was on/],
+  ["off the road", /runs over the edge of the road before the crash/],
   ["range start", /^At .* and below, vehicle . wouldn't have reached vehicle ., so the numbers shown start at/],
   ["range end, not closing", /^At .* and above, vehicle . and vehicle . wouldn't have been closing in on each other, so the numbers shown end at/],
   ["range end, building", /^At .* and above, vehicle . would have driven through a building before the crash, so the numbers shown end at/],

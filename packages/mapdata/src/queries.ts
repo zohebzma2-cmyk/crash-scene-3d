@@ -29,7 +29,7 @@ function radius(r: number): number {
 export function overpassAroundQuery(center: LatLon, radiusM: number): string {
   const around = `around:${radius(radiusM)},${coord(center.lat)},${coord(center.lon)}`;
   const hw = DRIVABLE_HIGHWAYS.join("|");
-  return `[out:json][timeout:60];(way(${around})["highway"~"^(${hw})$"];way(${around})["building"];way(${around})["amenity"="parking"];);out body geom;`;
+  return `[out:json][timeout:60];(way(${around})["highway"~"^(${hw})$"];way(${around})["building"];way(${around})["amenity"="parking"];${featureQuery(around)});out body geom;`;
 }
 
 /**
@@ -43,7 +43,11 @@ export function overpassBboxQuery(center: LatLon, radiusM: number): string {
   const dLon = r / m.lon;
   const bbox = [center.lat - dLat, center.lon - dLon, center.lat + dLat, center.lon + dLon].map(coord).join(",");
   const hw = DRIVABLE_HIGHWAYS.join("|");
-  return `[out:json][timeout:60];(way(${bbox})["highway"~"^(${hw})$"];way(${bbox})["building"];way(${bbox})["amenity"="parking"];);out body geom;`;
+  return `[out:json][timeout:60];(way(${bbox})["highway"~"^(${hw})$"];way(${bbox})["building"];way(${bbox})["amenity"="parking"];${featureQuery(bbox)});out body geom;`;
+}
+
+function featureQuery(area: string): string {
+  return `node(${area})["highway"~"^(traffic_signals|stop|give_way|crossing|street_lamp)$"];node(${area})["traffic_sign"];way(${area})["footway"="crossing"];`;
 }
 
 /** Typed street-type words and 1-2 letter directions never make a useful search word. */

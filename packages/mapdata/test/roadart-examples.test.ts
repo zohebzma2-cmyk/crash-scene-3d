@@ -57,11 +57,11 @@ describe("highway-rear-end: what OSM says about the Everett Turnpike", () => {
       expect(t.width).toBeUndefined();
     }
   });
-  it("carries the extra lanes as a motorway_link merging in (2 lanes) and a lane that cannot change (change:lanes), not as a mistake of ours", () => {
+  it("retains the tagged ramp and bridge lane counts inside the example circle", () => {
     expect(tags(909191004).highway).toBe("motorway_link");
     expect(tags(909191004).lanes).toBe("2");
-    expect(tags(32477472).lanes).toBe("3"); // the 3-lane bridge upstream
-    expect(tags(1340425291)["change:lanes"]).toBe("yes|yes|yes|not_right|no");
+    expect(tags(32477472).lanes).toBe("3");
+    expect(tags(1340425291)["change:lanes"]).toBeUndefined();
   });
   it("parses to two opposite one-way roads of 5 lanes each, and nothing else on the Turnpike's carriageways", () => {
     const net = roadsOf("highway-rear-end");

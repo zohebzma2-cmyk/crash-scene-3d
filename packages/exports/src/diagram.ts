@@ -2,11 +2,12 @@
 // simulation result (and the road layout when there is one). The PDF and the
 // PNG both replay this plan, so they show the same picture. World frame:
 // x east, y north, meters. Output frame: y down, in the box's units.
-import { M_TO_FT, buildRoadArt, formatDistance, inkOn, placeStreetNames, streetNameSpots, vehicleColor as bodyColor } from "@csd/core";
+import { M_TO_FT, buildRoadArt, formatDistance, inkOn, placeStreetNames, streetNameSpots, vehicleColor as bodyColor, featureIcon, FEATURE_NAMES, taggedTurnArrows, taggedCrosswalkPaint } from "@csd/core";
 import type { Pose, RoadNetwork, SimulationResult, Vec2, VehicleResult, VehicleType } from "@csd/core";
-import { roundedRectPts, type Measure, type Pt, type Prim } from "./draw";
+import { roundedRectPts, wrapText, type Measure, type Pt, type Prim } from "./draw";
 import { MIN_DRAWN_MOVE_M, markerKeys } from "./model";
 import { color, mix, vehicleColor } from "./style";
+import { iconPrims } from "./feature-icons";
 
 /** How much of the approach is kept in view (s). The dashed path itself runs the whole approach and is clipped. */
 const NEAR_WINDOW_S = 0.6;
@@ -283,10 +284,21 @@ function drawRoads(prims: Prim[], t: Transform, box: Box, net: RoadNetwork, o: R
 export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, opts: DiagramOptions, measure: Measure): DiagramPlan {
   const { box } = opts;
   const ins = opts.insets ?? {};
-  const safe: Rect = { x: box.x + (ins.left ?? 0), y: box.y + (ins.top ?? 0), w: box.w - (ins.left ?? 0) - (ins.right ?? 0), h: box.h - (ins.top ?? 0) - (ins.bottom ?? 0) };
+  const minTextSize = opts.minTextSize ?? 6;
+  const kinds = [...new Set(roads?.features?.map((f) => f.kind) ?? [])];
+  const legendEntries: Array<{ kind: typeof kinds[number]; x: number; row: number }> = [];
+  let legendX = minTextSize, legendRow = 0;
+  for (const kind of kinds) {
+    const width = measure("sans", minTextSize, FEATURE_NAMES[kind]) + minTextSize * 3;
+    if (legendX + width > box.w - minTextSize && legendX > minTextSize) { legendRow++; legendX = minTextSize; }
+    legendEntries.push({ kind, x: legendX, row: legendRow }); legendX += width;
+  }
+  const legendLines = kinds.length ? wrapText("OpenStreetMap tags; positions and models schematic. Missing tags unknown.", box.w - minTextSize * 2, (text) => measure("sans", minTextSize, text)) : [];
+  const legendH = kinds.length ? (legendRow + 1) * minTextSize * 1.8 + (legendLines.length + 0.5) * minTextSize * 1.3 : 0;
+  const safe: Rect = { x: box.x + (ins.left ?? 0), y: box.y + (ins.top ?? 0), w: box.w - (ins.left ?? 0) - (ins.right ?? 0), h: box.h - (ins.top ?? 0) - (ins.bottom ?? 0) - legendH };
+  const legendY = safe.y + safe.h;
   const t = fitTransform(sim, box, safe);
   const minLine = opts.minLine ?? 1;
-  const minTextSize = opts.minTextSize ?? 6;
   const tagMin = opts.minTagRadius ?? 6;
   const prims: Prim[] = [];
   prims.push({ k: "clip", x: box.x, y: box.y, w: box.w, h: box.h });
@@ -324,6 +336,35 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
   }
   if (roads) drawRoads(prims, t, box, roads, { minLine, minTextSize, streetLabels: opts.streetLabels ?? true }, avoid, [...avoidLines, ...fillLines], measure, safe);
   prims.push(...pathPrims);
+  if (roads?.features?.length) {
+    for (const arrow of [...taggedTurnArrows(roads), ...taggedCrosswalkPaint(roads)]) prims.push({ k: "poly", pts: arrow.points.map((p) => toPx(t, p)), stroke: { color: color("color-scene-lane"), width: Math.max(minLine, 0.15 * t.s), cap: "round", join: "round" } });
+    const slots = new Map<string, number>();
+    const size = Math.max(minTextSize * 1.6, Math.min(2 * t.s, minTextSize * 2.5));
+    for (const f of roads.features) {
+      const key = `${f.source}-${f.osmId}`, slot = slots.get(key) ?? 0; slots.set(key, slot + 1);
+      const anchor = toPx(t, f.position), p: Pt = [anchor[0] + slot * size * 1.3, anchor[1]];
+      if (p[0] < safe.x + size || p[0] > safe.x + safe.w - size || p[1] < safe.y + size || p[1] > safe.y + safe.h - size) continue;
+      prims.push({ k: "circle", c: p, r: size * 0.6, fill: color("color-surface") });
+      prims.push(...iconPrims(featureIcon(f.kind), p[0] - size / 2, p[1] - size / 2, size, color("color-scene-label"), f.kind === "oneway" && f.facingDeg !== null ? f.facingDeg - 90 : 0));
+      if (f.kind === "speed" || f.kind === "lanes") {
+        const label = f.label.replace(" (road tag; sign position unknown)", "");
+        const width = measure("sans", minTextSize, label);
+        const labelY = p[1] + size / 2 + slot * minTextSize * 1.3;
+        if (p[0] - width / 2 >= safe.x && p[0] + width / 2 <= safe.x + safe.w && labelY + minTextSize * 1.2 < safe.y + safe.h) {
+          prims.push({ k: "poly", pts: [[p[0] - width / 2, labelY], [p[0] + width / 2, labelY], [p[0] + width / 2, labelY + minTextSize * 1.2], [p[0] - width / 2, labelY + minTextSize * 1.2]], closed: true, fill: color("color-surface") });
+          prims.push({ k: "text", at: [p[0], labelY + minTextSize], text: label, font: "sans", size: minTextSize, color: color("color-text-secondary"), anchor: "middle" });
+        }
+      }
+    }
+    // Reserve a legend strip above caller-owned cards; never paint over cars or scale/north chips.
+    prims.push({ k: "poly", pts: [[box.x, legendY], [box.x + box.w, legendY], [box.x + box.w, legendY + legendH], [box.x, legendY + legendH]], closed: true, fill: color("color-surface") });
+    for (const entry of legendEntries) {
+      const y = legendY + entry.row * minTextSize * 1.8;
+      prims.push(...iconPrims(featureIcon(entry.kind), box.x + entry.x, y, minTextSize * 1.4, color("color-text-secondary")));
+      prims.push({ k: "text", at: [box.x + entry.x + minTextSize * 1.7, y + minTextSize], text: FEATURE_NAMES[entry.kind], font: "sans", size: minTextSize, color: color("color-text-secondary") });
+    }
+    legendLines.forEach((text, i) => prims.push({ k: "text", at: [box.x + minTextSize, legendY + (legendRow + 1) * minTextSize * 1.8 + (i + 1) * minTextSize * 1.3], text, font: "sans", size: minTextSize, color: color("color-text-secondary") }));
+  }
   // Impact ring.
   const ic = toPx(t, sim.impactPointM);
   prims.push({ k: "circle", c: ic, r: 1.1 * t.s, stroke: { color: color("color-scene-impact"), width: Math.max(minLine * 1.4, 0.25 * t.s) } });
@@ -417,6 +458,7 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
   }
   prims.push({ k: "unclip" });
   const keep: Rect[] = [];
+  if (legendH) keep.push({ x: box.x, y: legendY, w: box.w, h: legendH });
   const bodies: Pt[][] = sim.vehicles.map((rv) => bodyPts(t, rv.restPose, rv.type, rv.lengthM, rv.widthM));
   const bbox = (pts: readonly Pt[]): Rect => {
     const xs = pts.map((q) => q[0]);
@@ -533,7 +575,7 @@ export function planPinStreetLabels(roads: RoadNetwork, o: PinLabelOptions, meas
   }
   const wanted = new Set((o.names ?? []).map((n) => n.trim().toLowerCase()));
   const keys = [...near.entries()]
-    .filter(([k, d]) => d <= meet || (wanted.has(k) && d <= meet * 4))
+    .filter(([k, d]) => wanted.size ? wanted.has(k) && d <= meet * 4 : d <= meet)
     .sort((a, b) => Number(wanted.has(b[0])) - Number(wanted.has(a[0])) || a[1] - b[1])
     .slice(0, o.maxStreets ?? 4)
     .map(([k]) => k);
@@ -581,7 +623,10 @@ export function planPinStreetLabels(roads: RoadNetwork, o: PinLabelOptions, meas
       .sort((a, b) => Math.hypot(a.at.x - o.center.x, a.at.y - o.center.y) - Math.hypot(b.at.x - o.center.x, b.at.y - o.center.y));
     // Along its road first, on a straight stretch long enough for the name; then level beside the road.
     const along = own.filter((sp) => width / o.scale + 1 <= sp.halfSpanM * 2).map((sp) => ({ centre: toPx(t, sp.at), ang: -rad2deg(sp.angleRad) }));
-    const level = own.flatMap((sp) => {
+    // Recaptured ways can have no straight label span inside this small map box. Keep the newer
+    // collision/gap rules, but also try level labels beside the actual road vertices.
+    const beside = art.ribbons.filter((r) => r.way.name?.trim().toLowerCase() === key).flatMap((r) => r.line.map((at, i) => ({ at, widthM: (r.left[i] ?? 0) + (r.right[i] ?? 0) })));
+    const level = [...own, ...beside].sort((a, b) => Math.hypot(a.at.x - o.center.x, a.at.y - o.center.y) - Math.hypot(b.at.x - o.center.x, b.at.y - o.center.y)).flatMap((sp) => {
       const c = toPx(t, sp.at);
       return [1, -1].map((side) => ({ centre: [c[0] + side * ((sp.widthM * t.s) / 2 + width / 2 + size * 0.6), c[1]] as Pt, ang: 0 }));
     });

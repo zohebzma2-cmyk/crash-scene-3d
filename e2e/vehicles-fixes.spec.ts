@@ -196,12 +196,14 @@ test("@xb the parking example's direction list tells its three unnamed aisles ap
   const a = page.locator("#vehicle-A");
   const group = a.locator("[data-fix-direction]");
   const radios = group.getByRole("radio");
-  await expect(radios).toHaveCount(6);
+  // Six aisle directions (the aisles run about 37 degrees east of north: "heading northeast"), then across the lot four ways.
+  await expect(radios).toHaveCount(10);
   const names = await radios.allInnerTexts();
-  expect(new Set(names).size, names.join(" | ")).toBe(6);
-  for (const n of names) expect(n).toMatch(/^(North|South)bound on the parking aisle \((west one|middle|east one)\)$/);
-  const pick = group.getByRole("radio", { name: "Northbound on the parking aisle (west one)" });
+  expect(new Set(names).size, names.join(" | ")).toBe(10);
+  for (const n of names.slice(0, 6)) expect(n).toMatch(/^Heading (northeast|southwest) on the parking aisle \((west one|middle|east one)\)$/);
+  expect(names.slice(6)).toEqual(["Across the parking lot, heading north", "Across the parking lot, heading east", "Across the parking lot, heading south", "Across the parking lot, heading west"]);
+  const pick = group.getByRole("radio", { name: "Heading northeast on the parking aisle (west one)" });
   await pick.click();
-  await expect(group.locator(".dir-caption")).toHaveText("Northbound on the parking aisle (west one)");
+  await expect(group.locator(".dir-caption")).toHaveText("Heading northeast on the parking aisle (west one)");
   expect(pageErrors()).toEqual([]);
 });

@@ -9,7 +9,7 @@ import type { ExportBundle, ExportRequest, Scene, SimulationResult } from "@csd/
 import { buildExports, footerBandHeight, sceneFile } from "../src";
 import { about } from "../src/about";
 import { PIN_LABEL_GAP, planDiagram, planRoadOutline, scaleBars } from "../src/diagram";
-import { buildModel, approachPhrase, fileClaim, printable, speedInputs } from "../src/model";
+import { buildModel, approachPhrase, exportBaseName, fileClaim, printable, speedInputs } from "../src/model";
 import { buildPdf, FLOOR_LEVEL, MIN_DIAGRAM_FRACTION, MIN_DIAGRAM_TEXT_PT, MIN_TEXT_PT, type PdfResult } from "../src/pdf";
 import { renderBand, renderDiagramPng, renderStillPng } from "../src/png";
 import { MAX_PNG_SIDE, decodePng } from "../src/png-decode";
@@ -752,6 +752,47 @@ describe("missing pieces", () => {
     const b = await buildExports(req(scene, sim, { roads: null, formats: ["pdf", "png-diagram"] }), testCanvas().factory);
     expect(b.files.map((f) => f.name).sort()).toEqual(["crash-scene-CLM-EX-1001-diagram.png", "crash-scene-CLM-EX-1001.json", "crash-scene-CLM-EX-1001.pdf"]);
     expect((await readPdf(file(b, ".pdf").bytes)).pages).toBe(1);
+  });
+});
+
+describe("file names with and without a claim number (a new visitor has none)", () => {
+  const local = (iso: string): string => {
+    const d = new Date(iso);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  };
+
+  it("names every file crash-scene-<claim number> when there is one", async () => {
+    const { scene, sim } = twoVehicle();
+    const b = await buildExports(req(scene, sim, { formats: ["json", "pdf", "png-diagram"] }), testCanvas().factory);
+    expect(b.files.map((f) => f.name).sort()).toEqual(["crash-scene-CLM-EX-1001-diagram.png", "crash-scene-CLM-EX-1001.json", "crash-scene-CLM-EX-1001.pdf"]);
+    const pdf = await readPdf(file(b, ".pdf").bytes);
+    expect(pdf.text).toContain("Claim CLM-EX-1001");
+    expect(pdf.text).toContain("crash-scene-CLM-EX-1001.json");
+  });
+
+  it("with no claim number: crash-scene-<date>-<time> from the save time, no 'Claim' line in the PDF, the fingerprint line names that file", async () => {
+    const { scene, sim } = twoVehicle();
+    const s2: Scene = { ...scene, claim: { number: "", vehicle: { year: null, make: "", model: "" } } };
+    const b = await buildExports(req(s2, sim, { formats: ["json", "pdf", "png-diagram"] }), testCanvas().factory);
+    const base = `crash-scene-${local(b.stamp.createdAt)}`;
+    expect(base).toMatch(/^crash-scene-\d{4}-\d{2}-\d{2}-\d{6}$/);
+    expect(b.files.map((f) => f.name).sort()).toEqual([`${base}-diagram.png`, `${base}.json`, `${base}.pdf`]);
+    const pdf = await readPdf(file(b, ".pdf").bytes);
+    expect(pdf.text).not.toMatch(/\bClaim\b/);
+    expect(pdf.text).not.toContain("CLM-");
+    expect(pdf.text).toContain(`${base}.json`);
+    expect(pdf.text).toContain("How to check this file");
+    // The scene file itself carries the empty number, and the stamp is the same one the name came from.
+    expect(JSON.parse(new TextDecoder().decode(file(b, ".json").bytes)).claim.number).toBe("");
+  });
+
+  it("exportBaseName: a number that cleans to nothing falls back to the date, and spaces-only counts as none", () => {
+    expect(exportBaseName("CLM-77", CREATED)).toBe("crash-scene-CLM-77");
+    expect(exportBaseName("", CREATED)).toBe(`crash-scene-${local(CREATED)}`);
+    expect(exportBaseName("   ", CREATED)).toBe(`crash-scene-${local(CREATED)}`);
+    expect(exportBaseName("日本語", CREATED)).toBe(`crash-scene-${local(CREATED)}`);
+    expect(exportBaseName("", "not a date")).toBe("crash-scene");
   });
 });
 

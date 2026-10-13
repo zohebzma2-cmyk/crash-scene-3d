@@ -3,7 +3,7 @@
 // functions in the app. Nothing outside src/services imports @csd/mapdata or
 // @csd/exports, and nothing calls fetch.
 import type {
-  CrossStreetsResult,
+  Action, CrossStreetsResult, DirectionChoice,
   ExportBundle, ExportRequest, LatLon, LocalFrame, PlaceResult, PlainMessage, PlacementOutcome, Pose,
   FixOptions, FixSuggestions, RoadNetwork, Scene, SimulationOutcome, SimulationResult, StreetsAtPin, VehicleModelResult, VehicleResult, Vec2,
 } from "@csd/core";
@@ -132,6 +132,10 @@ export interface PhysicsService {
   simulate(scene: Scene, roads: RoadNetwork | null): SimulationOutcome;
   poseAt(sim: SimulationResult, vehicle: VehicleResult, tS: number): Pose;
   checkScene(scene: Scene, roads: RoadNetwork | null): readonly PlainMessage[];
+  /** "Which way was it going?": the choices from the roads at the pin for what the vehicle was doing (a compass with no roads). */
+  directionChoices(net: RoadNetwork | null, pin: Vec2, action: Action): DirectionChoice[];
+  /** Directions that don't fit the roads at the pin (follow no road, a turn with nothing to turn from): fixed before Review. */
+  roadFitProblems(scene: Scene, roads: RoadNetwork | null): readonly PlainMessage[];
   /** When the picture can't be drawn: why, and up to three small changes that do draw (DESIGN.md section 18). On the main thread: the app calls it through `fixer`. */
   suggestFixes(scene: Scene, roads: RoadNetwork | null, opts?: FixOptions): FixSuggestions;
 }

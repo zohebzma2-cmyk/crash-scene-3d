@@ -63,7 +63,7 @@ const QUOTA: Readonly<Record<string, Readonly<Record<number, number>>>> = {
 
 /** The fields every bench scene shares; only location, road condition and vehicles vary. */
 const TEMPLATE = {
-  schemaVersion: 3 as const,
+  schemaVersion: 4 as const,
   claim: { number: "CLM-BENCH", vehicle: { year: null, make: "", model: "" } },
   occurred: { date: "2026-10-02", time: "17:15" },
 };

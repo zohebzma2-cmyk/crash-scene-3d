@@ -41,8 +41,20 @@ export function expectSpeedAtImpact(scene: Scene, sim: SimulationResult, label: 
     // The pose at the impact carries the same speed.
     expect(r.impactPose.speedMps, `${label} ${sv.id} impact pose`).toBe(at.mid);
     expect(r.track[i0]!.speedMps).toBe(at.mid);
-    // Before the impact it is never slower than at the impact, and a moving vehicle is never at rest.
     const moving = sv.action !== "parked";
+    // A vehicle with less room behind it than its approach needs starts from a stop and speeds up evenly to its speed at the
+    // impact (the start-from-stop assumption says so, with its rate): never faster than at the impact, never slowing down.
+    const start = sim.assumptions.find((x) => x.id === `start-from-stop-${sv.id}`);
+    if (start) {
+      for (let i = 0; i < i0; i++) {
+        const s = r.track[i]!.speedMps, next = r.track[i + 1]!.speedMps;
+        if (!(s <= at.mid + EPS && s <= next + 1e-9)) expect(s, `${label} ${sv.id} start sample ${i}`).toBeLessThanOrEqual(Math.min(at.mid, next) + 1e-9);
+      }
+      // Standing at the start when the window opens: it covers exactly the room, at the rate the assumption gives.
+      if (r.track[0]!.speedMps === 0) expect(Math.abs((start.value as number) - (at.mid * at.mid) / (2 * r.approachDistanceM.mid)), `${label} ${sv.id} start rate`).toBeLessThan(1e-6);
+      continue;
+    }
+    // Before the impact it is never slower than at the impact, and a moving vehicle is never at rest.
     for (let i = 0; i < i0; i++) {
       // Plain comparisons per sample (expect() per sample is slow in the property tests); expect() only on a failure.
       const s = r.track[i]!.speedMps;

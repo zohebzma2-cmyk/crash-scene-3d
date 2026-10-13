@@ -1,12 +1,13 @@
-// The four steps and the gate in front of Review and Save. Going to either one runs parseScene and
-// checkScene. Problems are shown as plain warnings with "Fix the details" and "See it anyway";
-// nothing is skipped silently. Details that can't be drawn at all (parseScene errors, no pin yet)
-// have no "See it anyway".
+// The four steps and the gate in front of Review and Save. Going to either one runs parseScene,
+// the road check (a direction that follows no road at the pin) and checkScene. Problems are shown as plain
+// warnings with "Fix the details" and "See it anyway"; nothing is skipped silently. Details that can't be
+// drawn at all (parseScene errors, no pin yet, a direction off the roads) have no "See it anyway"; an opened
+// file or example whose direction is off the roads lands on the Vehicles step with its one-tap fixes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { canonicalJson, parseScene, type PlainMessage, type Scene, type SceneVehicle, type VehicleId } from "@csd/core";
 import { useServices } from "../services/context";
 import { focusStepTitle } from "../lib/focusTitle";
-import type { Doc } from "./doc";
+import type { AnswerField, Doc } from "./doc";
 import { useDoc } from "./DocProvider";
 import { useRoads } from "./Roads";
 import { useUi, type FieldError } from "./Ui";
@@ -38,9 +39,20 @@ export interface GateProblem {
   /** True when the picture can't be made until it's fixed. */
   readonly blocking: boolean;
   readonly vehicleIds: readonly VehicleId[];
-  /** Where to put focus when fixing it. */
-  readonly focus?: "direction";
+  /** Where to put focus when fixing it: the control on the vehicle's card. */
+  readonly focus?: FixFocus;
 }
+
+/** The controls on a vehicle card "Fix the details" can put focus on. */
+export type FixFocus = AnswerField | "direction";
+/** Where each one is on the card: its group's tab stop (with nothing picked, the first choice; the speed: its field). */
+const FIX_FOCUS: Record<FixFocus, string> = {
+  type: '[data-fix-type] [role="radio"][tabindex="0"]',
+  action: '[data-fix-action] [role="radio"][tabindex="0"]',
+  direction: '[data-fix-direction] [role="radio"][tabindex="0"]',
+  speed: "[data-fix-speed] input",
+  zone: '[data-fix-zone] [role="radio"][tabindex="0"]',
+};
 
 export const NOT_LOCATED_TEXT = "Tell us where it happened first: search for the place, or tap the map to drop the pin.";
 export const CHECK_FAILED_TEXT = "We couldn't check whether the details fit together, so we can't promise they do.";
@@ -52,20 +64,39 @@ export function runGate(
   check: (scene: Scene) => readonly PlainMessage[],
   /** Typed values that aren't usable yet (the speed field): they block until fixed. */
   fieldErrors: readonly FieldError[] = [],
+  /**
+   * Directions that don't fit the roads at the pin (core roadFitProblems): the picture would have to leave the roads, so they
+   * block like a missing detail, but they are details that don't fit together and get the one-tap fixes.
+   */
+  roadFit: (scene: Scene) => readonly PlainMessage[] = () => [],
+  /** Per vehicle, the details not answered yet (Doc.unanswered; absent = all answered). */
+  unanswered: Doc["unanswered"] = undefined,
 ): GateProblem[] {
   const out: GateProblem[] = [];
   if (!located) out.push({ kind: "missing", text: NOT_LOCATED_TEXT, step: "location", blocking: true, vehicleIds: [] });
+  // In the card's order: type, what it was doing, direction, speed (not for a parked vehicle), where it was hit.
+  let anyMissing = false;
   scene.vehicles.forEach((v, i) => {
-    if (directionSet[i] !== true) out.push({ kind: "missing", text: pickDirectionText(v), step: "vehicles", blocking: true, vehicleIds: [v.id], focus: "direction" });
+    const open = (unanswered?.[i] ?? []).filter((f) => f !== "speed" || v.action !== "parked");
+    const missing = (focus: FixFocus, text: string) => { anyMissing = true; out.push({ kind: "missing", text, step: "vehicles", blocking: true, vehicleIds: [v.id], focus }); };
+    for (const f of ["type", "action"] as const) if (open.includes(f)) missing(f, answerText(v, f));
+    if (directionSet[i] !== true) missing("direction", pickDirectionText(v));
+    for (const f of ["speed", "zone"] as const) if (open.includes(f)) missing(f, answerText(v, f));
   });
-  for (const e of fieldErrors) out.push({ kind: e.missing ? "missing" : "unusable", text: `Vehicle ${e.vehicleId}: ${e.text}`, step: "vehicles", blocking: true, vehicleIds: [e.vehicleId as VehicleId] });
+  // The only typed field is the speed, so "Fix the details" goes to it.
+  for (const e of fieldErrors) out.push({ kind: e.missing ? "missing" : "unusable", text: `Vehicle ${e.vehicleId}: ${e.text}`, step: "vehicles", blocking: true, vehicleIds: [e.vehicleId as VehicleId], focus: "speed" });
   const parsed = parseScene(scene);
   if (!parsed.ok) {
     for (const text of parsed.errors) out.push({ kind: "unusable", text, step: /^Vehicle [A-D]:/.test(text) ? "vehicles" : "location", blocking: true, vehicleIds: [] });
     return out;
   }
-  // Checks that compare directions mean nothing until every direction is the claimant's own pick.
-  if (directionSet.some((x) => x !== true)) return out;
+  // Checks that compare directions, speeds and hit sides mean nothing until every one is the claimant's own answer.
+  if (anyMissing) return out;
+  try {
+    for (const m of roadFit(parsed.value)) out.push({ kind: "conflict", text: m.text, step: "vehicles", blocking: true, vehicleIds: m.vehicleIds, focus: "direction" });
+  } catch {
+    // A failed road check is not a reason to block: the Review step's own physics still refuses what it can't draw.
+  }
   try {
     for (const m of check(parsed.value)) out.push({ kind: "conflict", text: m.text, step: "vehicles", blocking: false, vehicleIds: m.vehicleIds });
   } catch {
@@ -74,15 +105,28 @@ export function runGate(
   return out;
 }
 
+const who = (v: Pick<SceneVehicle, "id">): string => (v.id === "A" ? "your car" : `vehicle ${v.id}`);
+
+/** The missing-detail line for an unanswered type, action, speed or hit side ("vehicle B" for the others). */
+export function answerText(v: Pick<SceneVehicle, "id" | "action">, field: AnswerField): string {
+  switch (field) {
+    case "type": return `Pick the type of ${who(v)}, or enter its year, make and model.`;
+    case "action": return `Pick what ${who(v)} was doing.`;
+    case "speed": return `Enter ${v.id === "A" ? "your car's" : `vehicle ${v.id}'s`} speed, or choose Not sure.`;
+    case "zone": return `Pick where ${who(v)} was hit.`;
+  }
+}
+
 /** "Pick which way your car was going." / "Pick which way vehicle B was facing." (parked or backing: the way it faced). */
 export function pickDirectionText(v: Pick<SceneVehicle, "id" | "action">): string {
-  return `Pick which way ${v.id === "A" ? "your car" : `vehicle ${v.id}`} was ${v.action === "parked" || v.action === "backing" ? "facing" : "going"}.`;
+  return `Pick which way ${who(v)} was ${v.action === "parked" || v.action === "backing" ? "facing" : "going"}.`;
 }
 
 /** What identifies the details the claimant has accepted warnings for. */
 /** Road ids and unnamed roads' words are left out: filling them in after the roads load must not undo "See it anyway". */
+/** The claim (number, and its vehicle, which mirrors A) is left out too: it never changes what the picture can draw. */
 export const docKey = (doc: Pick<Doc, "scene" | "located">): string =>
-  `${doc.located ? "1" : "0"}${canonicalJson({ ...doc.scene, vehicles: doc.scene.vehicles.map((v) => ({ ...v, travel: { ...v.travel, roadId: null, roadDesc: undefined } })) })}`;
+  `${doc.located ? "1" : "0"}${canonicalJson({ ...doc.scene, claim: null, vehicles: doc.scene.vehicles.map((v) => ({ ...v, travel: { ...v.travel, roadId: null, roadDesc: undefined } })) })}`;
 
 interface FlowValue {
   readonly step: StepKey;
@@ -128,8 +172,8 @@ export function FlowProvider({ children }: { children: ReactNode }) {
 
   const roadNet = roads.net;
   const problems = useMemo(
-    () => runGate(doc.scene, doc.located, doc.directionSet, (s) => services.physics.checkScene(s, roadNet), Object.values(fieldErrors)),
-    [doc.scene, doc.located, doc.directionSet, services, roadNet, fieldErrors],
+    () => runGate(doc.scene, doc.located, doc.directionSet, (s) => services.physics.checkScene(s, roadNet), Object.values(fieldErrors), (s) => services.physics.roadFitProblems(s, roadNet), doc.unanswered),
+    [doc.scene, doc.located, doc.directionSet, doc.unanswered, services, roadNet, fieldErrors],
   );
   const blocking = problems.some((p) => p.blocking);
   const key = docKey(doc);
@@ -194,7 +238,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => {
       const id = p.vehicleIds[0];
       const card = id ? document.getElementById(`vehicle-${id}`) : null;
-      const target = (p.focus === "direction" ? card?.querySelector<HTMLElement>('[data-fix-direction] [role="radio"][tabindex="0"]') : null) ?? card?.querySelector<HTMLElement>('[data-fix-target] [role="radio"][aria-checked="true"]') ?? card?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
+      const target = (p.focus ? card?.querySelector<HTMLElement>(FIX_FOCUS[p.focus]) : null) ?? card?.querySelector<HTMLElement>('[data-fix-target] [role="radio"][aria-checked="true"]') ?? card?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
       if (target) { target.scrollIntoView?.({ block: "center" }); target.focus({ preventScroll: true }); }
     }, 0);
   }, [problems]);

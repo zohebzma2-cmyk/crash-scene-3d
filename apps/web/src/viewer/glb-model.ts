@@ -19,6 +19,7 @@
 //     so the model keeps the catalog paint and the viewer says so next to the picked colour.
 // Colours come in as three Colors already resolved by the caller (token reader or the picked hex); no literals here.
 import { Box3, Color, Group, Matrix4, Vector3, type BufferGeometry, type Material, type Mesh, type Object3D, type Texture } from "three";
+import { nearestFactoryColor, type VehiclePaint } from "@csd/core";
 
 export interface Footprint {
   readonly lengthM: number;
@@ -74,8 +75,23 @@ export function normalise(root: Object3D, target: Footprint): Group {
   fit.position.set(...n.offset);
   fit.add(yaw);
   fit.updateMatrixWorld(true);
+  // Guard (roads and paths, 2026-10-11): measured again as drawn, every mesh at least FLAT_M tall must sit inside the footprint
+  // (to FIT_TOL_M), or two cars that touch in the physics could overlap on screen. A model that doesn't is refused: ours stays.
+  const drawn = new Box3(), part = new Box3();
+  fit.traverse((o) => {
+    if (!(o as Mesh).isMesh) return;
+    part.setFromObject(o, true);
+    if (!part.isEmpty() && part.max.y - part.min.y >= FLAT_M) drawn.union(part);
+  });
+  if (!drawn.isEmpty() && (Math.max(Math.abs(drawn.min.x), Math.abs(drawn.max.x)) > target.widthM / 2 + FIT_TOL_M || Math.max(Math.abs(drawn.min.z), Math.abs(drawn.max.z)) > target.lengthM / 2 + FIT_TOL_M)) {
+    throw new Error("The catalog model doesn't fit the vehicle's footprint.");
+  }
   return fit;
 }
+/** Meshes flatter than this (a ground shadow, a decal plate) don't count for the fit guard, m. */
+const FLAT_M = 0.01;
+/** A fitted catalog model may stick out of the footprint by this much at most, m. */
+const FIT_TOL_M = 0.01;
 
 /* ------------------------------ which material is paint ------------------------------ */
 
@@ -204,6 +220,34 @@ export function analysePaint(rgba: ArrayLike<number>, width: number, height: num
   return { mode: "none", reason: "dark-or-unclear" };
 }
 
+/**
+ * The catalog paint a model keeps, named: each used texel (not transparent, not the pure-black atlas padding) counted under
+ * its nearest factory colour. Tyres, trim and glass are black and grey, so a colour (or white, silver) that covers at least a
+ * fifth of the texels is the paint, the larger first; otherwise the commonest colour (a black or grey car). Null when empty.
+ */
+export function dominantPaint(rgba: ArrayLike<number>, width: number, height: number): VehiclePaint | null {
+  const counts = new Map<string, { paint: VehiclePaint; n: number }>();
+  let used = 0;
+  for (let i = 0; i < width * height * 4; i += 4) {
+    if ((rgba[i + 3] ?? 255) < 128) continue;
+    if (Math.max(rgba[i]!, rgba[i + 1]!, rgba[i + 2]!) <= PADDING_MAX_BYTE) continue;
+    used++;
+    const paint = nearestFactoryColor([rgba[i]! / 255, rgba[i + 1]! / 255, rgba[i + 2]! / 255]);
+    const c = counts.get(paint.name);
+    if (c) c.n++; else counts.set(paint.name, { paint, n: 1 });
+  }
+  if (!used) return null;
+  const all = [...counts.values()].sort((a, b) => b.n - a.n);
+  const painted = all.find((c) => !TRIM_COLOURS.has(c.paint.name) && c.n / used >= PAINT_MIN_SHARE);
+  return (painted ?? all[0]!).paint;
+}
+/** Atlas padding is pure black: channels at or under this byte. */
+const PADDING_MAX_BYTE = 3;
+/** The colours tyres, trim and glass are drawn in. */
+const TRIM_COLOURS: ReadonlySet<string> = new Set(["Black", "Gray"]);
+/** A paint covers at least this share of a car's used texels. */
+const PAINT_MIN_SHARE = 0.2;
+
 /** A texture's pixels, down-sampled to at most `max` px a side: from a DataTexture's data, or through a 2D canvas. Null when unreadable. */
 export function texturePixels(tex: Texture, max = 64): { data: Uint8ClampedArray; width: number; height: number } | null {
   const img = tex.image as { data?: ArrayLike<number>; width?: number; height?: number } | undefined;
@@ -237,7 +281,11 @@ export function texturePixels(tex: Texture, max = 64): { data: Uint8ClampedArray
 export type TintPlan =
   | { readonly kind: "material"; readonly how: "named" | "largest"; readonly targets: readonly ColoredMaterial[] }
   | { readonly kind: "texture"; readonly targets: readonly ColoredMaterial[]; readonly analysis: Exclude<PaintAnalysis, { mode: "none" }>; readonly uniforms: PaintUniforms }
-  | { readonly kind: "none"; readonly reason: "no-material" | "dark-or-unclear" | "unreadable-texture" };
+  | {
+    readonly kind: "none"; readonly reason: "no-material" | "dark-or-unclear" | "unreadable-texture";
+    /** The model's own paint, named as the nearest factory colour ("White"), when it can be read: the viewer says it. */
+    readonly catalogPaint: VehiclePaint | null;
+  };
 
 /**
  * Decide how to tint a model (see the header): named body-paint materials first, else the largest opaque
@@ -253,13 +301,13 @@ export function planTint(root: Object3D, pixels: (t: Texture) => ReturnType<type
     targets = candidates.slice(0, 1);
     how = "largest";
   }
-  if (!targets.length) return { kind: "none", reason: "no-material" };
+  if (!targets.length) return { kind: "none", reason: "no-material", catalogPaint: null };
   const textured = targets.filter((m) => m.map);
   if (!textured.length) return { kind: "material", how, targets };
   const px = pixels(textured[0]!.map!);
-  if (!px) return { kind: "none", reason: "unreadable-texture" };
+  if (!px) return { kind: "none", reason: "unreadable-texture", catalogPaint: null };
   const analysis = analysePaint(px.data, px.width, px.height);
-  if (analysis.mode === "none") return { kind: "none", reason: "dark-or-unclear" };
+  if (analysis.mode === "none") return { kind: "none", reason: "dark-or-unclear", catalogPaint: dominantPaint(px.data, px.width, px.height) };
   const uniforms = paintUniforms();
   for (const m of textured) installPaintShader(m, uniforms);
   return { kind: "texture", targets: textured, analysis, uniforms };

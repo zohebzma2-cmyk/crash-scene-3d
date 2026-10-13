@@ -131,9 +131,9 @@ try {
   const b = page.locator("#vehicle-B");
   await a.waitFor();
   await pause(700);
-  for (const [card, year, make, model, colour, dir, hit] of [
-    [a, "2019", "chevy", "Silverado 1500", "Red", "Northbound on Main Street", "Hit on the right side"],
-    [b, "2021", "honda", "Accord", "Blue", "Westbound on Park Street", "Hit on the front"],
+  for (const [card, year, make, model, colour, dir, hit, mph] of [
+    [a, "2019", "chevy", "Silverado 1500", "Red", "Northbound on Main Street", "Hit on the right side", "25"],
+    [b, "2021", "honda", "Accord", "Blue", "Westbound on Park Street", "Hit on the front", "30"],
   ]) {
     await type(card.getByLabel("Year"), year);
     await type(card.getByLabel("Make"), make);
@@ -142,8 +142,18 @@ try {
     await pause(1200);   // the photo and badge load
     await click(card.locator(`[data-paint-picker]`).getByRole("radio", { name: colour, exact: true }));
     await pause(500);
+    // Nothing is prefilled: the type only if vPIC didn't fill it, what it was doing, then direction, speed and where it was hit.
+    const tiles = card.locator("[data-fix-type]");
+    if (await tiles.isVisible().catch(() => false)) {
+      console.warn(`vPIC didn't fill the type of ${make} ${model}; picking it by hand`);
+      await click(tiles.getByRole("radio", { name: card === a ? "Pickup" : "Car", exact: true }));
+    }
+    await click(card.locator("[data-fix-action]").getByRole("radio", { name: "Straight", exact: true }));
+    await pause(400);
     await click(card.getByRole("radio", { name: dir, exact: true }));
     await pause(500);
+    await card.locator("[data-fix-speed] input").fill(mph);
+    await pause(400);
     await click(card.getByRole("radio", { name: hit, exact: true }));
     await pause(700);
     if (card === a) {

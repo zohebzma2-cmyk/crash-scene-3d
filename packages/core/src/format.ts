@@ -70,7 +70,27 @@ export function boundWord(bearingDeg: number): "northbound" | "eastbound" | "sou
   if (b < 225) return "southbound";
   return "westbound";
 }
-const FACING: Record<string, string> = { northbound: "north", eastbound: "east", southbound: "south", westbound: "west" };
+const COMPASS_8 = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] as const;
+export type CompassWord = (typeof COMPASS_8)[number];
+/** Nearest of the eight compass points for a bearing in degrees: "north", "northwest", … */
+export function compassWord(bearingDeg: number): CompassWord {
+  const b = ((bearingDeg % 360) + 360) % 360;
+  return COMPASS_8[Math.round(b / 45) % 8]!;
+}
+/** Is a bearing nearest one of the four main points (north, east, south, west) of the eight? */
+export const isCardinal = (bearingDeg: number): boolean => ["north", "east", "south", "west"].includes(compassWord(bearingDeg));
+/**
+ * Which way something was going, in words: "northbound" when the bearing is nearest north, east, south or west, else
+ * "heading northwest" (a road at 45 degrees is neither northbound nor westbound, and saying either one misleads).
+ */
+export function goingWords(bearingDeg: number): string {
+  return isCardinal(bearingDeg) ? boundWord(bearingDeg) : `heading ${compassWord(bearingDeg)}`;
+}
+/** Which way something faced: "north", "northwest". */
+export const facingWords = (bearingDeg: number): string => compassWord(bearingDeg);
+
+/** Words for a vehicle that came out of a driveway or parking lot. */
+export const DRIVEWAY_WORDS = "a driveway or parking lot";
 
 /** Keep street names as written ("Main Street"), only trimming; never lowercase them. */
 export function streetName(name: string | null | undefined): string | null {
@@ -87,28 +107,45 @@ export function roadWords(t: { readonly roadName: string | null; readonly roadDe
   return streetName(t.roadName) ?? streetName(t.roadDesc);
 }
 
-/** A direction choice's label: "northbound on Main Street", "northbound on the parking aisle (west one)", "northbound". */
-export function travelLabel(bound: ReturnType<typeof boundWord>, t: { readonly roadName: string | null; readonly roadDesc?: string | null | undefined }): string {
+/**
+ * A direction choice's label: "northbound on Main Street", "heading northwest on Willow Bend Road", "northbound on the
+ * parking aisle (west one)", "northbound".
+ */
+export function travelLabel(bearingDeg: number, t: { readonly roadName: string | null; readonly roadDesc?: string | null | undefined }): string {
   const road = roadWords(t);
-  return road ? `${bound} on ${road}` : bound;
+  const going = goingWords(bearingDeg);
+  return road ? `${going} on ${road}` : going;
 }
 
+const ucFirstWord = (s: string): string => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+
 /**
- * Road-relative direction caption, e.g. "Northbound on Main Street",
+ * Road-relative direction caption, e.g. "Northbound on Main Street", "Heading northwest on Willow Bend Road",
  * "Backing up, facing east on Park Street", "Parked, facing south",
- * "Northbound on the parking aisle (west one)" (an unnamed road, told apart by its description).
+ * "Northbound on the parking aisle (west one)" (an unnamed road, told apart by its description),
+ * "Out of a driveway or parking lot onto Main Street, heading west" (a vehicle that came from one).
  * Sentence case for the first word only; street names keep their case.
  */
 export function directionCaption(v: Pick<SceneVehicle, "action" | "travel">): string {
-  const bound = boundWord(v.travel.bearingDeg);
+  const b = v.travel.bearingDeg;
+  const going = goingWords(b);
   const road = roadWords(v.travel);
   const on = road ? ` on ${road}` : "";
+  if (v.travel.fromDriveway && v.action !== "parked") {
+    const onto = road ? ` onto ${road}` : "";
+    switch (v.action) {
+      case "backing": return `Backing out of ${DRIVEWAY_WORDS}${onto}, facing ${facingWords(b)}`;
+      case "turn-left": return `Turning left out of ${DRIVEWAY_WORDS}${onto}, ${going}`;
+      case "turn-right": return `Turning right out of ${DRIVEWAY_WORDS}${onto}, ${going}`;
+      default: return `Out of ${DRIVEWAY_WORDS}${onto}, ${going}`;
+    }
+  }
   switch (v.action) {
-    case "parked": return `Parked, facing ${FACING[bound]}${on}`;
-    case "backing": return `Backing up, facing ${FACING[bound]}${on}`;
-    case "turn-left": return `Turning left, ending ${bound}${on}`;
-    case "turn-right": return `Turning right, ending ${bound}${on}`;
-    default: return `${bound.charAt(0).toUpperCase()}${bound.slice(1)}${on}`;
+    case "parked": return `Parked, facing ${facingWords(b)}${on}`;
+    case "backing": return `Backing up, facing ${facingWords(b)}${on}`;
+    case "turn-left": return `Turning left, ending ${going}${on}`;
+    case "turn-right": return `Turning right, ending ${going}${on}`;
+    default: return `${ucFirstWord(going)}${on}`;
   }
 }
 
@@ -151,4 +188,21 @@ export function joinClauses(parts: readonly string[]): string {
     out.push(p);
   }
   return out.join(", ");
+}
+
+/**
+ * Who a vehicle is on every label: "Your car" for A (the claimant's), "Other car" for the rest (DESIGN.md section 7,
+ * "Vehicle labels"). The letter tells the others apart.
+ */
+export function roleWords(v: { readonly id: string }): "Your car" | "Other car" {
+  return v.id === "A" ? "Your car" : "Other car";
+}
+
+/**
+ * The one label for a vehicle, the same on the 3D chips, the mini map and the stills in the PNGs and the PDF:
+ * "A · Your car · 25 mph", "B · Other car · Stopped", "B · Other car · Northbound", or just "B · Other car".
+ * `detail` is already formatted (a speed from the simulation through formatSpeed, or a direction).
+ */
+export function vehicleTag(v: { readonly id: string }, detail?: string | null): string {
+  return [v.id, roleWords(v), detail ?? ""].filter((x) => x.length > 0).join(" · ");
 }

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { LIMITS, checkScene, parseScene, placeVehicles, simulate } from "../src";
 import type { PlainMessage, RoadNetwork, Scene, SceneSpeed } from "../src";
 import { MAX_TRACK_SAMPLES, MAX_SPEED_MPS, ROAD_REACH_M } from "../src/physics/constants";
-import { NO_ROAD_TEXT, trackTooLong } from "../src/physics/validate";
+import { NO_ROAD_TEXT, trackTooLong, validateScene } from "../src/physics/validate";
 import { sampleScene } from "./fixtures";
 import { MAIN, PARK, expectOk, flatTBoneScene, known, sceneOf, tBoneScene, unsure, veh } from "./physics-helpers";
 import { intersectionNet, makeWay, parkingLotNet, rect } from "./roads-fixtures";
@@ -145,8 +145,12 @@ describe("directions, the pin and the location", () => {
     }
   });
 
-  it("refuses a road lane that isn't a whole number from 0 to 7, and a made-up type, zone, action or road condition", () => {
-    for (const lane of [1.5, -1, 8, Number.NaN, "1"]) {
+  it("refuses a road lane that isn't a whole number from 0 to 19, and a made-up type, zone, action or road condition", () => {
+    for (const lane of [0, 8, 19]) {
+      const s = sampleScene(); s.vehicles[0]!.travel.lane = lane;
+      expect(validateScene(s)).toEqual([]);
+    }
+    for (const lane of [1.5, -1, 20, Number.NaN, "1"]) {
       const s = sampleScene();
       (s.vehicles[0]!.travel as { lane: unknown }).lane = lane;
       expect(expectRefused(s).map((e) => e.code), String(lane)).toEqual(["bad-lane"]);

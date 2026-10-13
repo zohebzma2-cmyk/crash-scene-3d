@@ -1,10 +1,26 @@
-# PROGRESS: final handoff (2026-10-10)
+# Release status (2026-10-12)
 
-**Read this and `git log --oneline -20` before doing anything.** The build is closed out. Earlier, detailed progress notes are in this file's git history.
+**Production = GitHub `main`**, deployed to https://crash-scene-3d.netlify.app on 2026-10-12 at 23:02 ET with `netlify deploy --prod` from the same tree. Previous release: `d4ae95c` (2026-10-11). Rollback: Netlify → Deploys → the 2026-10-11 deploy → "Publish deploy", and `git revert` the release commit on `main`.
+
+**Why one squashed commit:** the working branches were squashed into a single release commit on top of `d4ae95c`, so that intermediate example data from earlier iterations is never published. Work continues from `main`.
+
+**What shipped:**
+- Road features and optional questions (scene v4), with the first frame within 8% of the previous release.
+- A first-visit welcome dialog; the header follows vehicle A; no made-up claim number; an optional claim number and `?claim=`.
+- Directions taken from the roads, paths that follow the lanes, a check before Review with one-tap fixes, contact geometry, honest paint chips and one label per vehicle; the impact ring framed in view; the Top view kept above the controls on phones.
+- Neutral defaults: a new visitor's vehicles start with nothing picked (no type, action, direction, speed or hit side); unanswered items are shown as unanswered and are never drawn, checked or offered in a fix.
+- Proxy fix: Netlify Blobs stores are opened per call.
+- A release smoke test (`npm run smoke`), and README and DESIGN updates.
+
+**Checks on the release tree:** `./check.sh` (typecheck, lint, stylelint, build): 2,153 unit tests and 543 browser tests passed (58 skipped); the privacy scan of the tree and of every pushed commit is clean; the release smoke passed end to end on Chromium.
+
+# PROGRESS: handoff (updated 2026-10-12)
+
+**Read this and `git log --oneline -20` before doing anything.** The release status above is the current state. Earlier, detailed progress notes are in this file's git history.
 
 ## Hard rules (for anyone picking this up, human or agent)
 - **Ask the owner first** before `git push`, any `gh` command, `npm publish`, or any deploy (including `npx netlify-cli ... deploy`).
-- **Push only `main`, and only on top of `origin/main`.** Never push the local branches `fix/*`, `integ/*`, `test/*`, `night/*`, `show/*`, `live/*` or `roundA/*`, or any older local `main`: older local history has data that must not be published.
+- **Push only `main`, and only on top of `origin/main`.** Never push the local branches `fix/*`, `feat/*`, `integ/*`, `codex/*`, `test/*`, `night/*`, `show/*`, `live/*` or `roundA/*`, or any older local `main`: older local history must not be published. Ship a single commit with the final tree on top of `origin/main` when a branch's history isn't clean.
 - **No destructive git**: no force push, `reset --hard`, `clean -fdx`, or history rewrites of shared branches. **No `rm -rf`.**
 - **Never read secrets**: no `.env` files, nothing under `~/.ssh`, and never read or print the Netlify environment values.
 - **Before any push:** run the privacy scan (`node scripts/privacy-scan.mjs --tree HEAD` with your untracked `.privacy-terms`) and `./check.sh`.
@@ -24,37 +40,33 @@
   - Exports: one ZIP of PDF, PNGs and the scene JSON, all carrying the same SHA-256 fingerprint.
   - Fixer v2: wider fixes in a Web Worker, a regression corpus, and a "remembered fixes" memory that stays on the device.
 - **Secrets set on Netlify (values never read):** `PROXY_USER_SALT`, plus two logo.dev keys for round B, which isn't built.
-- **`./check.sh` on the final commit:**
-  - 1,938 unit and property tests;
-  - 481 browser tests on Chromium and WebKit at 1440 and 390;
-  - 34 skipped (WebKit runs the `@xb` subset; plus the known fixme and opt-in cases).
+- **`./check.sh` on the release tree (2026-10-12):**
+  - 2,153 unit and property tests;
+  - 543 browser tests on Chromium and WebKit at 1440 and 390;
+  - 58 skipped (WebKit runs the `@xb` subset; plus the known fixme and opt-in cases).
+  - **The release smoke** (`npm run smoke -- <url>`, `scripts/smoke.mjs`, added 2026-10-12) is the one unstubbed check: one person's flow, one take, Chromium 1440 then WebKit 390, real search, real vPIC, real media, then the saved files. Media is required against production and SKIP-on-miss on a draft (the CarImages/logo.dev keys are production-only). Release flow (docs/DEPLOY.md): build → Netlify draft (no `--prod`) → smoke → report → owner says "promote" → the same commit `--prod` + push `main` → smoke live → "last known good" note here.
+- **In production:** the 2026-10-12 release (the release commit on `main`). Previous: `d4ae95c` (2026-10-11 22:51). Rollback = Netlify "Publish deploy" on that deploy.
 - **Live checks after each deploy:**
   - `BASE_URL=https://crash-scene-3d.netlify.app npm run e2e:live`, which covers search near the claim and, since 2026-10-11, typing two vehicles (`e2e/live/vehicles.live.spec.ts`; run once, see the hard rules);
   - `e2e/csp-steps.spec.ts` and `e2e/viewer-clear.spec.ts` against the live URL;
   - the examples, ZIP and fingerprint check on Chromium and WebKit, desktop and phone.
 
-## 2026-10-11 night deploy
-- Vehicle picker, photos/logos/GLB, colours, vPIC auto-type, loading state, PDF polish, busy-message fix, README demo. Road features + optional questions (codex/questions, 8d4c463) are NOT in this deploy: reviewed, waiting on the first-frame time fix.
+## 2026-10-11 night deploy (production, d4ae95c)
+- Vehicle picker, photos/logos/GLB, colours, vPIC auto-type, loading state, PDF polish, busy-message fix, README demo. Road features + optional questions were NOT in it.
+
+## 2026-10-12 release
+- Part 1: Codex's road features + optional questions (scene v4, v3 migration) on main, first frame within 8% of base (was 2×), road-features e2e fixed properly. Codex's handoff notes: CODEX-NOTES.md (its own PROGRESS sections are in this file's history on `codex/questions`: "optional questions on current main" and "road-features handoff", 2026-10-11; its last green was `E2E_PORT=4196 ./check.sh`, 1,644 unit + 357 browser tests, 12-case visual audit inspected).
+- Part 2: first-visit welcome dialog (§3 disclaimer word for word, focus trap, axe), header follows vehicle A, no made-up claim number, optional "Claim number", `?claim=` validated, exports without a number named by date and time, examples keep CLM-EX numbers, old files open.
+- Part 3: directions from the roads (`directionChoices`), paths along the lanes (no straight lines across grass; short driveway entry allowed), inconsistent input fixed before Review with one-tap fixes, contact not overlap (GLB fitted to the footprint with a guard), impact ring beside the cars with a leader, paint chips that say "Catalog colour", one label wording ("Your car" / "Other car"), road-type matrix test, fixer corpus re-baselined (bar 70%, budget 440 checks / 2 M units). Review fixes a204191. Cut nothing from 1–3; roundabout turn choices and two fixer gaps are listed in README Next version.
+- Integration fixes (mine): ring framed by the live camera; Top view centred above the legend and zoom buttons on phones (DESIGN §7); smoke script (`npm run smoke`).
 
 ## What's next (in order)
-1. **The owner's polish list (2026-10-10, after close-out):**
-   1. PDF page 1 fills with as many assumptions as fit, and only the rest moves to page 2. **Merged (reviewed), not yet deployed.**
-   2. The PDF "Hit on" column gets more room, or its note moves under the table. **Merged (reviewed), not yet deployed.**
-   3. The PDF map thumbnail: street labels at the pin spaced apart. **Merged (reviewed), not yet deployed.**
-   4. The diagram: the scale bar moved off the north arrow. **Merged (reviewed), not yet deployed.**
-   5. The vehicles step: offer the same one-tap fixes as Review. An unpicked direction reads as a missing detail ("pick which way your car was going"), not "don't fit together". **Merged (reviewed), not yet deployed.**
-   6. The vehicles step no longer says "a lot of map requests" when you type a make and model: vPIC has its own buckets, every route retries before a busy message, wording is per topic, our live tests stub vehicles and tiles (docs/PROXY-BUSY.md, decision 0010). **Merged (reviewed), not yet deployed.** After the deploy, run `e2e/live/vehicles.live.spec.ts` once. Decision for the owner: extend CLAUDE.md hard rule 6's exception to vPIC (2/s global with bursts).
-   7. The vehicle type is picked from vPIC, never asked (branch `fix/vpic-auto`): VehicleTypeName plus curated van/pickup model tables in core (no BodyClass without a VIN); tiles only behind "Not right? Change type" or when vPIC has no answer; a hand pick stands for its model through a year change. **Local commits only, not reviewed or merged.**
-2. **The camera framing fixes** from docs/VISIBILITY-SWEEP.md, in this order:
-   1. fit into the unobstructed view, which matters most on phones;
-   2. the 900 m orbit clamp;
-   3. Aftermath turns off when the user scrubs;
-   4. ground height.
-
-   After those come the DESIGN §7 decisions (C1 start framing, C3 driver views). Then remove the sweep's opt-in gate so check.sh runs it.
-3. **Round B:** the vehicle picker (vPIC type-ahead with aliases): **done on branch `roundB/picker` (2026-10-11), not merged or deployed** (status below), maker logos through `/api/logos/make` (server-side, cached, with a fallback), vehicle colours in every view, and a write-up of the photo provider.
-   - **Photos, 3D models and logos: done on branch `roundB/images` (2026-10-11), not merged or deployed.** Routes `/api/vehicles/image`, `/api/vehicles/model`, `/api/logos/make` (packages/proxy/src/media.ts); MakeLogo and VehiclePhoto on the vehicle card; photos in the PDF table and on the stills. Decision 0011 lists what can only be checked after a deploy with the real keys (`CARIMAGES_API_KEY`, `CARIMAGES_API_SECRET`, `LOGO_DEV_SECRET_KEY`; `LOGO_DEV_TOKEN` is not used). Ask the owner before any deploy.
-4. **The fixer review follow-ups and the rest of README "Next version".**
+1. **Two more scene rules + the scenario corpus gate** (specs agreed 2026-10-12): RULE 1 vehicles stay on the road, including after the impact (obstacles in the physics; "Did A end up off the road?"; a Parked option); RULE 2 single-vehicle crashes ("What was hit?": objects from OSM, leaving the road, fixed-object physics, a 4th guard-rail example); `npm run check:scenarios` over Codex's `qa/scenario-corpus` (branch `codex/scenarios`, blocked on an approval prompt last night) wired into check.sh.
+2. **Context questions** answered only from the OSM data at the pin (lanes, signal, sign, turn, speed limit, lot, conditions), schema minor bump, "As described" PDF section, fingerprint unchanged for old files.
+3. **Crash damage + the real scene**: crumple at the contact patch (animated, effects, stills caption; illustration wording only, CLAUDE.md rule 4) and signals facing traffic, signs, markings, kerbs, buildings with heights, trees, lamps, night and weather, a legend; instanced, mounted after the first frame.
+4. **Realistic surroundings research spike** (Google 3D Tiles, Cesium, NAIP + OSM massing); if it needs a paid key, write the plan and move on.
+5. **README demo with real catalog media**, recorded on the live site (check CarImages and logo.dev terms first; MP4 ≤ 15 MB, GIF ≤ 10 MB, caption).
+6. The follow-ups in README "Next version" (fixer bench re-time, GLB fit-guard unit test, smoke Save navigation, makes retry after a 500, the fix-button flicker seen once under load, the rest of the camera framing fixes from docs/VISIBILITY-SWEEP.md).
 
 ## roundB/picker (2026-10-11, not merged)
 - Year, make and model are WAI-ARIA comboboxes (`VehicleCombobox`), with aliases, typo tolerance and popular-first ranking from `packages/core/src/vehicle-names.ts`. Free text always works. `MakeLogo` renders in each make row once round B's images branch adds it.

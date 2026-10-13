@@ -2,15 +2,15 @@
 // names keep their capitals and no word repeats ("going straight going straight").
 // Numbers come from the simulation result through formatSpeed; nothing is typed in.
 import {
-  ACTION_WORDS, DEFAULT_LIMIT_MPH, PRESETS, ROAD_WORDS, ZONE_WORDS, directionCaption, formatSpeed, joinClauses,
+  ACTION_WORDS, DEFAULT_LIMIT_MPH, PRESETS, ROAD_WORDS, ZONE_WORDS, directionCaption, formatSpeed, joinClauses, accountItems, roleWords,
   type Scene, type SceneVehicle, type SimulationResult, type Units,
 } from "@csd/core";
 
 export const lcFirst = (s: string): string => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 export const ucFirst = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-/** "Your car" for A, "Vehicle B" for the rest. */
-export const roleName = (v: Pick<SceneVehicle, "id">): string => (v.id === "A" ? "Your car" : `Vehicle ${v.id}`);
+/** "Your car" for A, "Other car" for the rest: core's roleWords, the words on every label (DESIGN section 7). */
+export const roleName = (v: Pick<SceneVehicle, "id">): string => roleWords(v);
 
 const typeNoun = (v: SceneVehicle): string => {
   const label = PRESETS[v.type].label;
@@ -59,9 +59,13 @@ export function vehicleClause(v: SceneVehicle, sim: SimulationResult | null, uni
   return `${head}${speed ? ` ${speed}` : ""} when it was hit on the ${ZONE_WORDS[v.zone]}`;
 }
 
-export function sceneSummary(scene: Scene, sim: SimulationResult | null, units: Units): string {
+export function sceneNarrative(scene: Scene, sim: SimulationResult | null, units: Units): string {
   const sentence = scene.vehicles.map((v) => vehicleClause(v, sim, units)).join("; ");
   return `${ucFirst(sentence)}. The road was ${ROAD_WORDS[scene.road.condition]}.`;
+}
+
+export function sceneSummary(scene: Scene, sim: SimulationResult | null, units: Units): string {
+  return [sceneNarrative(scene, sim, units), ...accountItems(scene).map((item) => item.text)].join(" ");
 }
 
 /** Seconds as the readout words used on the timeline. */

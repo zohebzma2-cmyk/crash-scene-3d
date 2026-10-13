@@ -35,10 +35,12 @@ export const ERROR_CODES = new Set([
   "too-few-vehicles", "too-many-vehicles", "bad-location", "bad-road-condition", "bad-vehicle", "bad-direction", "bad-lane", "bad-speed",
   "bad-pin", "no-road", "no-such-lane", "wrong-way", "nothing-moving", "zones-cannot-touch", "zone-mismatch", "cannot-meet", "same-direction",
   "bodies-overlap", "moving-apart", "not-moving-toward", "too-slow", "passes-through", "on-building", "no-workable-speed", "too-long",
+  // roads and paths (2026-10-11): a direction that follows no road, a turn with no road to turn from, paths that don't meet, a start too hard
+  "off-road-direction", "no-road-to-turn-from", "paths-dont-meet", "start-too-short",
 ]);
 /** Every code a warning may carry. */
 export const WARNING_CODES = new Set([
-  "off-road", "path-not-on-road", "path-past-street-end", "picture-speed", "range-start", "range-end", "range-gap", "stopped-at-building",
+  "off-road", "picture-speed", "range-start", "range-end", "range-gap", "stopped-at-building",
   "stopped-at-vehicle", "zone-used",
   // checkScene's findings, which simulate() passes on as warnings
   "cannot-meet", "moving-apart", "nothing-moving", "same-direction", "zone-mismatch", "zones-cannot-touch",

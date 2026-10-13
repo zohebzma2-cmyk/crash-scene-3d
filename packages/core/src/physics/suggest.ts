@@ -16,7 +16,7 @@ import type { Action, Scene, SceneVehicle, VehicleId, Zone } from "../contracts/
 import { ACTIONS, ZONES } from "../contracts/scene";
 import type { PlainMessage } from "../contracts/simulation";
 import type { Vec2 } from "../contracts/geometry";
-import { ZONE_WORDS, boundWord, formatDistance, formatMphNumber, formatSpeedExact, roadWords as travelRoad } from "../format";
+import { ZONE_WORDS, facingWords, formatDistance, formatMphNumber, formatSpeedExact, goingWords, roadWords as travelRoad } from "../format";
 import { MPH_TO_MPS, RANGE_HALF_MPH, RANGE_STEP_MPH } from "./constants";
 import { angleBetween, dist, makePoly, norm, polyCrossings, project, toRad } from "./geo";
 import { cleanNet, streetName, streetsAtPin } from "./lanes";
@@ -41,9 +41,12 @@ const PIN_FIX_MIN_M = 2;
  * The search's work limits, the same for any number of vehicles: at most `checks` changes judged, and at most `units` of
  * work spent judging them (WorkMeter: a scene of three or four costs several times as much per change, so it gets fewer).
  * Counts, never a clock, so the fixes found are the same on every device. Chosen so the worst benchmark scene takes under
- * 300 ms off the main thread (docs/FIXER-BENCHMARK.md).
+ * 300 ms off the main thread (docs/FIXER-BENCHMARK.md). Raised on 2026-10-11 (roads and paths) from 220 checks and 900,000
+ * units: paths that follow the roads (round corners, through lots) make a "not sure" speed scan cost more per change, and
+ * repairing a direction that follows no road takes more starting points, so the old limits lost fixes that still draw
+ * (bench-prop-081, -128, -266). Not yet re-timed against the 300 ms target in a browser.
  */
-export const FIX_LIMITS = Object.freeze({ checks: 220, units: 900_000 });
+export const FIX_LIMITS = Object.freeze({ checks: 440, units: 2_000_000 });
 /** Work units charged per vehicle for working out which hit sides each vehicle could be reached on (no placing). */
 const FACING_UNITS = 100;
 /** Kept for callers that report the old cap: the most changes judged per search. */
@@ -132,10 +135,14 @@ const FOCUS_FIELD: Readonly<Record<string, FixFocus["field"]>> = {
   "zones-cannot-touch": "zone", "bodies-overlap": "zone", "moving-apart": "direction", "not-moving-toward": "speed", "too-slow": "speed",
   "passes-through": "direction", "on-building": "direction", "wrong-way": "direction", "no-such-lane": "direction", "nothing-moving": "action",
   "no-workable-speed": "speed",
+  "off-road-direction": "direction", "no-road-to-turn-from": "direction", "paths-dont-meet": "direction", "start-too-short": "speed",
 };
 
-/** Refusals about one vehicle's own path on its road: repaired first. */
-const LOCAL = new Set(["wrong-way", "no-such-lane"]);
+/**
+ * Refusals about one vehicle's own path on its road: repaired first. A direction that follows no road at the pin, or a turn
+ * with no road to turn from, is repaired with the road-relative directions step 2 offers (or another action).
+ */
+const LOCAL = new Set(["wrong-way", "no-such-lane", "off-road-direction", "no-road-to-turn-from"]);
 const FRONT_ZONES: ReadonlySet<Zone> = new Set<Zone>(["front", "front-left", "front-right"]);
 
 export const ACTION_LABELS: Readonly<Record<Action, string>> = {
@@ -146,7 +153,6 @@ export const ACTION_LABELS: Readonly<Record<Action, string>> = {
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const ucFirst = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const zoneWords = (z: Zone): string => ucFirst(ZONE_WORDS[z]);
-const FACING: Readonly<Record<string, string>> = { northbound: "north", eastbound: "east", southbound: "south", westbound: "west" };
 
 /** The first sentence of a refusal, without its "Check ..." advice. */
 export function whySentence(errors: readonly PlainMessage[]): string {
@@ -202,12 +208,12 @@ const sameRoad = (t: SceneVehicle["travel"], o: DirectionOption): boolean =>
   (t.roadId != null && t.roadId === o.roadId) || (t.roadName != null && t.roadName === o.roadName) || (t.roadName == null && o.roadName == null);
 const angleDeg = (a: number, b: number): number => (angleBetween(toRad(a), toRad(b)) * 180) / Math.PI;
 
-function directionWords(v: SceneVehicle, o: DirectionOption, roadChanged: boolean): string {
-  const bound = boundWord(o.bearingDeg);
+/** "Northbound on Main Street", "Heading northwest", "Facing west" (parked or backing): the words the direction list uses. */
+function directionWords(v: Pick<SceneVehicle, "action" | "travel">, o: DirectionOption, roadChanged: boolean): string {
   // An unnamed road is named by its description whenever it is another road than the one the vehicle is on.
   const road = travelRoad(o);
   const on = road && (roadChanged ? true : o.roadName == null && o.roadDesc != null && o.roadId !== v.travel.roadId) ? ` on ${road}` : "";
-  return v.action === "parked" || v.action === "backing" ? `Facing ${FACING[bound]}${on}` : `${ucFirst(bound)}${on}`;
+  return v.action === "parked" || v.action === "backing" ? `Facing ${facingWords(o.bearingDeg)}${on}` : `${ucFirst(goingWords(o.bearingDeg))}${on}`;
 }
 
 /** "at 25 mph", or for a "not sure" speed "at a speed the picture picks". */
@@ -303,7 +309,7 @@ function singles(scene: Scene, world: PinWorld, errors: readonly PlainMessage[])
     const options = v.action === "backing" || v.action === "parked" ? [...world.dirs, ...world.dirs.map((o) => ({ ...o, bearingDeg: (o.bearingDeg + 180) % 360 }))] : world.dirs;
     const seen = new Set<string>();
     for (const o of options) {
-      const key = `${o.roadId ?? o.roadName ?? ""}@${boundWord(o.bearingDeg)}`;
+      const key = `${o.roadId ?? o.roadName ?? ""}@${goingWords(o.bearingDeg)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const road = sameRoad(v.travel, o);
@@ -344,12 +350,16 @@ function singles(scene: Scene, world: PinWorld, errors: readonly PlainMessage[])
       const cost = 1.8 + Math.min(0.19, p.d / 1000);
       out.push({ cost, changes: [move] });
       // With the pin on the road, each vehicle's direction lined up with the nearest one step 2 would offer there.
-      const there = directionOptions(world.net, toLocal(world.net.frame, location));
+      const newPin = toLocal(world.net.frame, location);
+      const there = directionOptions(world.net, newPin);
       const lineUp: FixChange[] = [];
       for (const v of scene.vehicles) {
         const facing = v.action === "backing" || v.action === "parked" ? [...there, ...there.map((o) => ({ ...o, bearingDeg: (o.bearingDeg + 180) % 360 }))] : there;
         const best = [...facing].sort((a, b) => angleDeg(a.bearingDeg, v.travel.bearingDeg) - angleDeg(b.bearingDeg, v.travel.bearingDeg) || cmp(a.roadId ?? "", b.roadId ?? ""))[0];
-        if (!best || angleDeg(best.bearingDeg, v.travel.bearingDeg) > 60 || (best.roadId === v.travel.roadId && angleDeg(best.bearingDeg, v.travel.bearingDeg) <= 1)) continue;
+        // A direction that would follow no road there is lined up however far off it is (it can't be drawn as it is).
+        const offRoad = (): boolean => { const g = buildGuide(v, world.net, newPin); return isMessage(g) && g.code === "off-road-direction"; };
+        if (!best || (best.roadId === v.travel.roadId && angleDeg(best.bearingDeg, v.travel.bearingDeg) <= 1)) continue;
+        if (angleDeg(best.bearingDeg, v.travel.bearingDeg) > 60 && !offRoad()) continue;
         const current = directionWords(v, { bearingDeg: v.travel.bearingDeg, roadId: v.travel.roadId, roadName: v.travel.roadName, roadDesc: v.travel.roadDesc }, true);
         lineUp.push({ vehicleId: v.id, field: "direction", from: current, to: directionWords(v, best, true), patch: { travel: { ...v.travel, bearingDeg: best.bearingDeg, roadId: best.roadId, roadName: best.roadName, roadDesc: best.roadDesc ?? undefined, lane: null } } });
       }
@@ -472,20 +482,26 @@ const isMessage = (x: unknown): x is PlainMessage => typeof x === "object" && x 
 
 /**
  * For each vehicle with a refusal about its own path, its cheapest changes (lane, direction, action) that give it a usable path,
- * combined across those vehicles: the smallest repairs first, at most four combinations.
+ * combined across those vehicles: the smallest repairs first, at most six combinations.
  */
 function localRepairs(scene: Scene, world: PinWorld, errors: readonly PlainMessage[]): Candidate[] {
   const ids = [...new Set(errors.filter((e) => LOCAL.has(e.code)).flatMap((e) => e.vehicleIds))];
   if (ids.length === 0) return [];
   const all = singles(scene, world, errors).sort((x, y) => x.cost - y.cost || cmp(idOf(x.changes), idOf(y.changes)));
-  const per = ids.map((id) => all
-    .filter((c) => c.changes.length === 1 && c.changes[0]!.vehicleId === id && c.changes[0]!.field !== "zone" && c.changes[0]!.field !== "speed")
-    .filter((c) => { const v = apply(scene, c.changes).vehicles.find((x) => x.id === id)!; return !isMessage(buildGuide(v, world.net, world.pin)); })
-    .slice(0, 2));
+  const per = ids.map((id) => {
+    const usable = all
+      .filter((c) => c.changes.length === 1 && c.changes[0]!.vehicleId === id && c.changes[0]!.field !== "zone" && c.changes[0]!.field !== "speed")
+      .filter((c) => { const v = apply(scene, c.changes).vehicles.find((x) => x.id === id)!; return !isMessage(buildGuide(v, world.net, world.pin)); });
+    // The two cheapest, and the cheapest other action too (a turn with no road to turn from is often just going straight).
+    const pick = usable.slice(0, 2);
+    const action = usable.find((c) => c.changes[0]!.field === "action");
+    if (action && !pick.includes(action)) pick.push(action);
+    return pick;
+  });
   if (per.some((p) => p.length === 0)) return [];
   let combos: Candidate[] = [{ cost: 0, changes: [] }];
   for (const options of per) combos = combos.flatMap((c) => options.map((o) => ({ cost: c.cost + o.cost, changes: [...c.changes, ...o.changes] })));
-  return combos.sort((x, y) => x.cost - y.cost || cmp(idOf(x.changes), idOf(y.changes))).slice(0, 4);
+  return combos.sort((x, y) => x.cost - y.cost || cmp(idOf(x.changes), idOf(y.changes))).slice(0, 6);
 }
 
 /** At most this many starting points (the scene as entered, then path repairs) for the search. */
@@ -699,7 +715,17 @@ export function suggestFixes(scene: Scene, roads: RoadNetwork | null, opts: FixO
   const score = (kind: string): number => { const s = prefer[kind]; return typeof s === "number" && Number.isFinite(s) ? s : 0; };
   const fixes: Fix[] = found.map((f) => {
     const patched = apply(scene, f.c.changes);
-    return { id: f.id, label: labelOf(f.c), changes: f.c.changes, size: f.size, cost: f.c.cost, kind: kindOf(f.c, scene), notes: checkScene(patched, roads).length > 0, scene: patched };
+    // A direction is said the way the vehicle ends up: "Facing west" once another change in the same fix has it backing up.
+    const changes = f.c.changes.map((c) => {
+      if (c.field !== "direction" || !c.vehicleId) return c;
+      const before = scene.vehicles.find((v) => v.id === c.vehicleId)!, after = patched.vehicles.find((v) => v.id === c.vehicleId)!;
+      if (after.action === before.action) return c;
+      const t = after.travel;
+      const roadChanged = !sameRoad(before.travel, { bearingDeg: t.bearingDeg, roadId: t.roadId, roadName: t.roadName });
+      return { ...c, to: directionWords({ action: after.action, travel: before.travel }, { bearingDeg: t.bearingDeg, roadId: t.roadId, roadName: t.roadName, roadDesc: t.roadDesc }, roadChanged) };
+    });
+    const c = { ...f.c, changes };
+    return { id: f.id, label: labelOf(c), changes, size: f.size, cost: f.c.cost, kind: kindOf(c, scene), notes: checkScene(patched, roads).length > 0, scene: patched };
   });
   fixes.sort((x, y) => x.size - y.size || Number(x.notes) - Number(y.notes) || score(y.kind) - score(x.kind) || x.cost - y.cost || cmp(x.id, y.id));
   return { why, fixes: fixes.slice(0, MAX_FIXES), focus, trials: checks };

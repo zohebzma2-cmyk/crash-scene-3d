@@ -1,8 +1,8 @@
 // One vehicle: letter badge, year/make/model as type-ahead lists from NHTSA vPIC, type, what it was
-// doing, direction, speed and where it was hit. Editing vehicle A never changes the claim header.
+// doing, direction, speed and where it was hit. Vehicle A's year, make and model are the header's vehicle (live).
 import { useEffect, useId, useMemo, useRef, useState, type ComponentType, type RefObject } from "react";
 import {
-  ACTIONS, FIRST_VPIC_YEAR, MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, PRESETS, VEHICLE_TYPES, makeAndAliases, modelYears, normName, rankNames, rankYears, resolveName, vehicleName,
+  ACTIONS, COMPASS_FALLBACK_TEXT, FIRST_VPIC_YEAR, MAKE_ALIASES, MODEL_ALIASES, POPULAR_MAKES, PRESETS, VEHICLE_TYPES, makeAndAliases, modelYears, normName, rankNames, rankYears, resolveName, vehicleName,
   type Action, type SceneVehicle, type VehicleModelResult, type VehicleType,
 } from "@csd/core";
 import { RadioGroup } from "../a11y/roving";
@@ -12,6 +12,7 @@ import { useServices } from "../services/context";
 import { ServiceError } from "../services/types";
 import { VEHICLE_LOOKUP_MESSAGES } from "../services/vehicles";
 import { useDoc } from "../state/DocProvider";
+import type { AnswerField } from "../state/doc";
 import { useRoads } from "../state/Roads";
 import { ColorPicker } from "./ColorPicker";
 import { DirectionPicker } from "./DirectionPicker";
@@ -20,6 +21,10 @@ import { VehiclePhoto } from "./VehiclePhoto";
 import { SpeedInput } from "./SpeedInput";
 import { Tile } from "./Tile";
 import { VehicleCombobox, type ComboItem, type ComboStatus } from "./VehicleCombobox";
+import { VehicleQuestions } from "./questions/VehicleQuestions";
+
+/** Under the compass while the roads at the pin are still loading: their directions replace it. */
+export const ROADS_LOADING_TEXT = "Loading the roads at the pin. Their directions will show here.";
 
 const ACTION_TILES: Record<Action, { icon: string; label: string }> = {
   straight: { icon: "act-straight", label: "Straight" },
@@ -93,17 +98,25 @@ export interface VehicleCardProps {
   readonly canRemove: boolean;
   /** Has the claimant picked the direction yet? */
   readonly directionSet: boolean;
+  /** The details not answered yet (Doc.unanswered): their controls show nothing picked. */
+  readonly unanswered?: readonly AnswerField[];
   readonly onRemove: () => void;
   /** vPIC's makes (cars, MPVs, trucks, motorcycles), shared by every card. */
   readonly makes?: MakesState;
 }
 
-export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, makes = { status: "loading" } }: VehicleCardProps) {
+export function VehicleCard({ vehicle: v, canRemove, directionSet, unanswered = [], onRemove, makes = { status: "loading" } }: VehicleCardProps) {
+  const typeAnswered = !unanswered.includes("type");
+  const actionAnswered = !unanswered.includes("action");
   const { doc, dispatch } = useDoc();
-  const { vehicles } = useServices();
+  const { vehicles, physics } = useServices();
   const roads = useRoads();
+  // The direction list from the roads at the pin (a compass only where there are none, said to be a fallback).
+  const choices = useMemo(() => {
+    try { return physics.directionChoices(roads.net, roads.streets?.pin ?? { x: 0, y: 0 }, v.action); } catch { return physics.directionChoices(null, { x: 0, y: 0 }, v.action); }
+  }, [physics, roads.net, roads.streets, v.action]);
+  const compassNote = roads.status === "none" ? COMPASS_FALLBACK_TEXT : roads.status === "loading" ? ROADS_LOADING_TEXT : null;
   const ids = useId();
-  const claim = doc.scene.claim.vehicle;
   const [yearText, setYearText] = useState(v.year == null ? "" : String(v.year));
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [matchNote, setMatchNote] = useState<{ key: string; model: string; text: string; warn: boolean } | null>(null);
@@ -148,11 +161,10 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   /** Fields typed in on this card (an opened file or an example is drawn as it was saved: not renamed unless edited). */
   const typedIn = useRef({ make: false, model: false });
   /**
-   * May a list that lands rename this field's text to vPIC's spelling? Not vehicle A's own claim make or model, and in an
-   * opened file or example only once the claimant has typed in the field.
+   * May a list that lands rename this field's text to vPIC's spelling? In an opened file or example only once the
+   * claimant has typed in the field. (The claim's vehicle mirrors vehicle A, so it is no longer a separate value to keep.)
    */
-  const mayRename = (field: "make" | "model") =>
-    !(latest.current.id === "A" && latest.current[field] === claim[field]) && (doc.reconcile || typedIn.current[field]);
+  const mayRename = (field: "make" | "model") => doc.reconcile || typedIn.current[field];
 
   // The makes list can land after "chevy" was typed and the field left (Tab, a tap elsewhere, Enter on "Use ‘chevy’
   // as typed" while only that row was there): resolve it now, as leaving the field would have. The text in a field
@@ -249,8 +261,9 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   else if (askable && settledMake) { lookupText = `Looking up ${lookupMake} models for ${v.year}…`; loading = true; }
   else if (makeNames && makeDone && typedMake && !resolvedMake && v.year == null) { lookupText = notInVpic(typedMake); warn = true; noAnswer = true; }
   else if (v.typeSource === "claim") lookupText = `${PRESETS[v.type].label}, from your claim.`;
-  else lookupText = "Enter the year, make and model to fill in the type.";
-  const showTiles = changeOpen || noAnswer;
+  else lookupText = typeAnswered ? "Enter the year, make and model to fill in the type." : "Enter the year, make and model to fill in the type, or pick it below.";
+  // The tiles also show while the type is unanswered (nothing prefilled): a vehicle whose model isn't known is picked here.
+  const showTiles = changeOpen || noAnswer || !typeAnswered;
 
   // ---- year ----
   const yearItems: ComboItem[] = rankYears(yearText, years).map((y) => ({ id: `${ids}-y${y}`, value: String(y), main: String(y) }));
@@ -290,8 +303,7 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
   else if (current.state === "warn") modelStatus = { kind: "note", text: modelsFailedText(current.reason) };
   else if (current.models.length === 0) modelStatus = { kind: "note", text: `vPIC has no ${lookupMake} models for ${v.year}. Type the model; it still works.` };
 
-  const sameAsClaim = v.id === "A" && v.year === claim.year && v.make === claim.make && v.model === claim.model;
-  const sub = [vehicleName(v), v.id === "A" ? (sameAsClaim ? "from your claim" : "changed from your claim") : null].filter(Boolean).join(" · ") || "Year, make and model if you know them";
+  const sub = vehicleName(v) ?? "Year, make and model if you know them";
   // A photo is asked for only once a model from the vPIC list is picked (never per keystroke).
   const modelPicked = current?.state === "ok" && current.models.some((m) => m.name.toLowerCase() === v.model.trim().toLowerCase());
   const titleId = `${ids}-title`;
@@ -375,15 +387,15 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
             <span>{lookupText}</span>
           </p>
           {showTiles ? (
-            <fieldset className="group">
+            <fieldset className="group" data-fix-type>
               <legend className="field-sub">Type</legend>
-              <RadioGroup className="tiles tiles-6 tiles-compact" aria-label={`Type of vehicle ${v.id}`} values={VEHICLE_TYPES} value={v.type} onChange={(t: VehicleType) => {
+              <RadioGroup className="tiles tiles-6 tiles-compact" aria-label={`Type of vehicle ${v.id}`} values={VEHICLE_TYPES} value={typeAnswered ? v.type : null} onChange={(t: VehicleType) => {
                 override.current = normName(latest.current.model);
                 setChangeOpen(true);
                 patch({ type: t, typeSource: "manual" });
                 if (note && typedModel?.type) setMatchNote({ ...note, warn: false, text: `${PRESETS[t].label}, your pick. NHTSA vPIC says ${PRESETS[typedModel.type].label} (${typedModel.vpicType}).` });
               }}>
-                {VEHICLE_TYPES.map((t) => <Tile key={t} value={t} icon={PRESETS[t].icon} label={PRESETS[t].label} badge={t === v.type && v.typeSource === "vpic" ? <span className="auto">vPIC</span> : null} />)}
+                {VEHICLE_TYPES.map((t) => <Tile key={t} value={t} icon={PRESETS[t].icon} label={PRESETS[t].label} badge={typeAnswered && t === v.type && v.typeSource === "vpic" ? <span className="auto">vPIC</span> : null} />)}
               </RadioGroup>
             </fieldset>
           ) : (
@@ -395,26 +407,27 @@ export function VehicleCard({ vehicle: v, canRemove, directionSet, onRemove, mak
           <ColorPicker vehicle={v} onChange={(color) => patch({ color: color ?? undefined })} />
         </div>
 
-        <fieldset className="group">
+        <fieldset className="group" data-fix-action>
           <legend className="group-label">What was it doing?</legend>
-          <RadioGroup className="tiles tiles-5 tiles-compact" aria-label={`What vehicle ${v.id} was doing`} values={ACTIONS} value={v.action} onChange={(a: Action) => patch({ action: a })}>
+          <RadioGroup className="tiles tiles-5 tiles-compact" aria-label={`What vehicle ${v.id} was doing`} values={ACTIONS} value={actionAnswered ? v.action : null} onChange={(a: Action) => patch({ action: a })}>
             {ACTIONS.map((a) => <Tile key={a} value={a} icon={ACTION_TILES[a].icon} label={ACTION_TILES[a].label} />)}
           </RadioGroup>
         </fieldset>
 
-        <DirectionPicker vehicle={v} picked={directionSet} choices={roads.streets?.directions ?? []} onChange={(travel) => patch({ travel })} />
+        <DirectionPicker vehicle={v} picked={directionSet} choices={choices} note={compassNote} onChange={(travel) => patch({ travel })} />
 
-        {v.action === "parked" ? null : (
+        {actionAnswered && v.action === "parked" ? null : (
           <div className="speed-braking">
-            <SpeedInput vehicle={v} onChange={(speed) => dispatch({ type: "speed", id: v.id, speed })} />
+            <SpeedInput vehicle={v} answered={!unanswered.includes("speed")} onChange={(speed) => dispatch({ type: "speed", id: v.id, speed })} onClear={() => dispatch({ type: "clear-speed", id: v.id })} />
             <label className="check-row" data-braking>
-              <input type="checkbox" checked={v.braking} onChange={(e) => patch({ braking: e.target.checked })} />
+              <input type="checkbox" checked={v.braking} onChange={(e) => patch({ braking: e.target.checked, account: { ...v.account, braking: e.target.checked ? "yes" : "no" } })} />
               <span>{BRAKING_LABEL}</span>
             </label>
           </div>
         )}
 
-        <ImpactZones vehicle={v} onChange={(zone) => patch({ zone })} />
+        <ImpactZones vehicle={v} answered={!unanswered.includes("zone")} onChange={(zone) => patch({ zone })} />
+        <VehicleQuestions vehicle={v} />
       </div>
     </article>
   );

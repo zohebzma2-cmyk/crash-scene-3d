@@ -3,7 +3,7 @@
 // (`ready`) and typing has settled. While it loads: our type icon with a spinner. With no photo (none known,
 // no keys, over quota, offline): our type icon, quietly. Never an error.
 import { useEffect, useState } from "react";
-import { PRESETS, paintOf, vehicleName, type SceneVehicle } from "@csd/core";
+import { PRESETS, vehicleName, type SceneVehicle } from "@csd/core";
 import { PaintChip } from "./PaintChip";
 import { Icon } from "../icons/Icon";
 import { useServices } from "../services/context";
@@ -40,12 +40,12 @@ export function VehiclePhoto({ vehicle: v, ready }: VehiclePhotoProps) {
       {loading ? <span className="spinner" aria-hidden="true" /> : null}
     </div>
   );
-  // The catalog photo is in the catalog's own paint: with a colour picked, a chip under it says which one was (round B).
-  if (!src || !paintOf(v)) return photo;
+  // The photo is the catalog's, in the catalog's own paint: a chip under it says so, and which colour was picked (round B).
+  if (!src) return photo;
   return (
     <div className="vehicle-photo-wrap">
       {photo}
-      <PaintChip vehicle={v} className="vehicle-photo-chip" />
+      <PaintChip vehicle={v} className="vehicle-photo-chip" photo />
     </div>
   );
 }

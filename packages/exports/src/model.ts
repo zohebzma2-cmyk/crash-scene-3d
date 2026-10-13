@@ -3,7 +3,7 @@
 // formatter; nothing here holds a measurement of its own.
 import {
   DEFAULT_LIMIT_MPH, MPH_TO_MPS, PLACE_WORDS, PRESETS, RANGE_HALF_MPH, ROAD_WORDS, ZONE_WORDS,
-  directionCaption, formatDistance, formatMassLb, formatOccurred, formatSpeed, formatStamp, paintLabel, paintOf, vehicleName,
+  directionCaption, formatDistance, formatMassLb, formatOccurred, formatSpeed, formatStamp, paintLabel, paintOf, roleWords, vehicleName, accountItems, type AccountItem,
 } from "@csd/core";
 import type { ExportStamp, Scene, SceneVehicle, SimulationResult, VehicleResult } from "@csd/core";
 import { about } from "./about";
@@ -43,6 +43,7 @@ export interface MeasureRow {
 }
 
 export interface ReportModel {
+  readonly claimantNotes: readonly AccountItem[];
   readonly claimNumber: string;
   readonly place: string;
   readonly coordinates: string;
@@ -189,7 +190,7 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
     const adjusted = zoneUsed.some((w) => w.vehicleIds.includes(v.id));
     return {
       id: v.id,
-      name: vehicleName(v) ?? (v.role === "claimant" ? "Claimant's vehicle" : "Other vehicle"),
+      name: vehicleName(v) ?? roleWords(v),
       typeWeight: `${PRESETS[v.type].label}, ${about(formatMassLb(rv.massKg))}`,
       direction: directionCaption(v),
       speed: v.action === "parked" ? formatSpeed(0, { both: true }).text : about(formatSpeed(rv.speedAtImpactMps, { both: true }).text),
@@ -234,6 +235,7 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
 
   return {
     claimNumber: scene.claim.number.trim(),
+    claimantNotes: accountItems(scene),
     place: placeLine(loc),
     coordinates: `${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`,
     occurred: formatOccurred(scene.occurred.date, scene.occurred.time) || "Not given",
@@ -259,6 +261,20 @@ export function fileClaim(claimNumber: string): string {
   const s = printable(claimNumber).replace(/[^A-Za-z0-9._-]+/g, "-").replace(/\.{2,}/g, ".").replace(/^[-.]+|[-.]+$/g, "");
   // Cut to length, then trim again: the cut can leave a trailing "." or "-" (a name ending in "." would give "..json").
   return s.slice(0, 60).replace(/[-.]+$/, "") || "scene";
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+/**
+ * The files' shared name (without extension): `crash-scene-<claim number>`, or with no usable claim number
+ * `crash-scene-<date>-<time>` from the save time in the claimant's local time ("crash-scene-2026-10-12-154207").
+ */
+export function exportBaseName(claimNumber: string, createdAtIso: string): string {
+  const piece = claimNumber.trim() ? fileClaim(claimNumber) : "";
+  if (piece && piece !== "scene") return `crash-scene-${piece}`;
+  const d = new Date(createdAtIso);
+  if (Number.isNaN(d.getTime())) return "crash-scene";
+  return `crash-scene-${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
 }
 
 /** Each painted vehicle's hex by letter, for the diagram planner (vehicles left as Not sure are absent). */

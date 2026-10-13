@@ -1,7 +1,7 @@
-// Road-aware checks in the simulation: free-line fallback, off-road, building walls for every run, turning offset, order, no display maths.
+// Road-aware checks in the simulation: directions that follow no road, driveways, off-road, building walls for every run, turning offset, order, no display maths.
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
-import { simulate } from "../src";
+import { DRIVEWAY_M, simulate } from "../src";
 import type { Scene, SimulationResult } from "../src";
 import { impactInput } from "../src/physics/simulate";
 import { placeDetailed } from "../src/physics/placement";
@@ -12,34 +12,45 @@ import { intersectionNet, makeBuilding, parkingLotNet, rect } from "./roads-fixt
 const run = (s: Scene, net: Parameters<typeof simulate>[1]): SimulationResult => expectOk(simulate(s, net)).result;
 const codes = (r: SimulationResult) => r.warnings.map((w) => w.code);
 
-describe("a vehicle that matches no road, and a path that leaves the road", () => {
+describe("a vehicle whose direction follows no road, and one out of a driveway (roads and paths, 2026-10-11)", () => {
   const net = intersectionNet({ corners: false });
-  // Both headings are 45 degrees off every road at the pin, so neither vehicle matches a road.
+  // Both headings are 45 degrees off every road at the pin, so neither vehicle follows a road.
   const diagonal = sceneOf([
     veh("A", { type: "car", bearingDeg: 45, speed: known(25), zone: "left" }),
     veh("B", { type: "suv", bearingDeg: 135, speed: known(25), zone: "front" }),
   ]);
 
-  it("draws it straight and says so in plain words, naming the vehicle", () => {
-    const sim = run(diagonal, net);
-    const w = sim.warnings.filter((x) => x.code === "path-not-on-road");
-    expect(w.map((x) => [...x.vehicleIds])).toEqual([["A"], ["B"]]);
-    expect(w[0]!.text).toBe("Vehicle A's direction doesn't line up with a road near the pin, so its path is drawn straight.");
-  });
-
-  it("warns, but does not block, when that straight path crosses ground that isn't road", () => {
-    const sim = run(diagonal, net);
-    expect(codes(sim)).toContain("off-road");
-    const w = sim.warnings.find((x) => x.code === "off-road")!;
-    expect(w.text).toMatch(/off the road/);
-    expect(sim.vehicles).toHaveLength(2);
+  it("is never drawn straight across open ground: it is refused in plain words, naming the vehicle", () => {
+    const r = simulate(diagonal, net);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.errors.map((e) => e.code)).toEqual(["off-road-direction", "off-road-direction"]);
+    expect(r.errors.map((e) => [...e.vehicleIds])).toEqual([["A"], ["B"]]);
+    expect(r.errors[0]!.text).toBe("Vehicle A's direction doesn't follow any road at the pin. Pick the road it was on and the way it was going, or pick a driveway or parking lot if it came out of one.");
   });
 
   it("stays quiet for a scene on its roads, in a lot, and with no road data at all", () => {
     for (const [scene, n] of [[tBoneScene(), intersectionNet({ mainLanes: 2 })], [parkingBackingScene(), parkingLotNet()], [diagonal, null]] as const) {
       const sim = run(scene, n);
-      expect(codes(sim).filter((c) => c === "path-not-on-road" || c === "off-road")).toEqual([]);
+      expect(codes(sim).filter((c) => c === "off-road")).toEqual([]);
     }
+  });
+
+  it("out of a driveway: a short way off the road from a stop, never more, and no warning about it", () => {
+    // A goes north on Main Street; B comes out of a driveway on Main's east side, west across the road, into A's right side.
+    const scene = sceneOf([
+      veh("A", { type: "car", bearingDeg: 0, ...MAIN, speed: known(25), zone: "right" }),
+      veh("B", { type: "suv", bearingDeg: 270, ...MAIN, fromDriveway: true, speed: known(10), zone: "front" }),
+    ]);
+    const sim = run(scene, net);
+    expect(codes(sim)).not.toContain("off-road");
+    const B = sim.vehicles.find((v) => v.id === "B")!;
+    // Its whole approach is on its short path: never further east of Main Street than the driveway reaches.
+    const halfRoad = 3.5;
+    for (const p of B.track.slice(0, Math.round(-sim.startTimeS / sim.dtS))) expect(p.xM).toBeLessThanOrEqual(halfRoad + DRIVEWAY_M + 2.5);
+    // It speeds up from a stop at the driveway's start: slower at the start of the window than at the crash.
+    expect(sim.assumptions.some((a) => a.id === "start-from-stop-B")).toBe(true);
+    expect(B.track[0]!.speedMps).toBeLessThan(B.speedAtImpactMps.mid);
   });
 });
 
@@ -90,8 +101,8 @@ describe("building walls stop every run, not just the picture", () => {
   });
 });
 
-describe("a turning vehicle hit on its side keeps its offset in its own frame", () => {
-  it("stays the same distance from its lane all the way round the turn", () => {
+describe("a turning vehicle hit on its side keeps to its lane, then eases to its offset (in its own frame)", () => {
+  it("stays on its lane line round the turn, and is at its offset at the impact", () => {
     const net = intersectionNet({ parkLanes: 2 });
     const scene = sceneOf([
       veh("A", { type: "car", action: "turn-left", bearingDeg: 0, ...MAIN, speed: known(15), zone: "right" }),
@@ -102,8 +113,11 @@ describe("a turning vehicle hit on its side keeps its offset in its own frame", 
     const i0 = Math.round(-sim.startTimeS / sim.dtS);
     const at = (i: number) => distToPolyline(posOf(A.track[i]!), A.path!.points);
     const offset = at(i0);
-    expect(offset).toBeGreaterThan(0.3); // hit on its side, so it sits off the lane line
-    for (let i = 0; i < i0; i += 10) expect(Math.abs(at(i) - offset), `step ${i}`).toBeLessThan(0.05);
+    expect(offset).toBeGreaterThan(0.3); // hit on its side, so it sits off the lane line at the impact
+    // Until the last 20 m (15 mph: the last 3 s) it keeps to the middle of its lane; then it eases over, never past the offset.
+    const easeFrom = i0 - Math.ceil(20 / (15 * 0.44704) / sim.dtS);
+    for (let i = 0; i < easeFrom; i += 10) expect(at(i), `step ${i}`).toBeLessThan(0.05);
+    for (let i = easeFrom; i <= i0; i += 10) expect(at(i), `step ${i}`).toBeLessThanOrEqual(offset + 0.05);
   });
 });
 

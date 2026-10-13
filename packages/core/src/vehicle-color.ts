@@ -89,6 +89,31 @@ export function pickedChipText(p: VehiclePaint): string {
   return `Picked: ${paintLabel(p)}`;
 }
 
+/** The chip on a catalog photo: it is the catalog's picture, in the catalog's paint ("Catalog photo · Picked: Red"). */
+export function catalogPhotoChipText(p: VehiclePaint | null): string {
+  return p ? `Catalog photo · ${pickedChipText(p)}` : "Catalog photo";
+}
+
+/**
+ * The factory colour nearest an sRGB colour (0..1 channels), by distance in sRGB with the channels weighted as the eye weighs
+ * them (a "redmean"-style weighting): the name for a catalog model's own paint ("White", "Black").
+ */
+export function nearestFactoryColor(rgb: readonly [number, number, number]): VehiclePaint {
+  let best = FACTORY_COLORS[0]!, bestD = Infinity;
+  for (const c of FACTORY_COLORS) {
+    const [r, g, b] = hexToRgb01(c.hex);
+    const rm = (r + rgb[0]) / 2, dr = r - rgb[0], dg = g - rgb[1], db = b - rgb[2];
+    const d = (2 + rm) * dr * dr + 4 * dg * dg + (3 - rm) * db * db;
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+/** The chip for a catalog model that keeps its own paint: "Catalog colour: White" (never the picked colour, which it doesn't show). */
+export function catalogColourChipText(p: VehiclePaint): string {
+  return `Catalog colour: ${paintLabel(p)}`;
+}
+
 /* ------------------------------ contrast ------------------------------ */
 
 /** "#rrggbb" to 0..1 sRGB channels. */

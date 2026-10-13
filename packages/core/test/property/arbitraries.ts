@@ -157,7 +157,7 @@ export const sceneCaseArb: fc.Arbitrary<SceneCase> = envArb.chain((env) =>
       const at = env.roads ? toLatLon(env.roads.frame, env.pin) : ORIGIN;
       const place = env.name === "parking-lot-backing" ? "parking" : env.name === "highway-rear-end" || env.name === "straight" ? "road" : "intersection";
       const scene: Scene = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         claim: { number: "CLM-PROP", vehicle: { year: null, make: "", model: "" } },
         location: { lat: at.lat, lon: at.lon, label: "Synthetic test location", nearLabel: "", source: "pin", place },
         occurred: { date: "2026-10-02", time: "17:15" },

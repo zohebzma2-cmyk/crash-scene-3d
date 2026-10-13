@@ -8,7 +8,7 @@ import type { CameraView } from "./types";
 import { cameraFor, headingToYaw, heightAt, layoutLabels, rectsOverlap, toThree, type LabelRequest, type PlacedLabel, type Rect } from "./math";
 import { projectRing, projectVehicle, vehicleLabel } from "./labels";
 import { stillCamera } from "./still-camera";
-import { LIFT, RING_M } from "./scene-geometry";
+import { LIFT, RING_M, ringPlacement } from "./scene-geometry";
 import { drawLabel, groundInView, placeNamesInView, type Label } from "./StreetNames";
 import { distanceText, markerRows, measureRows } from "../lib/measure";
 import { vehicleToken, type SceneColors } from "./tokens";
@@ -165,7 +165,7 @@ function planLabels(g: CanvasRenderingContext2D, ctx: CaptureContext, cam: Camer
     requests.push({ id: item.id, anchor: p.anchor, rect: p.rect, w: item.w, h: item.h });
   }
   // The impact ring is kept clear too, as in the live picture.
-  const ringAt = ctx.sim.impactPointM;
+  const ringAt = ringPlacement(ctx.sim).center;
   bodies.push(...projectRing(cam, size, ringAt, RING_M.outer, heightAt(ctx.terrain, ringAt) + LIFT.ring).strips);
   if (view === "aftermath") {
     const v3 = new Vector3();

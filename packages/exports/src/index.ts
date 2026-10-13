@@ -2,13 +2,14 @@
 // is injected so the same code can run server-side later.
 import type { ExportBundle, ExportFile, ExportFormat, ExportRequest } from "@csd/core";
 import type { CanvasFactory, VehicleMediaProvider } from "./canvas-types";
-import { buildModel, fileClaim } from "./model";
+import { buildModel, exportBaseName } from "./model";
 import { buildPdf } from "./pdf";
 import { buildDiagramPng, buildStillPng } from "./png";
 import { sceneFile } from "./scene-file";
 
 export type { CanvasFactory, CanvasLike, VehicleMediaProvider } from "./canvas-types";
 export { sceneFile } from "./scene-file";
+export { exportBaseName } from "./model";
 export { footerBandHeight } from "./png";
 export { PNG_METERS_PER_PIXEL_KEY } from "./png-meta";
 export { zipFiles, unzipStored, crc32, type ZipEntry } from "./zip";
@@ -53,7 +54,7 @@ export async function buildExports(req: ExportRequest, canvas: CanvasFactory, me
   const { text, stamp } = await sceneFile(req.scene, req.sim, createdAt);
   const model = buildModel(req.scene, req.sim, stamp);
   const photos = req.formats.some((f) => f === "pdf" || f === "png-impact" || f === "png-rest") ? await gatherPhotos(req, media) : new Map<string, Uint8Array>();
-  const base = `crash-scene-${fileClaim(req.scene.claim.number)}`;
+  const base = exportBaseName(req.scene.claim.number, createdAt);
   const wanted = new Set(req.formats);
   const files: ExportFile[] = [];
   const skipped: Array<{ format: ExportFormat; reason: string }> = [];

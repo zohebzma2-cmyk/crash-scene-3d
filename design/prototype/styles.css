@@ -471,6 +471,19 @@ dialog { border: none; padding: var(--space-0); border-radius: var(--radius-xl);
 dialog::backdrop { background: var(--color-overlay); }
 .dialog-body { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
 .dialog-body h2 { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+/* Welcome on a first visit (DESIGN.md section 19). */
+.welcome-dialog { max-height: calc(100dvh - var(--space-8)); overflow-y: auto; overscroll-behavior: contain; }
+.welcome-dialog[open] { animation: welcome-in var(--duration-base) var(--ease-standard); }
+.welcome-body p { line-height: var(--leading-normal); }
+.welcome-body .welcome-disclaimer { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-warning-tint); color: var(--color-warning-tint-text); font-size: var(--text-sm); line-height: var(--leading-snug); }
+.welcome-how h3 { font-size: var(--text-sm); font-weight: var(--weight-bold); color: var(--color-text-secondary); }
+.welcome-steps { list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin-top: var(--space-2); padding: var(--space-0); }
+.welcome-steps li { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.welcome-steps .step-dot { background: var(--color-brand-tint); border-color: var(--color-brand-tint); color: var(--color-brand-tint-text); }
+.welcome-steps .step-dot .icon { display: none; }
+.welcome-body .actions { margin-top: var(--space-2); }
+@keyframes welcome-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .welcome-dialog[open] { animation: none; } }
 
 /* ---------- PDF page (US Letter, always light) ---------- */
 .page-wrap { padding: var(--space-8); display: flex; justify-content: center; background: var(--color-surface-3); min-height: 100vh; }
@@ -554,6 +567,11 @@ dialog::backdrop { background: var(--color-overlay); }
   .actions { position: fixed; left: var(--space-0); right: var(--space-0); bottom: var(--space-0); z-index: var(--z-sheet); padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); background: var(--color-surface); border-top: var(--size-border) solid var(--color-border); box-shadow: var(--shadow-lg); flex-wrap: nowrap; }
   .actions .btn-primary { flex: 1; }
   .dialog-body .actions { position: static; box-shadow: none; border: none; padding: var(--space-0); }
+  .disclaimer-bar .about-tool-link { display: none; }
+  .welcome-dialog { width: 100%; max-width: 100%; margin-inline: 0; margin-block-start: auto; margin-block-end: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; max-height: calc(100dvh - var(--space-6)); }
+  .welcome-body { padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom)); }
+  .welcome-body .actions { flex-wrap: nowrap; }
+  .welcome-body .actions .btn { flex: 1; }
   .review-head { padding-inline: var(--space-4); margin-top: var(--space-4); }
   .viewer-layout { display: flex; flex-direction: column; height: auto; min-height: var(--space-0); margin-top: var(--space-3); border-top: none; }
   .viewer { margin: var(--space-0) var(--space-4); height: var(--size-viewer-h-mobile); min-height: var(--size-viewer-min-h-mobile); }
@@ -591,3 +609,7 @@ dialog::backdrop { background: var(--color-overlay); }
 
 .open-scene { font-size: var(--text-sm); }
 .open-scene input:focus-visible + *, .open-scene:has(input:focus-visible) .link-btn { outline: var(--size-focus-ring) solid var(--color-focus-ring); }
+
+/* The optional claim number (DESIGN.md section 5, step 1). */
+label.group-label { display: block; }
+.claim-number-input { max-width: var(--size-dialog-max); }

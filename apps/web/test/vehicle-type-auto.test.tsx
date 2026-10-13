@@ -9,12 +9,12 @@ import { createFixtureVehicles } from "../src/services/fixtures";
 import { ServiceError } from "../src/services/types";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { get, key, renderApp, setValue } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAnswers } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.useRealTimers(); });
 
-const located = (): Doc => ({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+const located = (): Doc => withAnswers({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
 const card = (id: string) => document.getElementById(`vehicle-${id}`) as HTMLElement;
 const field = (id: string, which: "year" | "make" | "model") => card(id).querySelector<HTMLInputElement>(`input[id$="-${which}"]`)!;
 const stored = () => (JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}") as Doc).scene.vehicles;

@@ -3,9 +3,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sun": "./src/sun.ts",
+    "./icon-strokes": "./src/icon-strokes.ts"
   },
   "dependencies": {
+    "tz-lookup": "6.1.25",
     "zod": "4.6.5"
   },
   "devDependencies": {

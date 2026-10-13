@@ -9,6 +9,9 @@ test.describe("full flow on the default claim", () => {
   test("search, pin, streets, vehicles, gate, review, save @xb", async ({ page, pageErrors }) => {
     await freshStart(page);
     await expect(page.locator("main h1")).toHaveText("Where did it happen?");
+    // A new visitor: no made-up claim number, no vehicle yet.
+    const chip = page.getByTestId("claim-chip");
+    await expect(chip).toHaveText("Your car");
 
     // Step 1: the full search goes to the Main/Park crossing (fixtures), pick it, then set the pin.
     await searchBox(page).fill(SEARCH_TEXT);
@@ -35,16 +38,27 @@ test.describe("full flow on the default claim", () => {
     await expect(page.locator(".streets-here")).toContainText(/Streets at the pin: .*Main Street/);
     await expect(page.locator(".streets-here")).toContainText("Park Street");
 
+    // The optional claim number: typed here, it shows in the header at once and names the files.
+    const claimField = page.getByLabel("Claim number (optional)");
+    await expect(claimField).toHaveValue("");
+    await claimField.fill("CLM-E2E-7");
+    await expect(chip).toHaveText("Claim CLM-E2E-7 · Your car");
+
     await page.getByRole("button", { name: /Next: vehicles/ }).click();
     await expect(page.locator("main h1")).toHaveText("Which vehicles were involved?");
 
-    // Step 2: nothing pre-filled for direction.
+    // Step 2: nothing pre-filled (owner, 2026-10-12): no type, action, direction, speed or hit side picked.
     const a = page.locator("#vehicle-A");
     const b = page.locator("#vehicle-B");
     for (const card of [a, b]) {
       await expect(card.locator("[data-fix-direction] [role=radio]").first()).toBeVisible();
       await expect(card.locator("[data-fix-direction] [role=radio][aria-checked=true]")).toHaveCount(0);
       await expect(card.locator(".dir-caption")).toHaveText("Not picked yet");
+      for (const group of ["[data-fix-type]", "[data-fix-action]", "[data-fix-zone]"]) {
+        await expect(card.locator(`${group} [role=radio]`).first()).toBeVisible();
+        await expect(card.locator(`${group} [role=radio][aria-checked=true]`)).toHaveCount(0);
+      }
+      await expect(card.locator("[data-fix-speed] input")).toHaveValue("");
     }
     // Road-relative choices come from the streets at the pin.
     await expect(a.getByRole("radio", { name: "Northbound on Main Street" })).toBeVisible();
@@ -55,6 +69,9 @@ test.describe("full flow on the default claim", () => {
     const gate = page.getByTestId("gate-panel");
     await expect(gate).toContainText("Pick which way your car was going.");
     await expect(gate).toContainText("Pick which way vehicle B was going.");
+    for (const line of ["Pick the type of your car, or enter its year, make and model.", "Pick what your car was doing.", "Enter your car's speed, or choose Not sure.", "Pick where your car was hit.", "Pick where vehicle B was hit."]) {
+      await expect(gate).toContainText(line);
+    }
     await expect(gate.getByRole("button", { name: "See it anyway" })).toHaveCount(0);
     await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
 
@@ -64,6 +81,15 @@ test.describe("full flow on the default claim", () => {
     await expect(gate).not.toContainText("your car was going");
     await expect(gate).toContainText("Pick which way vehicle B was going.");
     await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
+
+    // Vehicle A starts empty; the header follows it as it is typed.
+    await a.getByLabel("Year").fill("2021");
+    await expect(chip).toHaveText("Claim CLM-E2E-7 · Your car");
+    await a.getByLabel("Make").fill("Honda");
+    await expect(chip).toHaveText("Claim CLM-E2E-7 · 2021 Honda");
+    await a.getByLabel("Model").fill("Accord");
+    await expect(chip).toHaveText("Claim CLM-E2E-7 · 2021 Honda Accord");
+    await expect(a.locator(".lookup")).toContainText("from NHTSA vPIC");
 
     // Vehicle B: year, make and model; the type comes from the (fixture) vPIC list.
     await b.getByLabel("Year").fill("2018");
@@ -82,13 +108,20 @@ test.describe("full flow on the default claim", () => {
 
     await b.getByRole("radio", { name: "Westbound on Park Street" }).click();
 
-    // The speed question, and the zones.
+    // What each was doing.
+    await a.locator("[data-fix-action]").getByRole("radio", { name: "Straight", exact: true }).click();
+    await b.locator("[data-fix-action]").getByRole("radio", { name: "Straight", exact: true }).click();
+    await expect(a.locator("[data-fix-action] [role=radio][aria-checked=true]")).toHaveText("Straight");
+
+    // The speed question, and the zones. The speed starts empty: Slower is off, Faster starts from 0.
     await expect(a.getByText("About how fast at the moment of the crash?")).toBeVisible();
     await expect(b.getByText("About how fast at the moment of the crash?")).toBeVisible();
     const aSpeed = a.getByRole("textbox", { name: "Speed at impact in mph, vehicle A" });
-    const start = Number(await aSpeed.inputValue());
+    await expect(aSpeed).toHaveValue("");
+    await expect(a.getByRole("button", { name: "Slower, vehicle A" })).toBeDisabled();
     await a.getByRole("button", { name: "Faster, vehicle A" }).click();
-    await expect(aSpeed).toHaveValue(String(start + 5));
+    await expect(aSpeed).toHaveValue("5");
+    await b.getByRole("textbox", { name: "Speed at impact in mph, vehicle B" }).fill("30");
     // The speed can also be typed.
     await aSpeed.fill("32.5");
     await expect(aSpeed).toHaveValue("32.5");
@@ -127,18 +160,18 @@ test.describe("full flow on the default claim", () => {
 
     // One save = one download: crash-scene-<claim>.zip holding every file.
     const saved = await saveFiles(page);
-    expect(saved.name).toBe("crash-scene-CLM-2419.zip");
+    expect(saved.name).toBe("crash-scene-CLM-E2E-7.zip");
     const names = [...saved.files.keys()].sort();
-    expect(names).toContain("crash-scene-CLM-2419.pdf");
-    expect(names).toContain("crash-scene-CLM-2419.json");
-    expect(names).toContain("crash-scene-CLM-2419-diagram.png");
+    expect(names).toContain("crash-scene-CLM-E2E-7.pdf");
+    expect(names).toContain("crash-scene-CLM-E2E-7.json");
+    expect(names).toContain("crash-scene-CLM-E2E-7-diagram.png");
     // With 3D available, pictures also include the impact and final-rest stills (DESIGN.md section 8).
-    expect(names).toContain("crash-scene-CLM-2419-impact.png");
-    expect(names).toContain("crash-scene-CLM-2419-final-rest.png");
+    expect(names).toContain("crash-scene-CLM-E2E-7-impact.png");
+    expect(names).toContain("crash-scene-CLM-E2E-7-final-rest.png");
     expect(names).toHaveLength(5);
     await expect(page.getByTestId("stamp")).toContainText("Fingerprint");
     // The typed speed made it into the scene file.
-    const sceneFile = JSON.parse(saved.files.get("crash-scene-CLM-2419.json")!.toString("utf8")) as { vehicles: Array<{ id: string; speed: { kind: string; mph?: number } }> };
+    const sceneFile = JSON.parse(saved.files.get("crash-scene-CLM-E2E-7.json")!.toString("utf8")) as { vehicles: Array<{ id: string; speed: { kind: string; mph?: number } }> };
     expect(sceneFile.vehicles.find((v) => v.id === "A")?.speed).toEqual({ kind: "known", mph: 32.5 });
     expect(pageErrors()).toEqual([]);
   });
@@ -298,3 +331,45 @@ async function openExampleNoWait(page: Page): Promise<void> {
   await page.goto("/?example=t-bone-intersection");
   await expect(page.locator(".viewer3d canvas")).toBeVisible({ timeout: 30_000 });
 }
+
+test.describe("the claim number (optional) and the header", () => {
+  test("@xb no claim number: no 'Claim' in the header and the files are named crash-scene-<date>-<time>", async ({ page, pageErrors }) => {
+    await fillDefaultClaim(page);
+    await expect(page.getByTestId("claim-chip")).toHaveText("2021 Honda Accord");
+    await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
+    await page.locator("#vehicle-A").getByRole("radio", { name: "Hit on the right side", exact: true }).click();
+    await toReview(page);
+    await waitForViewer(page);
+    await page.getByRole("button", { name: "Looks right: save it" }).click();
+    await expect(page.locator("#app")).toHaveAttribute("data-step", "export");
+    const saved = await saveFiles(page);
+    expect(saved.name).toMatch(/^crash-scene-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/);
+    const base = saved.name.replace(/\.zip$/, "");
+    expect([...saved.files.keys()].every((n) => n.startsWith(`${base}`))).toBe(true);
+    const scene = JSON.parse(saved.files.get(`${base}.json`)!.toString("utf8")) as { claim: { number: string; vehicle: unknown } };
+    expect(scene.claim).toEqual({ number: "", vehicle: { year: 2021, make: "Honda", model: "Accord" } });
+    expect(pageErrors()).toEqual([]);
+  });
+
+  test("@xb ?claim= from an InsurifyAI link fills the number; junk in it is ignored and never runs", async ({ page }) => {
+    await page.goto("/?claim=CLM-LINK-42#location");
+    await expect(page.getByTestId("claim-chip")).toHaveText("Claim CLM-LINK-42 · Your car");
+    await expect(page.getByLabel("Claim number (optional)")).toHaveValue("CLM-LINK-42");
+    for (const junk of ["<script>window.__pwned=1</script>", "A".repeat(500), "Ｃｌａｉｍ‐日本語"]) {
+      await page.evaluate(() => { try { sessionStorage.clear(); } catch { /* fine */ } });
+      await page.goto(`/?claim=${encodeURIComponent(junk)}#location`);
+      await page.reload();
+      await expect(page.locator("main h1")).toHaveText("Where did it happen?");
+      await expect(page.getByTestId("claim-chip")).toHaveText("Your car");
+      await expect(page.getByLabel("Claim number (optional)")).toHaveValue("");
+      expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
+    }
+    // Typed junk is cut to letters, digits and dashes, at most 32, and shown as text.
+    const field = page.getByLabel("Claim number (optional)");
+    await field.fill("<b>AB-12</b>");
+    await expect(field).toHaveValue("bAB-12b");
+    await expect(page.getByTestId("claim-chip")).toHaveText("Claim bAB-12b · Your car");
+    await field.fill("Z".repeat(500));
+    await expect(field).toHaveValue("Z".repeat(32));
+  });
+});

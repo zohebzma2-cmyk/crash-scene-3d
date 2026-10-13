@@ -10,7 +10,7 @@ import { Radio, RadioGroup, Tab, TabList, TabPanel } from "../a11y/roving";
 import { Icon } from "../icons/Icon";
 import { prefersReducedMotion, usePhone } from "../lib/dom";
 import { distanceText, hasRanges, measureRows, shownRows } from "../lib/measure";
-import { roleName, sceneSummary } from "../lib/text";
+import { roleName, sceneNarrative } from "../lib/text";
 import { useDoc } from "../state/DocProvider";
 import { useFlow } from "../state/Flow";
 import type { GateProblem } from "../state/Flow";
@@ -20,6 +20,8 @@ import type { CameraView, ViewerHandle } from "../viewer/types";
 import { Timeline, useTimeline } from "./Timeline";
 import { useSimulation } from "./useSimulation";
 import { SceneView } from "./SceneView";
+import { AccountNotes } from "../components/AccountNotes";
+import { FeatureLegend } from "../components/RoadFeatures";
 import { STILL_SIZE, keepStills } from "./stills";
 import { Tips } from "../tips/Tips";
 import { CompactWarnings } from "../components/Warnings";
@@ -204,6 +206,7 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
   return (
     <div className="viewer-layout">
       <div className="viewer">
+        <div className="viewer-answers"><AccountNotes scene={scene} compact /></div>
         <div ref={canvasRef} className="viewer-canvas" data-ready={viewerReady ? "true" : undefined} tabIndex={0} role="application" aria-roledescription="illustration" aria-label="Illustration of the crash. Space plays, I jumps to impact, 1 to 5 pick a view, A is the Aftermath view, arrow keys turn the view, plus and minus zoom, R resets the view." onKeyDown={onCanvasKey}>
           <SceneView
             ref={viewerRef} phone={phone}
@@ -246,7 +249,11 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
             })}
           </ul>
           <p className="summary-road"><Icon name={`road-${scene.road.condition}`} className="icon-sm" />{joinClauses([PLACE_WORDS[scene.location.place], `${ROAD_WORDS[scene.road.condition]} road`])}</p>
-          <p className="summary-text" aria-live="polite" data-testid="scene-summary">{sceneSummary(scene, sim, units)}</p>
+          <div aria-live="polite" data-testid="scene-summary">
+            <p className="summary-text">{sceneNarrative(scene, sim, units)}</p>
+            <AccountNotes scene={scene} />
+          </div>
+          <FeatureLegend roads={roads.net} />
         </TabPanel>
 
         <TabPanel className="panel-body" idBase="review" value="measure" current={tab}>

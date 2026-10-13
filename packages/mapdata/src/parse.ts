@@ -3,6 +3,7 @@ import type { Building, LocalFrame, ParkingArea, RoadKind, RoadNetwork, RoadWay,
 import { enuAbout, signedArea } from "./enu";
 import { mergeSegments, type Part, type Segment } from "./merge";
 import { osmWays, parseCount, parseLengthM, parseSpeedMph, type OsmWay } from "./osm";
+import { parseFeatures } from "./features";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors (ODbL)";
 
@@ -240,6 +241,7 @@ export function parseOverpass(json: unknown, frame: LocalFrame, radiusM: number,
   ways.sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0));
 
   return {
+    ...parseFeatures(json, frame, radiusM),
     frame,
     radiusM,
     ways,

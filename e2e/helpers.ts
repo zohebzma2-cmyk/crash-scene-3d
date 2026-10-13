@@ -229,14 +229,62 @@ export async function measureTab(page: Page): Promise<Array<{ n: string | null; 
   return out;
 }
 
-/** Walks the default claim from step 1 to Review, picking roads for A (north on Main) and B (west on Park). */
+/** The car the old default claim prefilled on vehicle A. A new visitor starts empty now, so tests enter it themselves. */
+export const CLAIM_CAR = { year: "2021", make: "Honda", model: "Accord" } as const;
+
+/** Types a vehicle's year, make and model into its card (the fixture vPIC list fills the type), leaving each field with Tab. */
+export async function enterVehicle(page: Page, id: "A" | "B" | "C" | "D", car: { year: string; make: string; model: string } = CLAIM_CAR): Promise<void> {
+  const card = page.locator(`#vehicle-${id}`);
+  for (const [label, value] of [["Year", car.year], ["Make", car.make], ["Model", car.model]] as const) {
+    const field = card.getByRole("combobox", { name: label, exact: true });
+    await field.fill(value);
+    await field.press("Tab");
+  }
+  await expect(card.locator(".lookup")).toContainText("from NHTSA vPIC");
+}
+
+/** What a claimant answers on a vehicle card (a new visitor's cards start with none of it picked). */
+export interface VehicleAnswers {
+  /** The type tile's label ("SUV"); leave out when vPIC fills the type from the year, make and model. */
+  readonly type?: string;
+  /** The action tile's label ("Straight", "Turning left", "Parked"). */
+  readonly action: string;
+  /** Speed at impact in mph; leave out for a parked vehicle. */
+  readonly mph?: number;
+  /** The hit-side radio's name ("Hit on the left side", "Hit on the front"). */
+  readonly zone: string;
+}
+
+/** Answers a vehicle card's type (when given), what it was doing, its speed and where it was hit, as a person would. */
+export async function answerVehicle(page: Page, id: "A" | "B" | "C" | "D", a: VehicleAnswers): Promise<void> {
+  const card = page.locator(`#vehicle-${id}`);
+  if (a.type) await card.locator("[data-fix-type]").getByRole("radio", { name: a.type, exact: true }).click();
+  await card.locator("[data-fix-action]").getByRole("radio", { name: a.action, exact: true }).click();
+  if (a.mph != null) await card.getByRole("textbox", { name: `Speed at impact in mph, vehicle ${id}` }).fill(String(a.mph));
+  await card.getByRole("radio", { name: a.zone, exact: true }).click();
+}
+
+/** The default claim's answers (what the app prefilled before 2026-10-12): a T-bone, A hit on its left side by B's front. */
+export const DEFAULT_ANSWERS = {
+  A: { action: "Straight", mph: 25, zone: "Hit on the left side" },
+  B: { type: "SUV", action: "Straight", mph: 30, zone: "Hit on the front" },
+} as const satisfies Record<"A" | "B", VehicleAnswers>;
+
+/**
+ * Walks the default claim to the Vehicles step with every detail answered: the Main and Park pin, vehicle A entered as
+ * the 2021 Honda Accord (vPIC fills the type), A going straight northbound on Main at 25 mph hit on its left side, and B
+ * an SUV going straight westbound on Park at 30 mph hit in front (Review is a press of "See the recreation" away).
+ */
 export async function fillDefaultClaim(page: Page): Promise<void> {
   await freshStart(page);
   await searchAndPick(page);
   await expect(page.locator(".streets-here")).toContainText("Streets at the pin");
   await page.getByRole("button", { name: /Next: vehicles/ }).click();
   await expect(page.locator("#vehicle-A")).toBeVisible();
+  await enterVehicle(page, "A");
+  await answerVehicle(page, "A", DEFAULT_ANSWERS.A);
   await page.locator("#vehicle-A").getByRole("radio", { name: "Northbound on Main Street" }).click();
+  await answerVehicle(page, "B", DEFAULT_ANSWERS.B);
   await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
 }
 

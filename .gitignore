@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 test-results/
+qa-output/
 playwright-report/
 .claude/settings.local.json
 *.tsbuildinfo
@@ -24,3 +25,6 @@ design/prototype/recordings/*
 
 # local privacy scan terms (copy .privacy-terms.example); must never be committed
 .privacy-terms
+
+# smoke test output (npm run smoke)
+smoke-out/

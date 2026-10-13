@@ -28,10 +28,10 @@ import type { LanePath, Leg, RoadKind, RoadNetwork, RoadWay, StreetsAtPin, Trave
 import type { Vec2 } from "../contracts/geometry";
 import { LIMITS } from "../contracts/scene";
 import { boundWord, travelLabel } from "../format";
-import { FRICTION, MPH_TO_MPS } from "./constants";
+import { FRICTION, MPH_TO_MPS, ROAD_REACH_M } from "./constants";
 import { approachFor, brakeDecel } from "./model";
 import {
-  add, angleBetween, bearingOf, dist, dot, makePoly, mul, pointAt, project, reversePts, sub, toDeg, toRad, unit, wrap2Pi,
+  add, angleBetween, bearingOf, dist, dot, makePoly, mul, pointAt, pointInRing, project, reversePts, sub, toDeg, toRad, unit, wrap2Pi,
 } from "./geo";
 
 /** Roads and junctions within this distance of the pin are "at the pin" (meters). */
@@ -47,6 +47,9 @@ const JOIN_M = 1.5;
 /** Pieces meet when their end nodes are this close, m. */
 const JOINT_M = 1.0;
 const MAX_JOIN_TURN_RAD = toRad(100);
+/** Where a street ends or changes its name, a path carries on into another road only if it turns less than this. */
+const MAX_OTHER_TURN_RAD = toRad(30);
+
 const HEADING_LOOKBACK_M = 8;
 const TAPER_STEP_M = 0.5;
 
@@ -128,31 +131,71 @@ function nodeHeading(pts: readonly Vec2[], atStart: boolean): Vec2 {
 }
 const turnBetween = (arriving: Vec2, leaving: Vec2): number => Math.acos(Math.max(-1, Math.min(1, dot(arriving, leaving))));
 
-/** The piece that continues `cur` backwards (ends where `cur` starts) or forwards (starts where `cur` ends): the straightest one. */
+/**
+ * The piece that continues `cur` backwards (ends where `cur` starts) or forwards (starts where `cur` ends), so a path follows
+ * the roads it was on rather than leaving them, in this order:
+ *  0. the straightest piece of the same street (never one that turns more than MAX_JOIN_TURN_RAD);
+ *  1. where the street ends or changes its name, the straightest other road that carries on nearly straight
+ *     (MAX_OTHER_TURN_RAD), from its end or from a node in its middle (a street ending at a crossing);
+ *  2. backwards only, the road it turned in from (a street that starts at a T: the vehicle came along the road across it),
+ *     the straightest within MAX_JOIN_TURN_RAD. Forwards the path never turns off its street: that is the turn's job.
+ * A closed piece (a roundabout drawn as one way) is never chained on: it would pass the same spot twice, so a place on the
+ * path would no longer be one place.
+ */
 function neighbour(net: RoadNetwork, cur: Oriented, used: ReadonlySet<string>, upstream: boolean): Oriented | null {
   const key = streetKey(cur.way);
-  if (!key) return null;
   const node = upstream ? cur.pts[0]! : cur.pts[cur.pts.length - 1]!;
   const mine = nodeHeading(cur.pts, upstream); // leaving (upstream case) or arriving (downstream case)
-  let best: { o: Oriented; turn: number } | null = null;
+  type Pick = { o: Oriented; turn: number; tier: number };
+  let best = null as Pick | null;
+  const consider = (o: Oriented, tier: number): void => {
+    const theirs = nodeHeading(o.pts, !upstream);
+    const turn = upstream ? turnBetween(theirs, mine) : turnBetween(mine, theirs);
+    const limit = tier === 1 ? MAX_OTHER_TURN_RAD : MAX_JOIN_TURN_RAD;
+    if (turn > limit) {
+      // A road that turns too sharply for "carrying on" may still be the road it turned in from.
+      if (tier === 1 && upstream && turn <= MAX_JOIN_TURN_RAD) consider(o, 2);
+      return;
+    }
+    if (!best || tier < best.tier || (tier === best.tier && turn < best.turn - 1e-9)) best = { o, turn, tier };
+  };
   for (const w of net.ways) {
-    if (w.id === cur.way.id || used.has(w.id) || streetKey(w) !== key) continue;
+    if (w.id === cur.way.id || used.has(w.id) || isClosed(w)) continue;
+    const same = key !== null && streetKey(w) === key;
     for (const forward of [true, false]) {
       if (lanesIn(w, forward) <= 0) continue;
       const o = orient(w, forward);
       const meet = upstream ? o.pts[o.pts.length - 1]! : o.pts[0]!;
-      if (dist(meet, node) > JOINT_M) continue;
-      const theirs = nodeHeading(o.pts, !upstream);
-      const turn = upstream ? turnBetween(theirs, mine) : turnBetween(mine, theirs);
-      if (turn > MAX_JOIN_TURN_RAD) continue;
-      if (!best || turn < best.turn - 1e-9) best = { o, turn };
+      if (dist(meet, node) <= JOINT_M) { consider(o, same ? 0 : 1); continue; }
+      if (same) continue;
+      // Another road through this node (not ending there): the part of it that leads in (backwards) or on (forwards).
+      const i = o.pts.findIndex((p, k) => k > 0 && k < o.pts.length - 1 && dist(p, node) <= JOINT_M);
+      if (i < 0) continue;
+      consider({ way: w, forward, pts: upstream ? o.pts.slice(0, i + 1) : o.pts.slice(i) }, 1);
     }
   }
   return best?.o ?? null;
 }
 
-function chainAround(net: RoadNetwork, way: RoadWay, forward: boolean, reachM: number): Oriented[] {
-  const first = orient(way, forward);
+/** A piece whose ends meet (a roundabout drawn as one way). */
+const isClosed = (w: RoadWay): boolean => w.centerline.length > 2 && dist(w.centerline[0]!, w.centerline[w.centerline.length - 1]!) <= JOINT_M;
+
+/**
+ * A closed piece (a roundabout) as the piece a path is on: one time round, opened opposite `near` (the pin), so the pin is
+ * in the middle of it and every place on it is passed once. Without `near`, opened where its points start.
+ */
+function openLoop(o: Oriented, near: Vec2 | undefined): Oriented {
+  if (!near) return o;
+  const ring = o.pts.slice(0, -1);
+  let k = 0;
+  ring.forEach((p, i) => { if (dist(p, near) < dist(ring[k]!, near)) k = i; });
+  const start = (k + Math.floor(ring.length / 2)) % ring.length;
+  const pts = [...ring.slice(start), ...ring.slice(0, start), ring[start]!];
+  return { ...o, pts };
+}
+
+function chainAround(net: RoadNetwork, way: RoadWay, forward: boolean, reachM: number, near?: Vec2): Oriented[] {
+  const first = isClosed(way) ? openLoop(orient(way, forward), near) : orient(way, forward);
   const back: Oriented[] = [];
   const ahead: Oriented[] = [];
   for (const [list, upstream] of [[back, true], [ahead, false]] as const) {
@@ -239,14 +282,51 @@ function chainLanePoints(chain: readonly Oriented[], offsets: readonly number[])
 
 /**
  * Lane centerline for travel with (forward) or against the way's point order, chained through the connected
- * pieces of the same street (see the header). Null if the starting piece has no such lane.
+ * pieces of the same street (see the header). Null if the starting piece has no such lane. `near` (the pin) says where a
+ * roundabout drawn as one closed way is opened: opposite it.
  */
-export function chainedLane(net: RoadNetwork, way: RoadWay, forward: boolean, laneIndex: number): Vec2[] | null {
+export function chainedLane(net: RoadNetwork, way: RoadWay, forward: boolean, laneIndex: number, near?: Vec2): Vec2[] | null {
   const n = lanesIn(way, forward);
   if (!Number.isInteger(laneIndex) || laneIndex < 0 || laneIndex >= n) return null;
-  const chain = chainAround(net, way, forward, CHAIN_REACH_M);
+  const chain = chainAround(net, way, forward, CHAIN_REACH_M, near);
   const offsets = chain.map((p) => laneOffsetM(p.way, p.forward, Math.min(laneIndex, lanesIn(p.way, p.forward) - 1)));
-  return chainLanePoints(chain, offsets);
+  return roundCorners(chainLanePoints(chain, offsets));
+}
+
+/** Corners sharper than this are rounded (a path turning from one road into another at a junction), radians. */
+const CORNER_RAD = toRad(30);
+/** Radius a corner is rounded to, m (as a right turn at a junction; less where the legs are short). */
+const CORNER_RADIUS_M = 8;
+
+/**
+ * The path with every corner sharper than CORNER_RAD replaced by a circular arc of CORNER_RADIUS_M (smaller where the legs
+ * beside it are short), so a vehicle that came round a junction behind the pin turns smoothly. Gentler bends are kept as they are.
+ */
+function roundCorners(pts: Vec2[]): Vec2[] {
+  if (pts.length < 3) return pts;
+  const out: Vec2[] = [pts[0]!];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1]!, p = pts[i]!, b = pts[i + 1]!;
+    const u = unit(sub(p, a)), w = unit(sub(b, p));
+    const theta = turnBetween(u, w);
+    if (theta <= CORNER_RAD) { out.push(p); continue; }
+    // Tangent length, at most half of each leg (so neighbouring corners never overlap).
+    const t = Math.min(CORNER_RADIUS_M * Math.tan(theta / 2), dist(a, p) / 2, dist(p, b) / 2);
+    const r = t / Math.tan(theta / 2);
+    const s0 = sub(p, mul(u, t));
+    const left = u.x * w.y - u.y * w.x > 0; // counter-clockwise in x east, y north
+    const n = left ? { x: -u.y, y: u.x } : { x: u.y, y: -u.x };
+    const c = add(s0, mul(n, r));
+    const steps = Math.max(2, Math.ceil(theta / toRad(10)));
+    const from = sub(s0, c);
+    for (let k = 0; k <= steps; k++) {
+      const ang = (left ? 1 : -1) * (theta * k) / steps;
+      const cs = Math.cos(ang), sn = Math.sin(ang);
+      out.push(add(c, { x: from.x * cs - from.y * sn, y: from.x * sn + from.y * cs }));
+    }
+  }
+  out.push(pts[pts.length - 1]!);
+  return out;
 }
 
 /** Lane centerline of one piece alone (no chaining). Kept for callers that want just the piece. */
@@ -268,7 +348,7 @@ export function lanePath(rawNet: RoadNetwork, roadId: string, bearingDeg: number
   const way = wayById(net, roadId);
   if (!way) return null;
   const forward = near ? goesForward(way, near, toRad(bearingDeg)) : angleBetween(toRad(bearingDeg), wayBearing(way)) <= Math.PI / 2 + 1e-9;
-  const pts = chainedLane(net, way, forward, laneIndex);
+  const pts = chainedLane(net, way, forward, laneIndex, near);
   return pts ? { roadId: way.id, laneIndex, points: pts } : null;
 }
 
@@ -311,10 +391,13 @@ function groupNearWays(ways: readonly { way: RoadWay; dist: number; s: number }[
 
 export function streetsAtPin(rawNet: RoadNetwork, pin: Vec2): StreetsAtPin {
   const net = cleanNet(rawNet);
-  const near = net.ways
+  const all = net.ways
     .map((way) => { const pr = project(makePoly(way.centerline), pin); return { way, dist: pr.dist, s: pr.s }; })
-    .filter((w) => w.dist <= NEAR_PIN_M)
     .sort((a, b) => a.dist - b.dist || a.way.id.localeCompare(b.way.id));
+  // The roads within NEAR_PIN_M; a pin off to the side of every road (but within ROAD_REACH_M, where the picture still puts
+  // the crash) gets the nearest road's choices, so the direction list always comes from the roads the picture uses.
+  const close = all.filter((w) => w.dist <= NEAR_PIN_M);
+  const near = close.length ? close : all.filter((w) => w.dist <= ROAD_REACH_M && w.dist <= all[0]!.dist + 0.5);
   const grouped = groupNearWays(near);
   const groupIds: number[] = [];
   for (const w of grouped) if (!groupIds.includes(w.group)) groupIds.push(w.group);
@@ -351,7 +434,7 @@ export function streetsAtPin(rawNet: RoadNetwork, pin: Vec2): StreetsAtPin {
       if (byLabel.get(bound) !== c) continue;
       byLabel.delete(bound);
       const name = streetName(c.way);
-      directions.push({ roadId: c.way.id, roadName: name, roadDesc: null, bearingDeg, bound, label: travelLabel(bound, { roadName: name }) });
+      directions.push({ roadId: c.way.id, roadName: name, roadDesc: null, bearingDeg, bound, label: travelLabel(bearingDeg, { roadName: name }) });
     }
   }
   // Unnamed roads are told apart by kind and place ("northbound on the parking aisle (west one)"), never by a made-up
@@ -361,7 +444,7 @@ export function streetsAtPin(rawNet: RoadNetwork, pin: Vec2): StreetsAtPin {
   const unique: TravelChoice[] = [];
   for (const d of directions) {
     const roadDesc = d.roadName === null ? descs.get(d.roadId) ?? null : null;
-    const label = travelLabel(d.bound, { roadName: d.roadName, roadDesc });
+    const label = travelLabel(d.bearingDeg, { roadName: d.roadName, roadDesc });
     if (seen.has(label)) continue;
     seen.add(label);
     unique.push({ ...d, roadDesc, label });
@@ -467,4 +550,79 @@ function legsNear(net: RoadNetwork, pin: Vec2): Leg[] {
     if (roadKeys.size >= 2 || found.length >= 3) legs.push(...found);
   }
   return legs;
+}
+
+// ---------------------------------------------------------------- the drivable area
+
+/** How far a road's edge may be crossed and still count as on the road, m (a kerb, a painted edge). */
+export const ROAD_EDGE_TOL_M = 0.3;
+/**
+ * A junction's inside corners are drivable this far past both roads' edges, m: a kerb radius, so a vehicle turning (or
+ * having turned) from one road into the other is on the road where it cuts the corner. The outside of a T stays the edge.
+ */
+export const CORNER_PAD_M = 7;
+const halfWidthOf = (w: RoadWay): number => ((w.oneway ? w.lanesForward : w.lanesForward + w.lanesBackward) * w.laneWidthM) / 2;
+
+const areaCache = new WeakMap<RoadNetwork, (p: Vec2) => boolean>();
+
+/**
+ * Is a point on the drivable area: within a road's half width (plus ROAD_EDGE_TOL_M), inside a parking lot, or in the inside
+ * corner of a junction between two of its legs (CORNER_PAD_M past both roads' edges)? One tester per network.
+ */
+export function onRoadArea(rawNet: RoadNetwork): (p: Vec2) => boolean {
+  const hit = areaCache.get(rawNet);
+  if (hit) return hit;
+  const net = cleanNet(rawNet);
+  // A two-way road's lanes for each direction lie on that direction's right of its line (laneOffsetM), so its edge is
+  // lanesForward lane widths to the right of the line and lanesBackward to the left; a one-way road is centred on it.
+  const ways = net.ways.map((w) => {
+    const right = (w.oneway ? w.lanesForward / 2 : w.lanesForward) * w.laneWidthM + ROAD_EDGE_TOL_M;
+    const left = (w.oneway ? w.lanesForward / 2 : w.lanesBackward) * w.laneWidthM + ROAD_EDGE_TOL_M;
+    return { poly: makePoly(w.centerline), right, left, near: Math.min(right, left), far: Math.max(right, left) };
+  });
+  const inBand = (w: (typeof ways)[number], p: Vec2): boolean => {
+    const pr = project(w.poly, p);
+    if (pr.dist <= w.near) return true;
+    if (pr.dist > w.far) return false;
+    const b = pointAt(w.poly, pr.s).bearing;
+    const onRight = (p.x - pr.point.x) * Math.cos(b) - (p.y - pr.point.y) * Math.sin(b) >= 0;
+    return pr.dist <= (onRight ? w.right : w.left);
+  };
+  // Junctions: places where vertices of two or more ways meet. Each leg leaves along its way to the next vertex.
+  interface PadLeg { readonly u: Vec2; readonly half: number; readonly angle: number }
+  const nodes: Array<{ at: Vec2; legs: PadLeg[]; ways: Set<string> }> = [];
+  for (const w of net.ways) {
+    w.centerline.forEach((p, i) => {
+      let n = nodes.find((x) => dist(x.at, p) <= JOIN_M);
+      if (!n) { n = { at: p, legs: [], ways: new Set() }; nodes.push(n); }
+      n.ways.add(w.id);
+      for (const k of [i - 1, i + 1]) {
+        const q = w.centerline[k];
+        if (!q || dist(q, p) < 1e-6) continue;
+        const u = unit(sub(q, p));
+        n.legs.push({ u, half: halfWidthOf(w), angle: Math.atan2(u.y, u.x) });
+      }
+    });
+  }
+  const pads: Array<{ at: Vec2; a: PadLeg; b: PadLeg }> = [];
+  for (const n of nodes) {
+    if (n.ways.size < 2) continue;
+    const legs = [...n.legs].sort((x, y) => x.angle - y.angle);
+    legs.forEach((a, i) => {
+      const b = legs[(i + 1) % legs.length]!;
+      const gap = ((b.angle - a.angle) + 2 * Math.PI) % (2 * Math.PI);
+      if (gap > toRad(15) && gap < toRad(175)) pads.push({ at: n.at, a, b });
+    });
+  }
+  const crossAbs = (u: Vec2, v: Vec2): number => Math.abs(u.x * v.y - u.y * v.x);
+  const inPad = (p: Vec2): boolean => pads.some(({ at, a, b }) => {
+    const d = sub(p, at);
+    // Between the two legs (counter-clockwise from a to b), and near both roads' lines.
+    if (a.u.x * d.y - a.u.y * d.x < 0 || b.u.x * d.y - b.u.y * d.x > 0) return false;
+    return crossAbs(a.u, d) <= a.half + CORNER_PAD_M && crossAbs(b.u, d) <= b.half + CORNER_PAD_M && dot(d, a.u) >= 0 && dot(d, b.u) >= 0;
+  });
+  const test = (p: Vec2): boolean =>
+    ways.some((w) => inBand(w, p)) || net.parking.some((lot) => pointInRing(p, lot.outline)) || inPad(p);
+  areaCache.set(rawNet, test);
+  return test;
 }

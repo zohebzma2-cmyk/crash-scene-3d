@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlainMessage } from "@csd/core";
 import { initialDoc, reducer, type Doc } from "../src/state/doc";
 import { all, click, flush, get, key, maybe, renderApp, text } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAnswers } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.unstubAllGlobals(); });
 
-const placed = (): Doc => reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" });
+const placed = (): Doc => withAnswers(reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }));
 /** A located scene whose directions have been picked. */
 const located = (mutate: (d: Doc) => Doc = (d) => d): Doc => mutate({ ...placed(), directionSet: [true, true] });
 const hash = () => window.location.hash;
@@ -309,7 +309,8 @@ describe("shell", () => {
   it("shows the claim chip, the disclaimer on every step, and opens About this illustration", async () => {
     const { services } = makeServices();
     app = await renderApp(services);
-    expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toContain("Claim CLM-2419");
+    // A new visitor: no claim number (no "Claim" part at all) and no vehicle yet.
+    expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toBe("Your car");
     expect(text(document.querySelector(".disclaimer-bar")!)).toContain("Illustration only.");
     click(get("button", "Learn more"));
     expect(document.querySelector("dialog")?.hasAttribute("open")).toBe(true);

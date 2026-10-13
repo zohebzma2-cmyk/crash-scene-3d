@@ -9,13 +9,13 @@ import { FIX_MEMORY_KEY } from "../src/fixer/memory";
 import { CLEARED_TEXT, GATE_APPLIED_TEXT, REMEMBERED_TEXT, gateFoundText } from "../src/review/RefusalFixes";
 import { CONFLICT_TITLE, MISSING_TITLE } from "../src/components/Warnings";
 import { click, flush, get, maybe, renderApp, text } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAnswers } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.unstubAllGlobals(); window.localStorage.removeItem(FIX_MEMORY_KEY); });
 
 /** The default claim, located, both directions picked: A is marked hit on the left. */
-const located = (): Doc => ({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+const located = (): Doc => withAnswers({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
 const MISMATCH: PlainMessage = { code: "zone-mismatch", vehicleIds: ["A", "B"], text: "Vehicle B would have come at your car (A) from the front right, but your car (A) is marked as hit on the left side." };
 const withZone = (scene: Scene, zone: "right"): Scene => ({ ...scene, vehicles: scene.vehicles.map((v, i) => (i === 0 ? { ...v, zone } : v)) });
 

@@ -6,7 +6,7 @@ import tboneOsm from "../../../examples/t-bone-intersection/osm.json";
 import highwayScene from "../../../examples/highway-rear-end/scene.json";
 import {
   fakeCheckScene, fakeSuggestFixes, fakeMergeSearchResults, fakeParseOverpass, fakePlaceVehicles, fakePoseAt, fakeSimulate,
-  fakeStreetsAtPin, fakeToLatLon, fakeToLocal,
+  fakeDirectionChoices, fakeRoadFitProblems, fakeStreetsAtPin, fakeToLatLon, fakeToLocal,
 } from "../src/services/fakes";
 import type { ExportInput, Services, StreetInTown, TownPlace } from "../src/services/types";
 import { resolveMake } from "../src/services/vehicles";
@@ -60,7 +60,10 @@ export function makeServices(over: Omit<Partial<Services>, "roads"> & { roads?: 
     vehicles: { makes, models, canonicalMake: (text: string) => resolveMake(text, ["Ford", "Honda", "Toyota"]) },
     // Every media call answers the fallback unless a test passes its own.
     media: createMediaService(async () => new Response(null, { status: 204 })),
-    physics: { toLocal: fakeToLocal, toLatLon: fakeToLatLon, streetsAtPin: fakeStreetsAtPin, placeVehicles: fakePlaceVehicles, simulate: fakeSimulate, poseAt: fakePoseAt, checkScene, suggestFixes: fakeSuggestFixes },
+    physics: {
+      toLocal: fakeToLocal, toLatLon: fakeToLatLon, streetsAtPin: fakeStreetsAtPin, placeVehicles: fakePlaceVehicles, simulate: fakeSimulate, poseAt: fakePoseAt, checkScene, suggestFixes: fakeSuggestFixes,
+      directionChoices: fakeDirectionChoices, roadFitProblems: fakeRoadFitProblems,
+    },
     exports: { build },
     pdf: { open: vi.fn(async (_bytes: Uint8Array) => ({ numPages: 1, renderPage: vi.fn(async () => undefined), destroy: vi.fn() })) },
     examples: { names: () => ["t-bone-intersection"], load: async (n) => (n === "t-bone-intersection" ? tbone : null) },
@@ -69,3 +72,26 @@ export function makeServices(over: Omit<Partial<Services>, "roads"> & { roads?: 
   };
   return { services, search, load, makes, models, build, checkScene, mergeResults: fakeMergeSearchResults };
 }
+
+/**
+ * The vehicles answered the way the old default claim prefilled them (a new visitor now starts with nothing answered):
+ * A a car going straight at 25 mph, hit on the left; B an SUV going straight at 30 mph, hit in front. Directions are not
+ * touched (tests pick or mark them themselves). For tests about a claimant who has answered the vehicle questions.
+ */
+export function withAnswers<D extends { scene: Scene; unanswered?: unknown }>(doc: D): D {
+  const answers: Record<string, Partial<Scene["vehicles"][number]>> = {
+    A: { type: "car", action: "straight", speed: { kind: "known", mph: 25 }, zone: "left" },
+    B: { type: "suv", action: "straight", speed: { kind: "known", mph: 30 }, zone: "front" },
+  };
+  return { ...doc, unanswered: doc.scene.vehicles.map(() => []), scene: { ...doc.scene, vehicles: doc.scene.vehicles.map((v) => ({ ...v, ...answers[v.id] })) } };
+}
+
+/**
+ * Vehicle A entered as a 2021 Honda Accord (what the old default claim prefilled; a new visitor now starts empty).
+ * For tests about a card that already has a vehicle in it. The claim's vehicle mirrors A, as the reducer keeps it.
+ */
+export function withAccordA<D extends { scene: Scene }>(doc: D): D {
+  const car = { year: 2021, make: "Honda", model: "Accord" };
+  return { ...doc, scene: { ...doc.scene, claim: { ...doc.scene.claim, vehicle: car }, vehicles: doc.scene.vehicles.map((v) => (v.id === "A" ? { ...v, ...car, typeSource: "claim" as const } : v)) } };
+}
+

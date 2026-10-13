@@ -1,0 +1,27 @@
+/* ---------- Welcome on a first visit (DESIGN.md section 19). Tokens only. ---------- */
+/* The generic dialog box (save.css) with room to scroll on a short screen. */
+.welcome-dialog { max-height: calc(100dvh - var(--space-8)); overflow-y: auto; overscroll-behavior: contain; }
+.welcome-dialog[open] { animation: welcome-in var(--duration-base) var(--ease-standard); }
+.welcome-body p { line-height: var(--leading-normal); }
+/* The short disclaimer, in the disclaimer bar's colours. */
+.welcome-body .welcome-disclaimer { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-warning-tint); color: var(--color-warning-tint-text); font-size: var(--text-sm); line-height: var(--leading-snug); }
+.welcome-how h3 { font-size: var(--text-sm); font-weight: var(--weight-bold); color: var(--color-text-secondary); }
+.welcome-steps { list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin-top: var(--space-2); padding: var(--space-0); }
+.welcome-steps li { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.welcome-steps .step-dot { background: var(--color-brand-tint); border-color: var(--color-brand-tint); color: var(--color-brand-tint-text); }
+.welcome-body .actions { margin-top: var(--space-2); }
+/* "Start my own" sits at the start of the row, away from the two main buttons. */
+.welcome-start-own { margin-inline-end: auto; }
+@keyframes welcome-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .welcome-dialog[open] { animation: none; } }
+
+@media (max-width: 767px) {
+  /* Phones reach the welcome from Learn more (the About dialog's "About this tool"), not from the bar. */
+  .disclaimer-bar .about-tool-link { display: none; }
+  /* Phones: a full-width sheet from the bottom edge, its buttons side by side and full width. */
+  .welcome-dialog { width: 100%; max-width: 100%; margin-inline: 0; margin-block-start: auto; margin-block-end: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; max-height: calc(100dvh - var(--space-6)); }
+  .welcome-body { padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom)); }
+  .welcome-body .actions { flex-wrap: wrap; }
+  .welcome-body .actions .btn { flex: 1; }
+  .welcome-body .actions .welcome-start-own { flex: 1 0 100%; order: 3; }
+}

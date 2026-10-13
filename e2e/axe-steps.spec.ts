@@ -2,7 +2,7 @@
 // Stricter than a11y.spec.ts: any violation of any impact fails (WCAG 2.0/2.1/2.2 A + AA and best practice).
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { EXAMPLES, expect, fillDefaultClaim, freshStart, isPhone, openExample, searchAndPick, searchBox, test, toReview, waitForViewer } from "./helpers";
+import { DEFAULT_ANSWERS, EXAMPLES, answerVehicle, expect, fillDefaultClaim, freshStart, isPhone, openExample, searchAndPick, searchBox, test, toReview, waitForViewer } from "./helpers";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
 
@@ -61,6 +61,8 @@ for (const theme of THEMES) {
 
       await page.locator("#vehicle-A").getByRole("radio", { name: "Northbound on Main Street" }).click();
       await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
+      await answerVehicle(page, "A", { type: "Car", ...DEFAULT_ANSWERS.A });
+      await answerVehicle(page, "B", DEFAULT_ANSWERS.B);
       // The default claim (A hit on the left) doesn't fit together: the gate offers its one-tap fixes.
       await page.getByRole("button", { name: /See the recreation/ }).click();
       await expect(page.getByTestId("gate-fixes").locator("button.refusal-fix").first()).toBeVisible({ timeout: 30_000 });
@@ -88,6 +90,27 @@ for (const theme of THEMES) {
       await expect(page.locator("#app")).toHaveAttribute("data-step", "export");
       await expect(page.locator(".preview-frame")).not.toContainText("Making the preview", { timeout: 60_000 });
       found.push(...await axe(page, "save"));
+      expect(found).toEqual([]);
+    });
+
+    test(`the first-visit welcome, open and reopened (${theme})`, async ({ page }) => {
+      // Fixtures mode shows the welcome only with ?welcome=1; the config marks it seen, so clear that first.
+      await page.goto("/?welcome=1");
+      await page.evaluate(() => { try { localStorage.removeItem("csd.welcome.v1"); } catch { /* blocked storage is fine */ } });
+      await page.reload();
+      const welcome = page.getByRole("dialog", { name: "See what happened, in 3D" });
+      await expect(welcome).toBeVisible();
+      const found = await axe(page, "welcome dialog");
+      await page.getByRole("button", { name: "Dismiss" }).click();
+      await expect(welcome).toHaveCount(0);
+      found.push(...await axe(page, "location after the welcome"));
+      if (isPhone(page)) {
+        await page.getByRole("button", { name: "Learn more" }).click();
+        await expect(page.getByRole("dialog", { name: "About this illustration" })).toBeVisible();
+      }
+      await page.getByRole("button", { name: "About this tool" }).click();
+      await expect(welcome).toBeVisible();
+      found.push(...await axe(page, "welcome dialog (reopened)"));
       expect(found).toEqual([]);
     });
 

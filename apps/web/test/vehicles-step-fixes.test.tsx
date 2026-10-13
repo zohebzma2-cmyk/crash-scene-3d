@@ -116,7 +116,7 @@ describe("a typed nickname and a late makes list", () => {
     expect(card("B").querySelector(".lookup")?.textContent).toContain("Pickup from NHTSA vPIC");
   });
 
-  it("a claim's own make is never renamed when the list lands; a 'chevy' kept from earlier in the session is", async () => {
+  it("a 'chevy' kept from earlier in the session is renamed when the list lands, on A as on B; the header follows A", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const late = lateMakes();
     const { services } = makeServices({ vehicles: late.vehicles });
@@ -129,8 +129,10 @@ describe("a typed nickname and a late makes list", () => {
     app = await renderApp(services, { hash: "#vehicles", storage: withAlias });
     await settle();
     await late.land();
-    expect(field("A", "make").value).toBe("chevy");
+    // The claim's vehicle is vehicle A (no separate claim value to protect any more), so A is tidied like B.
+    expect(field("A", "make").value).toBe("Chevrolet");
     expect(field("B", "make").value).toBe("Chevrolet");
+    expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toBe("Chevrolet");
   });
 });
 

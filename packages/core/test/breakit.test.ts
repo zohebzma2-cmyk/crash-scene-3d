@@ -468,8 +468,8 @@ describe("8. wrong schema version, and a tampered file", () => {
   const NO_VERSION = "This file doesn't say which version of the tool saved it, so it can't be opened.";
   const withVersion = (v: unknown) => ({ ...sampleScene(), schemaVersion: v });
 
-  it("2, 4, '3', 3.5, -1, null and 0 are all 'different version'; missing says it has no version", () => {
-    for (const v of [2, 4, "3", 3.5, -1, 0, 3.0000001, [3], { v: 3 }, true]) {
+  it("unsupported and malformed versions are refused; missing says it has no version", () => {
+    for (const v of [2, 5, "3", 3.5, -1, 0, 3.0000001, [3], { v: 3 }, true]) {
       expect(errorsOf(parseScene(withVersion(v))), String(v)).toEqual([DIFFERENT]);
       expect(errorsOf(parseSceneFile(fileBytes(withVersion(v)))), String(v)).toEqual([DIFFERENT]);
     }
@@ -490,7 +490,7 @@ describe("8. wrong schema version, and a tampered file", () => {
   });
 
   it("only the current version opens", () => {
-    expect(SCHEMA_VERSION).toBe(3);
+    expect(SCHEMA_VERSION).toBe(4);
     expect(parseSceneFile(fileBytes(sampleScene())).ok).toBe(true);
   });
 

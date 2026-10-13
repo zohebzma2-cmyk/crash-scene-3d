@@ -12,6 +12,7 @@ import { isAbort } from "../fixer/client";
 import { Icon } from "../icons/Icon";
 import { useServices } from "../services/context";
 import { useDoc } from "../state/DocProvider";
+import { isAnswered, type Doc } from "../state/doc";
 import { Tip } from "../tips/Tips";
 import { docKey, useFlow } from "../state/Flow";
 import { useUi } from "../state/Ui";
@@ -42,6 +43,7 @@ const NO_FIXES = (): FixSuggestions => ({ why: "", fixes: [], focus: { step: "ve
  */
 function useFixSearch(scene: Scene, roads: RoadNetwork | null, opts: { gate?: boolean; enabled?: boolean } = {}) {
   const { fixer, fixMemory } = useServices();
+  const { doc } = useDoc();
   const gate = opts.gate === true;
   const enabled = opts.enabled !== false;
   const [found, setFound] = useState<{ scene: Scene; s: FixSuggestions; where: string } | null>(null);
@@ -57,7 +59,20 @@ function useFixSearch(scene: Scene, roads: RoadNetwork | null, opts: { gate?: bo
     );
     return () => ctl.abort();
   }, [fixer, fixMemory, scene, roads, gate, enabled]);
-  return { current: enabled && found && found.scene === scene ? found.s : null, where: found?.where || undefined };
+  const s = enabled && found && found.scene === scene ? found.s : null;
+  return { current: s ? { ...s, fixes: s.fixes.filter((f) => !movesAtUnaskedSpeed(f, doc)) } : null, where: found?.where || undefined };
+}
+
+/**
+ * A fix that starts a vehicle moving (a parked one, whose speed was never given) without setting its speed would move it
+ * at the placeholder stored with it, which the claimant never gave: not offered. They pick what it was doing and its
+ * speed themselves.
+ */
+export function movesAtUnaskedSpeed(fix: Fix, doc: Pick<Doc, "scene" | "unanswered">): boolean {
+  return fix.changes.some((c) => {
+    const at = c.vehicleId ? doc.scene.vehicles.findIndex((v) => v.id === c.vehicleId) : -1;
+    return at >= 0 && c.patch.action !== undefined && c.patch.action !== "parked" && c.patch.speed === undefined && !isAnswered(doc, at, "speed");
+  });
 }
 
 /** The fix buttons: each one's label says the whole change. */

@@ -5,6 +5,7 @@
 // The camera looks across the crash (square to its long axis) so a long crash reads wide on a wide frame.
 import type { Pose, SimulationResult, TerrainGrid, Vec2 } from "@csd/core";
 import { fitDistance, heightAt, type CameraSpec, type Viewport } from "./math";
+import { ringPlacement } from "./scene-geometry";
 
 /** Share of the frame the subject fills, along its limiting side. */
 export const IMPACT_STILL_FILL = 0.6;
@@ -34,7 +35,9 @@ function corners(p: Pose, lengthM: number, widthM: number): Vec2[] {
 /** What a still is a picture OF, in ground plan: the points that must all be in frame. */
 export function stillSubject(kind: StillKind, sim: SimulationResult, extraPoints: readonly Vec2[] = []): Vec2[] {
   const pts: Vec2[] = [];
-  const c = sim.impactPointM;
+  // The impact ring (beside the crash, clear of the cars) and where they touched.
+  const c = ringPlacement(sim).center;
+  pts.push(sim.impactPointM);
   for (let i = 0; i < 8; i++) pts.push({ x: c.x + Math.cos((i * Math.PI) / 4) * IMPACT_RING_M, y: c.y + Math.sin((i * Math.PI) / 4) * IMPACT_RING_M });
   for (const v of sim.vehicles) {
     if (kind === "impact") { pts.push(...corners(v.impactPose, v.lengthM, v.widthM)); continue; }

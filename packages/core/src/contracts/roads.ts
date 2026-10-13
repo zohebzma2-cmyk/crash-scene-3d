@@ -59,6 +59,10 @@ export interface TerrainGrid {
 }
 
 export interface RoadNetwork {
+  /** Only explicitly tagged OSM objects; absent on older cached networks. */
+  readonly features?: readonly RoadFeature[];
+  /** Original way tags, kept apart from the lane defaults used by placement. */
+  readonly taggedRoads?: readonly TaggedRoad[];
   readonly frame: LocalFrame;
   /** Half-size of the square area fetched around the origin, meters. */
   readonly radiusM: number;
@@ -70,6 +74,33 @@ export interface RoadNetwork {
   readonly attribution: readonly string[];
   /** ISO time the source data was fetched (fixtures keep theirs). */
   readonly fetchedAt: string;
+}
+
+export type RoadFeatureKind = "signal" | "stop" | "yield" | "crosswalk" | "street-light" | "speed" | "oneway" | "turn-lanes" | "lanes";
+export interface RoadFeature {
+  readonly id: string;
+  readonly kind: RoadFeatureKind;
+  readonly position: Vec2;
+  /** Compass direction the sign faces; null means OSM did not say. */
+  readonly facingDeg: number | null;
+  readonly label: string;
+  /** Way annotations describe a road, not a surveyed sign/paint location. */
+  readonly source: "node" | "way";
+  readonly osmId: number;
+  /** Explicitly mapped crossing path and markings; absent means no paint is rendered. */
+  readonly crossingPath?: readonly Vec2[];
+  readonly crossingMarkings?: "yes" | "zebra" | "ladder";
+}
+export interface TaggedRoad {
+  readonly osmId: number;
+  readonly centerline: readonly Vec2[];
+  readonly lanes: number | null;
+  readonly forward: number | null;
+  readonly backward: number | null;
+  readonly bothWays: number | null;
+  readonly oneway: boolean;
+  readonly turnsForward: readonly string[];
+  readonly turnsBackward: readonly string[];
 }
 
 /** One arm of a junction: a road leaving the junction in one direction. */

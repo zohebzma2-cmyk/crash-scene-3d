@@ -17,6 +17,8 @@ export interface VehicleSpec {
   readonly roadId?: string | null;
   readonly roadName?: string | null;
   readonly lane?: number | null;
+  /** Came out of a driveway or parking lot onto the road (2026-10-11). */
+  readonly fromDriveway?: true;
   readonly speed?: SceneSpeed;
   readonly braking?: boolean;
   readonly zone?: Zone;
@@ -26,14 +28,14 @@ export function veh(id: VehicleId, s: VehicleSpec = {}): SceneVehicle {
   return {
     id, role: id === "A" ? "claimant" : "other", year: null, make: "", model: "",
     type: s.type ?? "car", typeSource: "manual", action: s.action ?? "straight",
-    travel: { bearingDeg: s.bearingDeg ?? 0, roadId: s.roadId ?? null, roadName: s.roadName ?? null, lane: s.lane ?? null },
+    travel: { bearingDeg: s.bearingDeg ?? 0, roadId: s.roadId ?? null, roadName: s.roadName ?? null, lane: s.lane ?? null, ...(s.fromDriveway ? { fromDriveway: true } : {}) },
     speed: s.speed ?? known(25), braking: s.braking ?? false, zone: s.zone ?? "front",
   };
 }
 
 export function sceneOf(vehicles: SceneVehicle[], o: { condition?: RoadCondition; place?: Scene["location"]["place"] } = {}): Scene {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     claim: { number: "CLM-TEST", vehicle: { year: null, make: "", model: "" } },
     location: { lat: ORIGIN.lat, lon: ORIGIN.lon, label: "Test location", nearLabel: "", source: "pin", place: o.place ?? "intersection" },
     occurred: { date: "2026-10-02", time: "17:15" },

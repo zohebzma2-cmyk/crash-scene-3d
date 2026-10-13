@@ -3,14 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialDoc, reducer, type Doc } from "../src/state/doc";
 import { all, click, flush, get, renderApp, sizeMapContainers, text } from "./helpers";
 import { fakePlaceVehicles } from "../src/services/fakes";
-import { makeServices, tbone } from "./fakes";
+import { MINI_WAITING_TEXT } from "../src/components/MiniMap";
+import { makeServices, tbone, withAnswers } from "./fakes";
 
 let app: { unmount: () => void } | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.restoreAllMocks(); });
 
 const placed = (picked: boolean): Doc => {
   const d = reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" });
-  return { ...d, directionSet: picked ? [true, true] : [false, false] };
+  return withAnswers({ ...d, directionSet: picked ? [true, true] : [false, false] });
 };
 const WRONG_WAY = "Vehicle B is going the wrong way on Park Street.";
 
@@ -32,7 +33,9 @@ describe("step 2 mini map", () => {
     app = await renderApp(services, { hash: "#vehicles", storage: placed(false) });
     await flush(900);
     expect(text()).not.toContain(WRONG_WAY);
-    expect(document.querySelector(".mini-note")).toBeNull();
+    // Only the plain "waiting" line, never a placement problem (and not announced: no role=status).
+    expect(get(".mini-note").textContent).toBe(MINI_WAITING_TEXT);
+    expect(get(".mini-note").getAttribute("role")).toBeNull();
   });
 
   it("shows a placement problem once every direction is picked, under the map and clear of its attribution", async () => {
@@ -47,12 +50,22 @@ describe("step 2 mini map", () => {
     expect(document.querySelector(".map-frame-sm .map-attrib")).not.toBeNull();
   });
 
-  it("does not draw a vehicle whose direction isn't picked", async () => {
+  it("draws no vehicle until every vehicle's direction and details are picked (each one's place depends on all of them)", async () => {
     const { services } = makeServices();
     services.physics.placeVehicles = fakePlaceVehicles;
     app = await renderApp(services, { hash: "#vehicles", storage: { ...placed(false), directionSet: [true, false] } });
     await flush(900);
-    expect(all(".mlabel").map((l) => l.textContent?.[0])).toEqual(["A"]);
+    expect(all(".mlabel")).toEqual([]);
+    expect(text()).toContain(MINI_WAITING_TEXT);
+    app.unmount();
+    app = await renderApp(services, { hash: "#vehicles", storage: { ...placed(true), unanswered: [[], ["zone"]] } });
+    await flush(900);
+    expect(all(".mlabel")).toEqual([]);
+    app.unmount();
+    app = await renderApp(services, { hash: "#vehicles", storage: placed(true) });
+    await flush(900);
+    expect(all(".mlabel").map((l) => l.textContent?.[0])).toEqual(["A", "B"]);
+    expect(text()).not.toContain(MINI_WAITING_TEXT);
   });
 });
 

@@ -1,0 +1,30 @@
+import { test, expect, openExample, waitForViewer } from "./helpers";
+test("optional recollections stay skippable and appear as claimant statements @xb", async ({ page }) => {
+  await openExample(page, "t-bone-intersection");
+  await page.evaluate(() => { location.hash = "#location"; });
+  await page.locator(".optional-questions summary").click();
+  await expect(page.locator(".optional-questions")).toContainText("America/New_York");
+  await page.getByLabel("What was the light like?", { exact: true }).selectOption("dark-lit");
+  await page.getByLabel("What was the weather?", { exact: true }).selectOption("rain");
+  await page.getByLabel("Sun glare", { exact: true }).check();
+  await page.getByLabel("Parked cars", { exact: true }).check();
+  await page.getByLabel("Hedges", { exact: true }).check();
+  await page.getByRole("button", { name: /Next: vehicles/ }).click();
+  const card = page.locator("#vehicle-A");
+  await card.locator(".optional-questions summary").click();
+  await card.getByLabel("What did the traffic control show?", { exact: true }).selectOption("green");
+  for (const label of ["Was the turn signal on?", "Was it braking?", "Was it swerving?", "Did the airbags deploy?", "Was it towed?"]) await card.getByLabel(label, { exact: true }).selectOption("not-sure");
+  await card.getByLabel("Which lane, from the right?", { exact: true }).selectOption("not-sure");
+  await page.evaluate(() => { location.hash = "#review"; });
+  await waitForViewer(page);
+  const summary = page.getByTestId("scene-summary");
+  for (const text of ["lighting — Dark with street lights", "weather — Rain", "Sun glare, Parked cars, Hedges", "traffic control — Green", "signaled — Not sure", "braking — Not sure", "swerving — Not sure", "airbags deployed — Not sure", "towed — Not sure", "lane — Not sure"]) await expect(summary).toContainText(text);
+  // The answers sit in their own collapsed row at the top of the picture (not over the 3D view): 3 scene + 7 vehicle A answers.
+  const answers = page.locator(".viewer .viewer-answers .account-icons");
+  await expect(answers.locator("summary")).toHaveText("Claimant said · 10 answers");
+  await answers.locator("summary").click();
+  await expect(answers.getByLabel("Claimant said, vehicle A: traffic control — Green.", { exact: true })).toBeVisible();
+  await expect(answers.getByLabel("Claimant said: lighting — Dark with street lights.", { exact: true })).toHaveText("Dark with street lights");
+  await page.locator(".feature-legend summary").click();
+  await expect(page.locator(".feature-legend")).toContainText("Signal colors at the time are unknown");
+});

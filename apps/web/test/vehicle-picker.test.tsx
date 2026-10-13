@@ -9,12 +9,13 @@ import { VEHICLE_LOOKUP_MESSAGES, createVehiclesService } from "../src/services/
 import { ServiceError, type ModelsOptions, type VehiclesService } from "../src/services/types";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { get, key, renderApp, setValue } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAccordA } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.useRealTimers(); });
 
-const located = (): Doc => ({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+// A already holds a 2021 Honda Accord (the old default claim), so opening the step asks for its model list.
+const located = (): Doc => withAccordA({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
 const card = (id: string) => document.getElementById(`vehicle-${id}`) as HTMLElement;
 const field = (id: string, which: "year" | "make" | "model") => card(id).querySelector<HTMLInputElement>(`input[id$="-${which}"]`)!;
 const listOf = (input: HTMLInputElement) => document.getElementById(input.getAttribute("aria-controls") ?? "");

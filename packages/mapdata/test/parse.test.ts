@@ -31,7 +31,9 @@ describe("overpassAroundQuery", () => {
     expect((n + s) / 2).toBeCloseTo(42.7627323, 6);
     expect((e + w) / 2).toBeCloseTo(-71.4661324, 6);
     expect(q).not.toContain("around");
-    expect(q.match(/way\(/g)).toHaveLength(3);
+    expect(q.match(/way\(/g)).toHaveLength(4);
+    expect(q).toContain('["footway"="crossing"]');
+    expect(q).toContain("traffic_signals|stop|give_way|crossing|street_lamp");
     expect(q).toMatch(/^\[out:json\]\[timeout:60\];\(/);
     expect(q).toMatch(/out body geom;$/);
   });

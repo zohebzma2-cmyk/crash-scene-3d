@@ -101,7 +101,7 @@ export function findCrossStreets(overpassJson: unknown, street: StreetSelector, 
   const ownIds = new Set(own.map((w) => w.id));
 
   const streetNodes = new Map<number, LatLon>();
-  for (const w of own) w.nodes.forEach((n, i) => streetNodes.set(n, w.geometry[i] as LatLon));
+  for (const w of own) w.nodes.forEach((n, i) => { if (n !== undefined) streetNodes.set(n, w.geometry[i] as LatLon); });
 
   const origin = near ?? centroid(own);
   interface Acc { name: string; ref?: string; place?: string; points: LatLon[]; ways: Set<number>; names: Map<string, number> }
@@ -113,7 +113,7 @@ export function findCrossStreets(overpassJson: unknown, street: StreetSelector, 
     const key = normalizeStreetName(name);
     if (key === ownKey) continue; // another piece of the same street, not a cross street
     const hits: LatLon[] = [];
-    w.nodes.forEach((n, i) => { const p = streetNodes.get(n); if (p) hits.push(w.geometry[i] as LatLon); });
+    w.nodes.forEach((n, i) => { if (n !== undefined && streetNodes.has(n)) hits.push(w.geometry[i] as LatLon); });
     if (hits.length === 0) continue;
     const acc = byName.get(key) ?? { name, points: [], ways: new Set<number>(), names: new Map<string, number>() };
     acc.names.set(name, (acc.names.get(name) ?? 0) + 1);

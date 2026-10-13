@@ -17,6 +17,7 @@ import { WORDMARK, drawMarkPdf, lockup } from "./logo";
 import { HIT_ON_MARK, paintByLetter, type ReportModel } from "./model";
 import { PdfCanvas, type Extent, type PdfFonts, type Region } from "./pdf-canvas";
 import { PX_TO_PT, color, px, vehicleColor } from "./style";
+import { iconPrims } from "./feature-icons";
 
 const OSM_CREDIT = "© OpenStreetMap contributors";
 /** Header of the PDF's photo cell and caption of a still's photo card. */
@@ -436,16 +437,18 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
         ky += r.ls.length * lh(body) + pad * 1.5;
       }
       const diaBox: Box = { x: rx, y: y + headingH(), w: colW, h: diaH };
+      const cs = MIN_DIAGRAM_TEXT_PT;
+      const chipStyle = pdfChipStyle(cs, lh(cs), hair);
+      const chipH = scaleChip([0, 0], [{ label: "", px: 1 }, { label: "", px: 1 }], chipStyle, sh.cv.measure).rect.h;
       const diaOpts = {
         box: diaBox, letters: true, markers: true, streetLabels: true, ghosts: true, paint: paintByLetter(model),
         minTextSize: MIN_DIAGRAM_TEXT_PT, minLine: hair * 0.8, minTagRadius: MIN_DIAGRAM_TEXT_PT * 0.8,
+        ...(input.roads?.features?.length ? { insets: { bottom: chipH + gapSm } } : {}),
       };
       // The north arrow and the scale bars sit on one chip in a corner of the diagram. The picture is planned once to
       // know its scale, the chip goes in the first corner that no vehicle, run-up or impact ring is under, and the
       // picture is planned again with the chip as an obstacle so street names and markers keep clear of it.
       const plan0 = planDiagram(input.sim, input.roads, diaOpts, sh.cv.measure);
-      const cs = MIN_DIAGRAM_TEXT_PT;
-      const chipStyle = pdfChipStyle(cs, lh(cs), hair);
       const inset = gapSm * 0.5;
       const clash = (c: { x: number; y: number; w: number; h: number }) => plan0.keep.some((k) => k.x < c.x + c.w + inset && c.x < k.x + k.w + inset && k.y < c.y + c.h + inset && c.y < k.y + k.h + inset);
       // When no corner is clear, shorter bars make a narrower chip (each bar stays exact in its unit).
@@ -706,11 +709,25 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     };
   };
 
-  const first: Block[] = mode === "full" ? [top, table, measures, assumptionsBlock(twoColumns(aItems), null)] : [top, table, measures];
-  const placeholder = (text: string): Block => ({
-    h: lh(body) + pad, gapBefore: gapBig, kind: "main",
-    draw: (sh, y) => { sh.block("body", M, y, [text], "sans", body, color("color-text-secondary")); },
+  const recollections: Block[] = model.claimantNotes.map((note, i) => {
+    const iconSize = body * 1.5;
+    const icons = note.icons ?? [note.icon];
+    const iconWidth = icons.length * iconSize;
+    const ls = s.lines(note.text, CW - iconWidth - gapSm, "sans", body);
+    return { h: Math.max(iconSize, ls.length * lh(body)), gapBefore: i === 0 ? gapBig : gapSm * 0.5, kind: "main", name: "What the claimant said", draw: (sh, y) => {
+      sh.add("body", (c) => icons.forEach((icon, j) => c.replay(iconPrims(icon, M + j * iconSize, y, iconSize, color("color-text-secondary")))));
+      sh.block("body", M + iconWidth + gapSm, y, ls, "sans", body, color("color-text"));
+    } };
   });
+  const first: Block[] = [top, table, measures, ...recollections];
+  if (mode === "full") first.push(assumptionsBlock(twoColumns(aItems), null));
+  const placeholder = (text: string): Block => {
+    const lines = s.lines(text, CW, "sans", body);
+    return {
+      h: lines.length * lh(body) + pad, gapBefore: gapBig, kind: "main",
+      draw: (sh, y) => { sh.block("body", M, y, lines, "sans", body, color("color-text-secondary")); },
+    };
+  };
 
   /* Warnings. */
   const lead = "Details that may not fit together: ";
@@ -909,8 +926,8 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
     }
     if (fallback) {
       // Last resort: the first-page sections that fit stay, a one-line note says what moved, and the rest follows on page 2.
-      const core = built.first.slice(0, 3);
-      const probe = built.placeholder("x");
+      const core = built.first;
+      const probe = built.placeholder(`${cap(movedList([...new Set(core.map((b) => b.name ?? ""))], model.warnings.length > 0))} continued on page 2`);
       let y = head1;
       let k = 0;
       for (const b of core) {
@@ -920,7 +937,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
         k++;
       }
       const moved = core.slice(k);
-      movedText = movedList(moved.map((b) => b.name ?? ""), model.warnings.length > 0);
+      movedText = movedList([...new Set(moved.map((b) => b.name ?? ""))], model.warnings.length > 0);
       blocks = [
         ...core.slice(0, k), built.placeholder(`${cap(movedText)} continued on page 2`),
         ...moved.map((b, i) => (i === 0 ? { ...b, breakBefore: true } : b)), ...built.rest,

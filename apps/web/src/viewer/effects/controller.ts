@@ -8,7 +8,7 @@ import {
 } from "three";
 import type { RoadNetwork, SimulationResult, TerrainGrid, Vec2 } from "@csd/core";
 import { heightAt, toThree } from "../math";
-import { LIFT } from "../scene-geometry";
+import { LIFT, ringPlacement } from "../scene-geometry";
 import type { SceneColors } from "../tokens";
 import { buildShards, settledPositions, shardPoseAt, type ShardPose, type Shards } from "./debris";
 import { buildSkids, drawCountAt, type SkidRibbon } from "./skids";
@@ -105,7 +105,7 @@ export class ImpactFx {
     this.flash = new Mesh(ringGeo, this.flashMat);
     this.flash.visible = false;
     this.flash.renderOrder = 3;
-    const p = sim.impactPointM;
+    const p = ringPlacement(sim).center;
     this.flash.position.set(...toThree(p, heightAt(this.terrain, p) + LIFT.ring + 0.02));
     this.group.add(this.flash);
     this.disposables.push(ringGeo, this.flashMat);

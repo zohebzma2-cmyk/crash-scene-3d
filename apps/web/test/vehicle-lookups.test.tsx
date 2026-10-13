@@ -10,7 +10,7 @@ import { LOOKUP_DEBOUNCE_MS } from "../src/components/VehicleCard";
 import { BUSY_TOTAL_WAIT_MS, retryBusy } from "../src/services/http";
 import { ServiceError } from "../src/services/types";
 import { flush, renderApp, setValue, text } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAccordA } from "./fakes";
 
 const MAKES = ["Chevrolet", "Ford", "Honda", "Mercedes-Benz", "Toyota", "Volkswagen"];
 const MODELS: Record<string, VehicleModelResult[]> = {
@@ -40,7 +40,8 @@ let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 beforeEach(() => { try { sessionStorage.clear(); } catch { /* none */ } });
 afterEach(() => { app?.unmount(); app = null; vi.useRealTimers(); });
 
-const located = (): Doc => ({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+// A already holds a 2021 Honda Accord (the old default claim), so opening the step asks for its model list.
+const located = (): Doc => withAccordA({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
 const card = (id: string) => document.getElementById(`vehicle-${id}`) as HTMLElement;
 const fields = (id: string) => [...card(id).querySelectorAll<HTMLInputElement>("input[type=text]")] as [HTMLInputElement, HTMLInputElement, HTMLInputElement];
 

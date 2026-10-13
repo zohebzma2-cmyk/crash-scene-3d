@@ -5,7 +5,7 @@ import L from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MapContainer } from "react-leaflet";
-import { PRESETS, boundWord, type RoadNetwork, type Scene, type SceneVehicle } from "@csd/core";
+import { PRESETS, goingWords, vehicleTag, type RoadNetwork, type Scene, type SceneVehicle } from "@csd/core";
 import { mapConfig } from "../config/map";
 import { Icon } from "../icons/Icon";
 import { layoutMiniMap, metersPerPixel, type MiniVehiclePlacement } from "../lib/miniMapLayout";
@@ -13,11 +13,13 @@ import { placeLabels, type LabelRequest } from "../lib/labels";
 import { tokenPx } from "../lib/dom";
 import { useServices } from "../services/context";
 import { useDoc } from "../state/DocProvider";
+import { unansweredOf } from "../state/doc";
 import { useRoads } from "../state/Roads";
 import { MapTiles } from "./MapTiles";
 import { NorthArrow } from "./NorthArrow";
 import { ucFirst } from "../lib/text";
 import { paintStyle } from "../lib/paint";
+import { FeatureLegend, MapRoadFeatures } from "./RoadFeatures";
 
 const FALLBACK_MARKER_PX = 44;
 const FALLBACK_PIN_PX = 32;
@@ -51,6 +53,9 @@ function VehicleMarker({ map, lat, lon, vehicle, heading }: { map: L.Map; lat: n
   );
 }
 
+/** Under the mini map until every vehicle's details are in (they are drawn then). */
+export const MINI_WAITING_TEXT = "The vehicles show here once each one's details are picked.";
+
 export function MiniMap({ scene }: { scene: Scene }) {
   const { doc } = useDoc();
   const { physics, mode } = useServices();
@@ -78,7 +83,9 @@ export function MiniMap({ scene }: { scene: Scene }) {
     map.setView([lat, lon], mapConfig.placeZoom, { animate: false });
   }, [map, located, lat, lon]);
 
-  const allPicked = doc.directionSet.every(Boolean);
+  // Every direction picked and every detail answered (a parked vehicle has no speed): only then is a placement problem
+  // about the claimant's own answers rather than a placeholder.
+  const allPicked = doc.directionSet.every(Boolean) && scene.vehicles.every((v, i) => unansweredOf(doc, i).every((f) => f === "speed" && v.action === "parked"));
   const layout = useMemo(() => {
     if (!located) return null;
     try {
@@ -100,10 +107,11 @@ export function MiniMap({ scene }: { scene: Scene }) {
     }
   }, [located, scene, net, physics, lat, lon, allPicked]);
 
-  // A vehicle whose direction hasn't been picked yet is not drawn: its bearing is only a placeholder.
+  // The vehicles are drawn once every one of them is answered: where each sits depends on all of them (directions, hit
+  // sides, types), and an unanswered one is only a placeholder.
   const markers = layout?.items.map((it) => {
     const at = scene.vehicles.findIndex((x) => x.id === it.id);
-    const v = doc.directionSet[at] ? scene.vehicles[at] : undefined;
+    const v = allPicked ? scene.vehicles[at] : undefined;
     const ll = layout ? physics.toLatLon(layout.frame, it.pos) : null;
     return v && ll ? { it, v, ll } : null;
   }).filter((m): m is NonNullable<typeof m> => m != null) ?? [];
@@ -116,7 +124,8 @@ export function MiniMap({ scene }: { scene: Scene }) {
     const pinPx = tokenPx("--size-pin", FALLBACK_PIN_PX);
     const anchors = markers.map(({ v, ll }) => {
       const p = map.latLngToContainerPoint([ll.lat, ll.lon]);
-      const text = `${v.id} · ${ucFirst(boundWord(v.travel.bearingDeg))}`;
+      // Core's one label: "A · Your car · Northbound", "B · Other car · Heading northwest".
+      const text = vehicleTag(v, ucFirst(goingWords(v.travel.bearingDeg)));
       return { id: v.id, text, x: p.x, y: p.y };
     });
     const pinPt = map.latLngToContainerPoint([lat, lon]);
@@ -152,6 +161,7 @@ export function MiniMap({ scene }: { scene: Scene }) {
         aria-label="Map showing where each vehicle was going"
       >
         <MapTiles fixtures={mode === "fixtures"} roads={net} />
+        {map && net ? <MapRoadFeatures map={map} roads={net} /> : null}
         {located && map ? <PinMarker map={map} lat={lat} lon={lon} /> : null}
         {located && map ? markers.map(({ it, v, ll }) => <VehicleMarker key={v.id} map={map} lat={ll.lat} lon={ll.lon} vehicle={v} heading={it.headingDeg} />) : null}
       </MapContainer>
@@ -168,7 +178,8 @@ export function MiniMap({ scene }: { scene: Scene }) {
       <NorthArrow />
       <p className="map-attrib"><a href={mapConfig.attributionUrl} target="_blank" rel="noopener noreferrer">{mapConfig.attribution}</a></p>
     </div>
-    {layout?.error ? <p className="mini-note" role="status">{layout.error}</p> : null}
+    {layout?.error ? <p className="mini-note" role="status">{layout.error}</p> : located && !allPicked ? <p className="mini-note">{MINI_WAITING_TEXT}</p> : null}
+    <FeatureLegend roads={net} />
     </>
   );
 }

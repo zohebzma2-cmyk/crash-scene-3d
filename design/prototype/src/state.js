@@ -1,17 +1,17 @@
 // One shared scene state. Every screen and every export reads from here.
 const KEY = "crash-scene-3d/scene/v2";
 
-/** Starting state: prefilled from the (made-up) claim. */
+/** Starting state, as the app's: no claim number and no vehicle details (Try an example fills a scene). */
 export function initialScene() {
   return {
     schemaVersion: 2,
     physicsVersion: "0.1.0-prototype",
-    claim: { number: "CLM-2419", vehicle: { year: 2021, make: "Honda", model: "Accord" }, address: "1200 Maple Ave & 3rd St, Springfield" },
+    claim: { number: "", vehicle: { year: null, make: "", model: "" }, address: "1200 Maple Ave & 3rd St, Springfield" },
     location: { query: "1200 Maple Ave & 3rd St, Springfield", label: "", nearLabel: "", lat: null, lon: null, source: null, placeName: "", place: "intersection", streets: { ew: "", ns: "" } },
     occurred: { date: "2026-10-02", time: "17:15" },
     road: { condition: "dry" },
     vehicles: [
-      newVehicle("A", { role: "Your car", fromClaim: true, year: 2021, make: "Honda", model: "Accord", type: "car", typeSource: "claim", heading: 0, speedMph: 25, zone: "left" }),
+      newVehicle("A", { role: "Your car", type: "car", typeSource: "manual", heading: 0, speedMph: 25, zone: "left" }),
       newVehicle("B", { role: "Other vehicle", type: "suv", typeSource: "manual", heading: 90, speedMph: 30, zone: "front" }),
     ],
   };

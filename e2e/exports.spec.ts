@@ -53,7 +53,7 @@ for (const name of EXAMPLES) {
       const jsonText = jsonBytes.toString("utf8");
       const scene = JSON.parse(jsonText) as { createdAt: string; schemaVersion: number; disclaimer: string; claim: { number: string } };
       expect(jsonText, "the scene file is saved in canonical form").toBe(canonical(scene));
-      expect(scene.schemaVersion).toBe(3);
+      expect(scene.schemaVersion).toBe(4);
       expect(scene.claim.number).toBe(claim);
       expect(scene.disclaimer).toBe(LONG_DISCLAIMER);
       expect(scene.createdAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);

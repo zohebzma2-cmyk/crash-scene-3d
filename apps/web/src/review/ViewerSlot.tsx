@@ -6,7 +6,7 @@
 // once, against the static layout (vehicle bodies at impact and at rest, the labels and pills at
 // impact, the view controls), and again only when that layout changes.
 import { useEffect, useMemo, useState } from "react";
-import { formatDistance, formatSpeed, type Scene, type SimulationResult, type Units, type Vec2 } from "@csd/core";
+import { formatDistance, formatSpeed, roleWords, vehicleTag, type Scene, type SimulationResult, type Units, type Vec2 } from "@csd/core";
 import type { ViewerProps } from "../viewer/types";
 import { Diagram } from "../components/Diagram";
 import { fitViewBox, pxPerMeter, pxToWorld, sceneBounds, worldToPx, type ViewBox } from "../lib/diagramView";
@@ -15,7 +15,6 @@ import { useElementSize, usePhone, tokenPx } from "../lib/dom";
 import { streetNames } from "../lib/streets";
 import { estimateLabelSize, placeLabels, type LabelRequest } from "../lib/labels";
 import { measureRows, shownRows, distanceText, type MeasureGroups, type MeasureRow } from "../lib/measure";
-import { roleName } from "../lib/text";
 import { useServices } from "../services/context";
 import type { PhysicsService } from "../services/types";
 
@@ -69,10 +68,11 @@ function itemsAt(env: Env, t: number): LabelItem[] {
     const parkedStill = sv?.action === "parked" && t <= 0;
     const unsure = sv?.speed.kind === "unsure";
     const speed = parkedStill ? "parked" : `${unsure ? "~" : ""}${formatSpeed(pose.speedMps, { units: env.units }).text}`;
-    const text = `${v.id} ${sv ? roleName(sv) : ""} ${speed}`;
+    // Core's one label: "A · Your car · 25 mph" (the letter sits in the badge).
+    const text = vehicleTag({ id: v.id }, speed);
     const at = worldToPx(env.vb, env.size, pose.xM, pose.yM);
     const radius = (Math.max(v.lengthM, v.widthM) / 2) * env.ppm;
-    return { id: v.id, name: sv ? roleName(sv) : v.id, speed, at, radius, w: estimateLabelSize(text, LABEL_CHAR_PX, LABEL_H, LABEL_PAD).w };
+    return { id: v.id, name: roleWords({ id: v.id }), speed, at, radius, w: estimateLabelSize(text, LABEL_CHAR_PX, LABEL_H, LABEL_PAD).w };
   });
 }
 
@@ -210,7 +210,7 @@ export function ViewerSlot({ scene, roads, sim, timeS, view, showLabels, showMea
             return (
               <button type="button" key={i.id} className={`vlabel v-${i.id.toLowerCase()}`} data-id={i.id} data-side={p.side} style={{ left: p.x, top: p.y }} onClick={(e) => { if (measureTool) { e.stopPropagation(); pickVehicle(i.id); } else onSelectVehicle?.(i.id); }}>
                 <span className="badge-letter">{i.id}</span>
-                <span>{i.name}</span>
+                <span>{i.name} ·</span>
                 <span className="num">{i.speed}</span>
               </button>
             );

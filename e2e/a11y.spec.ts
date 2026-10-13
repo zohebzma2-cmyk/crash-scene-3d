@@ -2,7 +2,7 @@
 // the checks (not even by URL), focus on the h1 after each move, and axe on every step.
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { expect, fillDefaultClaim, freshStart, openExample, searchAndPick, searchBox, test, toReview, waitForViewer } from "./helpers";
+import { DEFAULT_ANSWERS, answerVehicle, expect, fillDefaultClaim, freshStart, openExample, searchAndPick, searchBox, test, toReview, waitForViewer } from "./helpers";
 
 async function axe(page: Page, where: string): Promise<void> {
   const res = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]).analyze();
@@ -136,6 +136,8 @@ test.describe("axe: no serious or critical violations", () => {
     await axe(page, "vehicles (gate showing)");
     await page.locator("#vehicle-A").getByRole("radio", { name: "Northbound on Main Street" }).click();
     await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
+    await answerVehicle(page, "A", { type: "Car", ...DEFAULT_ANSWERS.A });
+    await answerVehicle(page, "B", DEFAULT_ANSWERS.B);
     await page.locator("#vehicle-A").getByRole("radio", { name: "Hit on the right side", exact: true }).click();
     await toReview(page);
     await waitForViewer(page);

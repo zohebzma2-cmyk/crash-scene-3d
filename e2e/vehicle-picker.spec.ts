@@ -34,7 +34,7 @@ test.describe("the vehicle picker", () => {
     const year = fieldOf(a, "Year");
     const make = fieldOf(a, "Make");
     const model = fieldOf(a, "Model");
-    await expect(make).toHaveValue("Honda");   // from the claim
+    await expect(make).toHaveValue("");   // a new visitor's A starts empty (no prefilled claim car)
 
     // Year: type it like a person; the list is open as you type; tap the year.
     await year.click();

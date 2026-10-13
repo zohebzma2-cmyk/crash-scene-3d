@@ -7,7 +7,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./png-meta": "./src/png-meta.ts"
+    "./png-meta": "./src/png-meta.ts",
+    "./names": "./src/names.ts"
   },
   "dependencies": {
     "@csd/core": "*",

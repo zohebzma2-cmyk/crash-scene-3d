@@ -25,6 +25,8 @@ const browser = await chromium.launch();
 const rows = [];
 for (const width of [1440, 390]) {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 2, reducedMotion: "reduce" });
+  // The first-visit welcome (DESIGN.md section 19) is seen already, so the frames show the screens.
+  await ctx.addInitScript(() => { try { localStorage.setItem("csd.welcome.v1", JSON.stringify({ seen: true })); } catch { /* blocked */ } });
   const pages = {};
   for (const [k, url] of Object.entries(THEIRS)) {
     pages[k] = await ctx.newPage();

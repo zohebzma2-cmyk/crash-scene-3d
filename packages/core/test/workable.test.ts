@@ -317,7 +317,8 @@ describe("a real hole in the working speeds, through simulate", () => {
   const a = A(sim);
 
   it("A passes through C at the middle speeds only, so speeds either side work", () => {
-    for (const [speed, ok] of [[25, true], [27, true], [27.5, false], [30, false], [34, false], [34.5, true], [35, true]] as const) {
+    // (Since 2026-10-11 a vehicle keeps to the middle of its lane until the last DRIFT_M, so the window closes at 35 mph, not 34.5.)
+    for (const [speed, ok] of [[25, true], [27, true], [27.5, false], [30, false], [34.5, false], [35, true], [35.5, true]] as const) {
       const again = simulate(holeScene(known(speed)).scene, net);
       expect(again.ok, `A at ${speed} mph`).toBe(ok);
       if (!again.ok) expect(again.errors[0]!.code).toBe("passes-through");
@@ -327,12 +328,12 @@ describe("a real hole in the working speeds, through simulate", () => {
   it("shows the run that holds the picture, lists the separate run left out, and keeps every sentence literally true", () => {
     expect([mph(a.speedAtImpactMps.lo), mph(a.speedAtImpactMps.mid), mph(a.speedAtImpactMps.hi)].map((x) => Math.round(x * 1e6) / 1e6)).toEqual([25, 27, 27]);
     const gap = sim.warnings.find((x) => x.code === "range-gap")!;
-    expect(gap.text).toBe("Speeds of 34.5 to 35 mph for vehicle A would also work, but speeds that don't work lie between them and the ones shown, so they are left out.");
+    expect(gap.text).toBe("Speeds of 35 mph for vehicle A would also work, but speeds that don't work lie between them and the ones shown, so they are left out.");
     expect(sim.warnings.find((x) => x.code === "picture-speed")!.text).toBe("Vehicle A's middle speed (30 mph) doesn't work here, so the picture uses 27 mph, the nearest speed that does.");
     // Other speeds above the cut work, so there is no 'At ... and above, ... end at' sentence to be false; the gap warning says it.
     expect(sim.warnings.some((x) => x.code === "range-end" || x.code === "range-start")).toBe(false);
     // The excluded speeds really do work on their own, and the speed in between really doesn't.
-    expect(simulate(holeScene(known(34.5)).scene, net).ok).toBe(true);
+    expect(simulate(holeScene(known(35)).scene, net).ok).toBe(true);
     expect(simulate(holeScene(known(28)).scene, net).ok).toBe(false);
   });
 
@@ -352,34 +353,39 @@ describe("a real hole in the working speeds, through simulate", () => {
 });
 
 describe("the map's edge and the end of a street", () => {
-  const flatDiagonal = sceneOf([
-    veh("A", { type: "car", bearingDeg: 45, speed: known(25), zone: "left" }),
-    veh("B", { type: "suv", bearingDeg: 135, speed: known(25), zone: "front" }),
+  const tbone = sceneOf([
+    veh("A", { type: "car", bearingDeg: 0, ...MAIN, speed: known(25), zone: "left" }),
+    veh("B", { type: "suv", bearingDeg: 90, ...PARK, speed: known(25), zone: "front" }),
   ]);
 
-  it("never warns 'off-road' where there is no road data: samples beyond the data's edge are skipped", () => {
+  it("never warns 'off-road' where there is no road data, and a road cut off by the data's edge carries on (no start from a stop)", () => {
     const full = intersectionNet({ corners: false });
-    expect(run(flatDiagonal, full).warnings.map((w) => w.code)).toContain("off-road");
     const tiny = { ...full, radiusM: 12 }; // data covers 12 m; nothing beyond 2 m is judged
-    const codes = run(flatDiagonal, tiny).warnings.map((w) => w.code);
-    expect(codes).not.toContain("off-road");
-    expect(codes).toContain("path-not-on-road"); // that one is about matching a road, not about data
+    for (const net of [full, tiny]) {
+      const sim = run(tbone, net);
+      expect(sim.warnings.map((w) => w.code)).not.toContain("off-road");
+      expect(sim.assumptions.filter((a) => a.id.startsWith("start-from-stop"))).toEqual([]);
+    }
   });
 
-  it("when a path runs back past the end of its street it says so, not 'check its direction and lane'", () => {
-    // Park Street starts 20 m west of the junction; B comes from the west at 25 mph, so its path is 56 m long.
+  it("when a street starts behind a vehicle, it starts from a stop there (said, with the numbers), and is refused when that would need more than a car can do", () => {
+    // Park Street starts 20 m west of the junction; B comes from the west at 25 mph, which would need 56 m at a steady speed.
     const base = intersectionNet({ corners: false });
     const net = { ...base, ways: base.ways.map((w) => (w.id === "park" ? makeWay({ ...w, centerline: [{ x: -20, y: 0 }, { x: 0, y: 0 }, { x: 150, y: 0 }] }) : w)) };
-    const scene = sceneOf([
-      veh("A", { type: "car", bearingDeg: 0, ...MAIN, speed: known(25), zone: "left" }),
-      veh("B", { type: "suv", bearingDeg: 90, ...PARK, speed: known(25), zone: "front" }),
-    ]);
-    const sim = run(scene, net);
-    const w = sim.warnings.filter((x) => x.code === "path-past-street-end");
-    expect(w.map((x) => [...x.vehicleIds])).toEqual([["B"]]);
-    expect(w[0]!.text).toBe("Vehicle B's path runs past where its street ends, so part of it is drawn straight.");
+    const sim = run(tbone, net);
     expect(sim.warnings.some((x) => x.code === "off-road")).toBe(false);
-    // The full street, no warning at all.
-    expect(run(scene, base).warnings.some((x) => x.code === "path-past-street-end" || x.code === "off-road")).toBe(false);
+    const B = sim.vehicles.find((v) => v.id === "B")!;
+    const start = sim.assumptions.find((a) => a.id === "start-from-stop-B")!;
+    expect(start.text).toMatch(/^Vehicle B has about \d+ ft \/ \d+\.\d m of road or lot behind it, so the picture starts it from a stop there and speeds it up evenly to 25 mph at the crash, at \d+\.\d m\/s²/);
+    // Everything before the impact is on Park Street (west of the junction, no further back than where it starts).
+    for (const p of B.track.slice(0, Math.round(-sim.startTimeS / sim.dtS))) expect(p.xM).toBeGreaterThanOrEqual(-20 - 3);
+    expect(B.track[0]!.speedMps).toBe(0);
+    expect(B.approachDistanceM.mid).toBeLessThan(25);
+    // At 40 mph, 20 m from a stop is more than a car can do: refused, in plain words.
+    const fast = simulate(sceneOf([tbone.vehicles[0]!, { ...tbone.vehicles[1]!, speed: known(40) }]), net);
+    expect(fast.ok ? [] : fast.errors.map((e) => e.code)).toEqual(["start-too-short"]);
+    if (!fast.ok) expect(fast.errors[0]!.text).toMatch(/^Vehicle B would have to reach 40 mph from a stop in about \d+ ft \/ \d+\.\d m from where its road or lot starts, faster than a car can speed up\./);
+    // The full street: no start from a stop.
+    expect(run(tbone, base).assumptions.some((a) => a.id.startsWith("start-from-stop"))).toBe(false);
   });
 });

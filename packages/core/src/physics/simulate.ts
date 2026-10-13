@@ -15,19 +15,19 @@ import type { Scene } from "../contracts/scene";
 import type { Assumption, ImpactData, PlainMessage, SimulationOutcome, SimulationResult, VehicleResult } from "../contracts/simulation";
 import type { Zone } from "../contracts/scene";
 import { PRESETS } from "../presets";
-import { ROAD_WORDS, ZONE_WORDS, formatAcceleration, formatMassKg, formatMassLb, formatMphNumber, formatSpeedExact } from "../format";
+import { DRIVEWAY_WORDS, ROAD_WORDS, ZONE_WORDS, formatAcceleration, formatDistance, formatMassKg, formatMassLb, formatMphNumber, formatSpeedExact } from "../format";
 import {
-  APPROACH_S, BRAKE_FACTOR, BRAKING_S, CONTACT_FRICTION, DT_S, DEFAULT_LIMIT_MPH, FRICTION, G_MPS2, IMPACT_PASSES, MPH_TO_MPS, OVERLAP_TOLERANCE_M, PHYSICS_VERSION, RANGE_HALF_MPH,
+  APPROACH_S, BRAKE_FACTOR, BRAKING_S, CONTACT_FRICTION, DT_S, DEFAULT_LIMIT_MPH, FRICTION, G_MPS2, IMPACT_PASSES, MAX_START_ACCEL_MPS2, MPH_TO_MPS, OVERLAP_TOLERANCE_M, PHYSICS_VERSION, RANGE_HALF_MPH,
   RANGE_STEP_MPH, RESTITUTION, TURN_RADIUS_LEFT_M, TURN_RADIUS_RIGHT_M,
 } from "./constants";
 import {
-  add, boxCorners, boxOverlapsRing, dist, dot, fwdOf, makePoly, mul, openRing, pointAt, pointAtFrom, project, rightOf, satDepth, sub, wrap2Pi, wrapPi, pointInRing,
+  add, boxCorners, boxOverlapsRing, dist, dot, fwdOf, makePoly, mul, openRing, pointAt, pointAtFrom, project, rightOf, satDepth, sub, wrap2Pi, wrapPi,
 } from "./geo";
 import { type Body2D, type ContactSpec, resolveContacts } from "./impact";
 import { checkScene } from "./check";
-import { cleanNet } from "./lanes";
+import { cleanNet, onRoadArea } from "./lanes";
 import { type CutKind, cutSentence, excludedRuns, gapSentence, selectRange } from "./ranges";
-import { type Approach, ZONE_ANGLE_RAD, approachBack, approachFor, brakeDecel, letterName, speedCases, vehicleWord, zoneAnchorLocal } from "./model";
+import { type Approach, type RoomyApproach, ZONE_ANGLE_RAD, approachBackWithin, approachFor, approachWithin, brakeDecel, letterName, speedCases, vehicleWord, zoneAnchorLocal } from "./model";
 import { type ClosingFailure, type Contact, type MotionBody, type PlacedBody, closingFailure, closingMessage, placeDetailed } from "./placement";
 import { toLocal } from "./projection";
 import { cannotWorkOut, tooLongMessage, trackTooLong, validatePin, validateScene } from "./validate";
@@ -129,19 +129,10 @@ function makeWallTester(roads: RoadNetwork | null): WallTester {
   return tester;
 }
 
-const offRoadTesters = new WeakMap<RoadNetwork, (p: Pose, lengthM: number, widthM: number) => boolean>();
-/** Is any corner of the vehicle off the road (road width plus 30 cm) and outside every parking lot? One tester per network. */
+/** Is any corner of the vehicle off the drivable area (a road's width plus 30 cm, a parking lot, a junction's inside corner)? */
 function offRoadTester(roads: RoadNetwork): (p: Pose, lengthM: number, widthM: number) => boolean {
-  const hit = offRoadTesters.get(roads);
-  if (hit) return hit;
-  const made = makeOffRoadTester(roads);
-  offRoadTesters.set(roads, made);
-  return made;
-}
-function makeOffRoadTester(roads: RoadNetwork): (p: Pose, lengthM: number, widthM: number) => boolean {
-  const ways = roads.ways.map((w) => ({ poly: makePoly(w.centerline), half: ((w.oneway ? w.lanesForward : w.lanesForward + w.lanesBackward) * w.laneWidthM) / 2 + 0.3 }));
-  return (p, L, W) => boxCorners(p.xM, p.yM, p.headingRad, L, W).some((c) =>
-    !ways.some((w) => project(w.poly, c).dist <= w.half) && !roads.parking.some((lot) => pointInRing(c, lot.outline)));
+  const on = onRoadArea(roads);
+  return (p, L, W) => boxCorners(p.xM, p.yM, p.headingRad, L, W).some((c) => !on(c));
 }
 
 // ---------------------------------------------------------------- one scanned speed
@@ -149,10 +140,21 @@ function makeOffRoadTester(roads: RoadNetwork): (p: Pose, lengthM: number, width
 type Reason =
   | { readonly kind: "closing"; readonly f: ClosingFailure }
   | { readonly kind: "pass"; readonly a: PlacedBody["id"]; readonly b: PlacedBody["id"] }
-  | { readonly kind: "building"; readonly id: PlacedBody["id"] };
+  | { readonly kind: "building"; readonly id: PlacedBody["id"] }
+  /** Too little path behind it to reach its speed from a stop (out of a driveway, a lot, a street that ends there). */
+  | { readonly kind: "start"; readonly id: PlacedBody["id"]; readonly roomM: number; readonly vMps: number; readonly driveway: boolean };
 
 const reasonMessage = (r: Reason, allIds: readonly PlacedBody["id"][]): PlainMessage => {
   if (r.kind === "closing") return closingMessage(r.f, allIds);
+  if (r.kind === "start") {
+    const room = formatDistance(r.roomM).text;
+    const where = r.driveway ? `out of ${DRIVEWAY_WORDS}` : "from where its road or lot starts";
+    return {
+      code: "start-too-short",
+      text: `${letterName(r.id)} would have to reach ${formatSpeedExact(r.vMps)} from a stop in about ${room} ${where}, faster than a car can speed up. Check its speed, which way it was going, or what it was doing.`,
+      vehicleIds: [r.id],
+    };
+  }
   if (r.kind === "pass") {
     return { code: "passes-through", text: `${letterName(r.a)} would have passed through ${vehicleWord(r.b)} before the crash. Check the speeds, directions or lanes.`, vehicleIds: [r.a, r.b] };
   }
@@ -315,12 +317,22 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
   const nK = unsureIdx.length ? Math.round((2 * RANGE_HALF_MPH) / RANGE_STEP_MPH) : 0;
   const midK = unsureIdx.length ? Math.round(RANGE_HALF_MPH / RANGE_STEP_MPH) : 0;
   const enteredAt = (k: number): number[] => cases.map((c) => (c.unsure ? (c.limitMph! - RANGE_HALF_MPH + k * RANGE_STEP_MPH) * MPH_TO_MPS : c.mid));
-  const approachesAt = (ent: readonly number[]): Approach[] => bodies.map((b, i) => approachFor(ent[i]!, b.veh.braking && b.guide.moving ? brakeDecel(mu) : 0));
+  /**
+   * How much path each vehicle has behind its place at the impact, m: where its path really starts (a driveway, a lot's edge,
+   * a street that ends), else null (it runs on past the map's edge, or there is no road data). With less room than its
+   * approach needs it starts from a stop there (model.approachBackWithin).
+   */
+  const roomOf = (b: PlacedBody): number | null => (b.guide.moving && b.guide.startsThere ? centrePath(b).sFoot : null);
+  const brakeOf = (b: PlacedBody): number => (b.veh.braking && b.guide.moving ? brakeDecel(mu) : 0);
+  const approachesAt = (ent: readonly number[]): RoomyApproach[] => bodies.map((b, i) => approachWithin(ent[i]!, brakeOf(b), roomOf(b)));
 
   /**
-   * The path the vehicle's CENTRE follows: its lane line moved sideways and along by the offset it has at the
-   * impact, measured in the vehicle's own frame (so on a turn the offset turns with the vehicle). Distances are
-   * measured along this path, so the centre covers speed x time whatever the offset.
+   * The path the vehicle's CENTRE follows: its lane line moved along by the offset it has at the impact, and sideways by
+   * it, measured in the vehicle's own frame (so on a turn the offset turns with the vehicle). On a road the sideways part
+   * comes in only over the last DRIFT_M before the impact (easing in): before that the vehicle keeps to the middle of its
+   * lane, and where the contact puts its body off the lane line (hit on its side) it drifts there late, not along the whole
+   * road. With no road data the offset holds all the way. Distances are measured along this path, so the centre covers
+   * speed x time whatever the offset.
    */
   const centreFor = new Map<string, { poly: ReturnType<typeof makePoly>; sFoot: number }>();
   const centrePath = (b: PlacedBody) => {
@@ -331,10 +343,33 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
     const g0 = pointAt(guide, sFoot);
     const off = sub(b.centre, g0.p);
     const along = dot(off, fwdOf(g0.bearing)), side = dot(off, rightOf(g0.bearing));
-    const pts = guide.pts.map((p, i) => {
+    // How much of the sideways offset applies at arc length s: none before the drift, all of it from the impact on.
+    // Only on a road: with no road data (or across a parking lot) there is no lane to keep to, and the offset holds.
+    const onLane = b.guide.roadId !== "template";
+    const drift = (s: number): number => {
+      if (!onLane) return 1;
+      const u = (s - (sFoot - DRIFT_M)) / DRIFT_M;
+      return u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
+    };
+    // The guide's vertices, plus a fine step through the drift so it eases in smoothly.
+    const at = new Set<number>(guide.cum);
+    if (onLane) for (let s = Math.max(0, sFoot - DRIFT_M); s < sFoot; s += DRIFT_STEP_M) at.add(s);
+    at.add(sFoot);
+    // Each vertex's own direction (halfway between its two segments); between vertices it turns evenly from one to the next,
+    // so the moved line bends smoothly where the guide does.
+    const vertexBeta = guide.pts.map((p, i) => {
       const prev = i > 0 ? bearingOfSeg(guide.pts[i - 1]!, p) : undefined, next = i + 1 < guide.pts.length ? bearingOfSeg(p, guide.pts[i + 1]!) : undefined;
-      const beta = prev === undefined ? next! : next === undefined ? prev : prev + wrapPi(next - prev) / 2;
-      return add(add(p, mul(fwdOf(beta), along)), mul(rightOf(beta), side));
+      return prev === undefined ? next! : next === undefined ? prev : prev + wrapPi(next - prev) / 2;
+    });
+    let seg = 0;
+    const pts = [...at].sort((x, y) => x - y).map((s) => {
+      while (seg < guide.pts.length - 2 && guide.cum[seg + 1]! <= s) seg++;
+      const len = guide.cum[seg + 1]! - guide.cum[seg]!;
+      const u = len > 1e-12 ? Math.min(1, Math.max(0, (s - guide.cum[seg]!) / len)) : 0;
+      const p = pointAt(guide, s).p;
+      const b0 = vertexBeta[seg]!, b1 = vertexBeta[seg + 1] ?? b0;
+      const beta = b0 + wrapPi(b1 - b0) * u;
+      return add(add(p, mul(fwdOf(beta), along)), mul(rightOf(beta), side * drift(s)));
     });
     const poly = makePoly(pts);
     const out = { poly, sFoot: project(poly, b.centre).s };
@@ -346,12 +381,13 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
   const preTrack = (b: PlacedBody, ap: Approach): Pose[] => {
     const out: Pose[] = [];
     const { poly, sFoot } = centrePath(b);
-    const aBrake = b.veh.braking && b.guide.moving ? brakeDecel(mu) : 0;
+    const aBrake = brakeOf(b);
+    const room = roomOf(b);
     // The arc length grows sample by sample, so each lookup walks on from the last segment (the same points, sooner).
     let seg = 0;
     for (let i = 0; i < i0; i++) {
       if (!b.guide.moving) { out.push({ xM: b.centre.x, yM: b.centre.y, headingRad: wrap2Pi(b.headingRad), speedMps: 0 }); continue; }
-      const kin = approachBack(ap.vImpactMps, aBrake, (i0 - i) * DT_S); // (i0 - i) steps before the impact
+      const kin = approachBackWithin(ap.vImpactMps, aBrake, room, (i0 - i) * DT_S); // (i0 - i) steps before the impact
       const walk = pointAtFrom(poly, sFoot - kin.s, seg);
       seg = walk.i;
       const pp = walk.at;
@@ -368,6 +404,13 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
     const f = closingFailure(motion, contacts, ent);
     if (f) return { ent, reasons: [{ kind: "closing", f }] };
     const ap = approachesAt(ent);
+    // A start from a stop harder than a car can manage is not drawn.
+    const starts: Reason[] = [];
+    bodies.forEach((b, bi) => {
+      const a = ap[bi]!;
+      if (a.fromRest && a.startAccelMps2 > MAX_START_ACCEL_MPS2 + 1e-9) starts.push({ kind: "start", id: b.id, roomM: roomOf(b)!, vMps: a.vImpactMps, driveway: b.guide.driveway });
+    });
+    if (starts.length) return { ent, reasons: firstOnly ? starts.slice(0, 1) : starts };
     const pre = bodies.map((b, bi) => preTrack(b, ap[bi]!));
     const perSample = bodies.length + (bodies.length * (bodies.length - 1)) / 2;
     const wallWork0 = hits.work;
@@ -419,7 +462,8 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
 
   // ---- full runs (impact and slide) for one scanned speed
   const runAt = (k: number): BodyRun[] => {
-    const { before, specs, approach } = impactInput(bodies, contacts, enteredAt(k), mu);
+    const { before, specs } = impactInput(bodies, contacts, enteredAt(k), mu);
+    const approach = approachesAt(enteredAt(k));
     const state = resolveContacts(before, specs, RESTITUTION, IMPACT_PASSES, CONTACT_FRICTION);
     const cuts = bodies.map((b, i) => {
       const radiusOfGyration = Math.sqrt(b.dims.inertiaKgM2 / b.dims.massKg);
@@ -487,27 +531,29 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
     const offRoad = offRoadTester(roads);
     // The road data covers a square of half-size radiusM; beyond (nearly) its edge there is no data, and no data is not off-road.
     const extent = roads.radiusM - MAP_EDGE_MARGIN_M;
+    // Paths follow the roads (a direction that follows no road is refused in the placement, a path that runs out of road
+    // starts from a stop where it does), so this only notes a body that clips the road's edge on the way, such as a wide
+    // vehicle cutting a tight corner. A vehicle out of a driveway is off the road by design for its first DRIVEWAY_M.
     bodies.forEach((b, bi) => {
-      if (b.guide.fallback) {
-        warnings.push({ code: "path-not-on-road", text: `${letterName(b.id)}'s direction doesn't line up with a road near the pin, so its path is drawn straight.`, vehicleIds: [b.id] });
-      }
-      // Samples past the start of the street (the path is drawn straight there) are told apart from samples on the street's own path.
-      const aBrakeB = b.veh.braking && b.guide.moving ? brakeDecel(mu) : 0;
-      const sStart = centrePath(b).sFoot;
-      let onPath = false, past = false;
-      pres[bi]!.forEach((p, i) => {
-        if (i % 6 !== 0 || Math.abs(p.xM) > extent || Math.abs(p.yM) > extent || !offRoad(p, b.dims.lengthM, b.dims.widthM)) return;
-        const extrapolated = b.guide.moving && !b.guide.fallback && approachBack(apPic[bi]!.vImpactMps, aBrakeB, (i0 - i) * DT_S).s > sStart + 1e-6;
-        if (extrapolated) past = true; else onPath = true;
-      });
-      if (onPath) {
-        warnings.push({ code: "off-road", text: `${letterName(b.id)} would have been off the road and any parking lot before the crash. Check its direction and lane. The picture draws it anyway.`, vehicleIds: [b.id] });
-      }
-      if (past) {
-        warnings.push({ code: "path-past-street-end", text: `${letterName(b.id)}'s path runs past where its street ends, so part of it is drawn straight.`, vehicleIds: [b.id] });
+      if (b.guide.driveway || !b.guide.moving) return;
+      const clips = pres[bi]!.some((p, i) => i % 6 === 0 && Math.abs(p.xM) <= extent && Math.abs(p.yM) <= extent && offRoad(p, b.dims.lengthM, b.dims.widthM));
+      if (clips) {
+        warnings.push({ code: "off-road", text: `${letterName(b.id)} runs over the edge of the road before the crash. Check its lane, or whether it came out of ${DRIVEWAY_WORDS}.`, vehicleIds: [b.id] });
       }
     });
   }
+  // A vehicle with less room behind it than its approach needs starts from a stop there: an assumption, with the numbers.
+  const startNotes: Assumption[] = [];
+  bodies.forEach((b, bi) => {
+    const a = apPic[bi]!;
+    if (!a.fromRest) return;
+    const where = b.guide.driveway ? `of ${DRIVEWAY_WORDS} before the road` : "of road or lot behind it";
+    startNotes.push({
+      id: `start-from-stop-${b.id}`,
+      text: `${letterName(b.id)} has about ${formatDistance(roomOf(b)!).text} ${where}, so the picture starts it from a stop there and speeds it up evenly to ${formatSpeedExact(a.vImpactMps)} at the crash, at ${formatAcceleration(a.startAccelMps2)}.`,
+      value: a.startAccelMps2, unit: "m/s²",
+    });
+  });
   // A warning never blocks: where the entered zone could not touch, the nearest zone that does was used, and this says which.
   for (const u of zonesUsed) {
     warnings.push({
@@ -537,6 +583,7 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
     const causeOf = (r: Reason): Cause => {
       const order = (x: PlacedBody["id"], y: PlacedBody["id"]): [PlacedBody["id"], PlacedBody["id"]] => (isUnsure(x) || !isUnsure(y) ? [x, y] : [y, x]);
       if (r.kind === "building") return { cause: r.id, other: r.id, kind: "building" };
+      if (r.kind === "start") return { cause: r.id, other: r.id, kind: "start" };
       if (r.kind === "pass") { const [c, o] = order(r.a, r.b); return { cause: c, other: o, kind: "pass" }; }
       if (r.f.kind === "none-moving") return { cause: firstUnsure, other: firstUnsure, kind: "closing" };
       const [c, o] = r.f.kind === "apart" ? order(r.f.a, r.f.b) : order(r.f.mover, r.f.other);
@@ -639,7 +686,7 @@ function simulateChecked(scene: Scene, rawRoads: RoadNetwork | null, drawsOnly: 
     impactPointM,
     vehicles,
     gaps,
-    assumptions: buildAssumptions(scene, bodies, mu, rangeNote, vehicles.some((v) => (v.impact?.deltaVMps.mid ?? 0) / MPH_TO_MPS > DAMAGE_DELTA_V_MPH)),
+    assumptions: [...buildAssumptions(scene, bodies, mu, rangeNote, vehicles.some((v) => (v.impact?.deltaVMps.mid ?? 0) / MPH_TO_MPS > DAMAGE_DELTA_V_MPH)), ...startNotes],
     warnings,
   };
   return { ok: true, result };
@@ -662,6 +709,14 @@ interface RangeNote {
   /** Other working speeds exist beyond a stretch of speeds that don't work, and are left out. */
   readonly excluded: boolean;
 }
+
+/**
+ * A vehicle whose body sits off its lane line at the impact (a side hit puts the line of the other's path at its side) drifts
+ * there over this distance before the impact, m; before that it keeps to the middle of its lane.
+ */
+const DRIFT_M = 20;
+/** Step of the eased drift, m. */
+const DRIFT_STEP_M = 1;
 
 /** Road data stops being trusted this close to the edge of the fetched square, m. */
 const MAP_EDGE_MARGIN_M = 10;

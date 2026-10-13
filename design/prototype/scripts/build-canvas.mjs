@@ -38,6 +38,8 @@ const browser = await chromium.launch();
 const boards = {};
 for (const [file, title, route, width, kind, fresh] of FRAMES) {
   const page = await browser.newPage({ viewport: { width, height: width < 500 ? 844 : 900 }, reducedMotion: "reduce", userAgent: "InsurifyAI-CrashScene-Prototype/0.1 (+https://insurifyai.app; design frames)" });
+  // The first-visit welcome (DESIGN.md section 19) is seen already, so the frames show the screens.
+  await page.addInitScript(() => { try { localStorage.setItem("csd.welcome.v1", JSON.stringify({ seen: true })); } catch { /* blocked */ } });
   await page.goto(BASE);
   await page.evaluate(([k, v, f]) => { sessionStorage.clear(); if (!f) sessionStorage.setItem(k, v); }, [KEY, JSON.stringify(saved), !!fresh]);
   await page.goto(`${BASE}#${route}`);

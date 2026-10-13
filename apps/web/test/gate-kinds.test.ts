@@ -75,4 +75,14 @@ describe("missing details versus details that don't fit together", () => {
     const out = runGate(scene(), false, [true, true], checks([MISMATCH]));
     expect(out.map((p) => p.kind)).toEqual(["missing", "conflict"]);
   });
+
+  it("a direction that follows no road at the pin blocks (no 'See it anyway'), but is a detail that doesn't fit, with its one-tap fixes (roads and paths, 2026-10-11)", () => {
+    const OFF: PlainMessage = { code: "off-road-direction", vehicleIds: ["B"], text: "Vehicle B's direction doesn't follow any road at the pin. Pick the road it was on and the way it was going, or pick a driveway or parking lot if it came out of one." };
+    const out = runGate(scene(), true, [true, true], checks([MISMATCH]), [], () => [OFF]);
+    expect(out[0]).toEqual({ kind: "conflict", text: OFF.text, step: "vehicles", blocking: true, vehicleIds: ["B"], focus: "direction" });
+    expect(out.map((p) => p.kind)).toEqual(["conflict", "conflict"]);
+    // Not until every direction is picked, and a failing road check never blocks.
+    expect(runGate(scene(), true, [true, false], checks([]), [], () => [OFF]).some((p) => p.text === OFF.text)).toBe(false);
+    expect(runGate(scene(), true, [true, true], checks([]), [], () => { throw new Error("boom"); })).toEqual([]);
+  });
 });

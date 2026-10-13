@@ -15,7 +15,9 @@ const baseURL = external ?? `http://localhost:${PORT}`;
 
 // Tips for first-time users (DESIGN.md section 19) start hidden in every spec, as the screens looked before they
 // existed, through a stored value on the app's origin. e2e/tips.spec.ts clears it to test a real first visit.
-const tipsHidden = { cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "csd.tips.v1", value: JSON.stringify({ hidden: [], all: true }) }] }] };
+// The first-visit welcome (section 19) starts seen too (fixtures mode also keeps it away unless ?welcome=1);
+// e2e/welcome.spec.ts clears it.
+const tipsHidden = { cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "csd.tips.v1", value: JSON.stringify({ hidden: [], all: true }) }, { name: "csd.welcome.v1", value: JSON.stringify({ seen: true }) }] }] };
 
 // Headless Chromium has no GPU: SwiftShader gives the 3D viewer a real WebGL context.
 const launchOptions = { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] };

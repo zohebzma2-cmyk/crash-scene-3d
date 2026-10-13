@@ -20,6 +20,7 @@
     "e2e:full": "E2E_FULL=1 playwright test",
     "e2e:xb": "playwright test --grep @xb",
     "e2e:live": "playwright test -c playwright.live.config.ts",
+    "smoke": "node scripts/smoke.mjs",
     "check": "./check.sh",
     "fixer:bench": "node scripts/fixer-bench.mjs",
     "fixer:bench:browser": "node scripts/fixer-bench-browser.mjs",

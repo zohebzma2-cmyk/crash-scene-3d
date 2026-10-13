@@ -47,6 +47,18 @@ export const RANGE_STEP_MPH = 0.5;
 
 /** With road data given, the pin must have a road (or a parking lot) within this distance, m; otherwise there is nowhere to put the crash. */
 export const ROAD_REACH_M = 40;
+/**
+ * A vehicle that comes out of a driveway or parking lot starts this far from the edge of the road, m: a typical driveway
+ * or lot exit lane. Its path off the road is never longer.
+ */
+export const DRIVEWAY_M = 20;
+/**
+ * A vehicle whose path behind it is shorter than its approach (out of a driveway, a parking lot, a street that ends) starts
+ * from a stop there and speeds up evenly to its entered speed. No car speeds up harder than this from a stop, m/s² (half of
+ * gravity, about 0 to 60 mph in 5.5 s). UNVERIFIED: a typical figure for a hard start in an ordinary car, not a measurement;
+ * it needs a primary source before release. A start that would need more is refused.
+ */
+export const MAX_START_ACCEL_MPS2 = 0.5 * 9.80665;
 /** The fastest speed the tool accepts, m/s. */
 export const MAX_SPEED_MPS = LIMITS.maxSpeedMph * MPH_TO_MPS;
 /**

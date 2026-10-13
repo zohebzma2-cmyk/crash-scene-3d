@@ -3,7 +3,7 @@ import type { Scene } from "../src";
 /** A valid two-vehicle scene used by contract tests (made-up claim). */
 export function sampleScene(): Scene {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     claim: { number: "CLM-2419", vehicle: { year: 2021, make: "Honda", model: "Accord" } },
     location: { lat: 42.7654, lon: -71.4676, label: "Main Street & Park Street, Nashua", nearLabel: "", source: "example", place: "intersection" },
     occurred: { date: "2026-10-02", time: "17:15" },

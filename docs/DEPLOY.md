@@ -143,6 +143,7 @@ The proxy's global buckets and slots are shared by everyone, and our own runs co
 - **Stubbed against a deployed copy:** any e2e spec run with a `BASE_URL` that isn't this machine answers the vehicle lookups and map tiles inside the test. `/api/vehicles/*` goes to the real proxy code with a fake vPIC; `/api/geo/tile/*` gets a neutral PNG. This is `e2e/live-guard.ts`, made automatic for every spec through `e2e/helpers.ts`, and the live search specs use it too.
 - **Kept live:** search, crossing, type-ahead, Overpass and terrain, which the live checks are there to verify.
 - **One flow verifies vehicle lookups live:** `e2e/live/vehicles.live.spec.ts`. Run it once after a deploy that touches the proxy or the vehicles step.
+- **The release smoke is deliberately unstubbed** (`npm run smoke`, "Release safety" below): it exists to verify the real search, lookups and media, so it is run **once** per draft and once after a promote, never looped. It is the one script that may spend the media budget on purpose.
 - **Scratch and measuring scripts against the live site** call `stubNonEssentialApi(page)` from `e2e/live-guard.ts` on every page they open. They make a handful of requests and never loop.
 - **No** `--repeat-each`, no loops, and no live suites side by side. Everything from one machine is one proxy user.
 - `E2E_LIVE_API=all` turns the guard off. It is for a deliberate full live check by the owner only. `E2E_LIVE_GUARD=1` forces the guard on, to test the guard against a local build.
@@ -150,6 +151,77 @@ The proxy's global buckets and slots are shared by everyone, and our own runs co
   - it would need a Netlify secret and a bypass path in the proxy;
   - once our runs stop calling vPIC and tiles, they fit the same per-user limits a person has;
   - the per-user buckets are per IP and day, so our runs only ever spend our own per-user budget.
+
+## Release safety: draft → smoke → promote
+
+Nothing goes to production untested. Every release is a draft deploy first, smoked with `npm run smoke`, and only then promoted. All of this is run by hand by the owner (hard rule 3: no push, publish or deploy without asking Zoheb).
+
+### 1. Draft deploy
+
+From the commit you mean to ship (a clean checkout, `git status` empty, `./check.sh` green):
+
+```sh
+NETLIFY_SITE_ID=<site id> npx -y netlify-cli@27.9.0 deploy --build          # no --prod: a draft URL
+```
+
+The CLI prints a draft URL of the form `https://<deploy-id>--crash-scene-3d.netlify.app`. The build runs the same `netlify.toml` command as production, with the **deploy-preview** context's variables (see "Draft environment" below). Note the commit: `git rev-parse HEAD`.
+
+### 2. Smoke
+
+```sh
+SMOKE_SHA=$(git rev-parse --short HEAD) npm run smoke -- https://<deploy-id>--crash-scene-3d.netlify.app
+```
+
+`scripts/smoke.mjs` walks the whole flow **once** like a person, on Chromium at 1440 and WebKit at 390 (one after the other, never side by side), against the real deployment with nothing stubbed:
+
+| Check | What passes |
+|---|---|
+| `load` | the page loads with no console error, page error or CSP violation (counted for the whole run in `no-errors`); a first-visit "See what happened" dialog, if one appears, is dismissed and noted, never asserted |
+| `location`, `location-streets` | "Main Street and Park Street, Nashua NH" searched and picked; the pin lands on the Nashua crossing; both streets are found at the pin |
+| `vehicle-A`, `vehicle-B` | 2019 Chevrolet Silverado 1500 and 2021 Honda Accord typed key by key; each field's ranked suggestion appears and Enter takes it |
+| `logo-A/B`, `photo-A/B` | each card shows the real maker logo (`data-make-logo="logo"`) and a real stock photo (`data-photo="photo"`, image decoded), not the fallback icon |
+| `review-ready`, `review-canvas`, `glb` | the 3D view reports ready, the canvas is not one colour, and `/api/vehicles/model` answered `model/gltf-binary` for at least one vehicle |
+| `review-play`, `review-aftermath`, `review-measure` | the timeline plays through the impact mark; Aftermath switches on; the Measure tab (when present) lists its rows |
+| `save-*` | "Looks right: save it" → "Save to my device" (the second-tap "Download your files" case is handled) gives one ZIP with the PDF, both stills, the diagram and the scene JSON; the PDF prints the JSON's SHA-256; the PDF holds an image (the stock photo) |
+| `example-*` | `/?example=<name>#review` reaches ready for all three examples |
+
+It writes `report.md` and `report.json` (plus the ZIP, a Review screenshot and a screenshot of every failure) to `--out <dir>`, default `smoke-out/` (gitignored), prints the table, and exits 1 on any FAIL.
+
+**Media on a draft.** The CarImages and logo.dev keys are set for the **production** context only, so on a draft the logo, photo, GLB and PDF-photo checks still run and are reported, but a miss shows as `SKIP (not tested on draft (keys production-only))` and does not fail the run. This is automatic for any `*--crash-scene-3d.netlify.app` host and can be forced with `--draft`. Against production they are required. (A local `vite preview`, which has no `/api` at all, runs with `--allow-no-media`: the location and vehicle lookups are SKIP there too, and the flow borrows an example's pin.)
+
+Budget: one search, one crossing, the roads and terrain at the pin, about four vPIC lookups and three media calls per engine. Run it **once** per draft (twice at most if the first run was cut short), never in a loop, and not while another live run is going (one machine is one proxy user: "Our own test traffic").
+
+### 3. Promote
+
+Only when the smoke is green, and only the **same commit** the draft was built from:
+
+```sh
+git rev-parse HEAD                                                            # must equal the drafted SHA
+NETLIFY_SITE_ID=<site id> npx -y netlify-cli@27.9.0 deploy --build --prod     # production build of that commit
+git push origin <sha>:main                                                    # the repo's main matches what is live
+```
+
+Then one gentle production smoke (media now **required**), and `npm run verify:headers -- https://crash-scene-3d.netlify.app` (no `--local`):
+
+```sh
+SMOKE_SHA=<sha> npm run smoke -- https://crash-scene-3d.netlify.app
+```
+
+### 4. Rollback
+
+Netlify keeps every production deploy. If the production smoke fails: Netlify → Deploys → pick the last known-good deploy → **Publish deploy** (a restore; no rebuild). The site is back on the old files within seconds. Then fix forward: a new draft, a new smoke, a new promote. Keep `main` pointing at what is live: do not push a commit to `main` whose deploy was rolled back without a follow-up fix.
+
+### Draft environment (one-time, owner only)
+
+Today the `deploy-preview` context has only `PROXY_USER_SALT`; `CARIMAGES_API_KEY`, `CARIMAGES_API_SECRET` and `LOGO_DEV_SECRET_KEY` are production-only, which is why media is SKIP-on-miss on a draft. To test media on drafts too, set the same keys for the deploy-preview context. In your own terminal, read each value without echoing it, then set it; nothing prints and nothing lands in a file or the shell history (`read -s`):
+
+```sh
+read -s V && npx -y netlify-cli@27.9.0 env:set CARIMAGES_API_KEY "$V" --context deploy-preview --secret --site c40e798a-02e1-4a71-8199-47bec1beeed0; unset V
+read -s V && npx -y netlify-cli@27.9.0 env:set CARIMAGES_API_SECRET "$V" --context deploy-preview --secret --site c40e798a-02e1-4a71-8199-47bec1beeed0; unset V
+read -s V && npx -y netlify-cli@27.9.0 env:set LOGO_DEV_SECRET_KEY "$V" --context deploy-preview --secret --site c40e798a-02e1-4a71-8199-47bec1beeed0; unset V
+```
+
+Draft deploys made with `netlify deploy` (no `--prod`) build with the deploy-preview context. Once the keys are there, make media **required** on a draft too with `npm run smoke -- https://<deploy-id>--crash-scene-3d.netlify.app --require-media` (it overrides the draft auto-detection; it contradicts `--allow-no-media`). Until then the SKIP-on-miss default is right.
 
 ## Known limits
 

@@ -261,7 +261,7 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     const center = { lat: Number(p.data.lat.toFixed(5)), lon: Number(p.data.lon.toFixed(5)) };
     const query = overpassBboxQuery(center, p.data.radius);
     const entry = await fetchUpstream(ctx, {
-      cacheKey: keyOf("geo/overpass", { lat: center.lat.toFixed(5), lon: center.lon.toFixed(5), radius: p.data.radius }),
+      cacheKey: keyOf("geo/overpass", { lat: center.lat.toFixed(5), lon: center.lon.toFixed(5), radius: p.data.radius, features: 1 }),
       ttlS: config.cacheTtlS.overpass,
       calls: overpassCalls(query),
       // Same shape as examples/*/osm.json, so the app treats live and cached data alike.

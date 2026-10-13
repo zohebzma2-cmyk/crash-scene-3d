@@ -15,8 +15,10 @@ describe("the fixer's regression corpus", () => {
     expect(cases.length).toBeGreaterThanOrEqual(570);
     expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
     expect(cases.some((c) => c.src === "e2e")).toBe(true);
-    // Most cases have a recorded fix: the bar the fixer has to keep clearing.
-    expect(cases.filter((c) => c.best).length / cases.length).toBeGreaterThan(0.8);
+    // Most cases have a recorded fix: the bar the fixer has to keep clearing. (Lowered from 0.8 on 2026-10-11, roads and paths:
+    // about a sixth of the old fixes drew a path across open ground, a turn with no road to turn from mostly, and are refused
+    // now; their cases were re-baselined with a note saying why. The bar is where the fixer stands after that, with FIX_LIMITS raised to 440 checks and 2,000,000 units.)
+    expect(cases.filter((c) => c.best).length / cases.length).toBeGreaterThan(0.7);
   });
 
   it("never loses a fix or makes the best one bigger", () => {

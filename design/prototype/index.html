@@ -24,7 +24,7 @@
       <svg class="icon logo-mark" aria-hidden="true"><use href="#i-shield"/></svg>
       <span class="logo-word">Insurify<span>AI</span></span>
     </a>
-    <span class="claim-chip"><span class="claim-no">Claim CLM-2419</span><span class="long"> · <span id="claim-vehicle">2021 Honda Accord</span></span></span>
+    <span class="claim-chip"><span class="claim-no" id="claim-no-part" hidden><span class="claim-no"></span><span class="long"> · </span></span><span id="claim-vehicle-wrap"><span id="claim-vehicle">Your car</span></span></span>
     <span class="header-spacer"></span>
     <button class="icon-btn" type="button" id="theme-toggle" aria-label="Switch light or dark theme (prototype only)"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
     <a class="icon-btn" href="#location" aria-label="Close and go back to the claim"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></a>
@@ -34,6 +34,7 @@
     <svg class="icon icon-sm" aria-hidden="true"><use href="#i-info"/></svg>
     <span><strong>Illustration only.</strong><span class="long"> This shows what you described. It is not an expert reconstruction and does not decide fault.</span></span>
     <button type="button" class="link-btn" data-open="disclaimer-dialog">Learn more</button>
+    <button type="button" class="link-btn about-tool-link" id="about-tool">About this tool</button>
   </div>
 
   <nav class="stepper" aria-label="Progress">
@@ -125,6 +126,12 @@
             </div>
             <p class="hint">This changes how far the vehicles slide in the picture.</p>
           </fieldset>
+
+          <div class="group">
+            <label class="group-label" for="claim-number">Claim number (optional)</label>
+            <input class="input claim-number-input" id="claim-number" type="text" autocomplete="off" spellcheck="false" maxlength="32" aria-describedby="claim-number-hint">
+            <p class="hint" id="claim-number-hint">Letters, numbers and dashes, up to 32. It goes on your files and their names.</p>
+          </div>
 
           <div class="actions">
             <a class="btn btn-primary" href="#vehicles" id="to-vehicles">Next: vehicles <svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
@@ -302,7 +309,29 @@
   <div class="dialog-body">
     <h2 id="dlg-title">About this illustration</h2>
     <p>This 3D illustration was made in your browser by InsurifyAI from details you entered: location, vehicles, directions and estimated speeds. It is a simplified picture to help explain your account. It is not an expert accident reconstruction, expert opinion or evidence of fault, and real vehicle movement may have been different.</p>
-    <form method="dialog" class="actions"><button class="btn btn-primary">Got it</button></form>
+    <form method="dialog" class="actions"><button type="button" class="btn btn-quiet" id="about-tool-from-about">About this tool</button><button class="btn btn-primary">Got it</button></form>
+  </div>
+</dialog>
+
+<!-- Welcome on a first visit (DESIGN.md section 19). Opened by src/app.js; "About this tool" reopens it. -->
+<dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-modal="true">
+  <div class="dialog-body welcome-body">
+    <h2 id="welcome-title">See what happened, in 3D</h2>
+    <p>Enter the place, the vehicles, which way each one was going and where each was hit. We rebuild the crash in 3D on the real road layout, then you can save a PDF, pictures and the scene file, all made in your browser.</p>
+    <p class="welcome-disclaimer">Illustration only. This shows what you described. It is not an expert reconstruction and does not decide fault.</p>
+    <div class="welcome-how">
+      <h3 id="welcome-how">How it works</h3>
+      <ol class="welcome-steps" aria-labelledby="welcome-how">
+        <li><span class="step-dot" aria-hidden="true"><span class="n">1</span></span>Location</li>
+        <li><span class="step-dot" aria-hidden="true"><span class="n">2</span></span>Vehicles</li>
+        <li><span class="step-dot" aria-hidden="true"><span class="n">3</span></span>Review</li>
+        <li><span class="step-dot" aria-hidden="true"><span class="n">4</span></span>Save</li>
+      </ol>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-secondary" id="welcome-dismiss">Dismiss</button>
+      <button type="button" class="btn btn-primary" id="welcome-try">Try an example</button>
+    </div>
   </div>
 </dialog>
 

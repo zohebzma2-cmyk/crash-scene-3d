@@ -36,12 +36,12 @@ export function parseSpeedText(raw: string): { ok: true; mph: number } | { ok: f
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
-function Stepper({ value, field, unit = "mph", range = false, disabled = false, onStep, labels }: {
-  value: string; field?: ReactNode; unit?: string; range?: boolean; disabled?: boolean; onStep: (dir: -1 | 1) => void; labels: [string, string];
+function Stepper({ value, field, unit = "mph", range = false, disabled = false, downDisabled = false, onStep, labels }: {
+  value: string; field?: ReactNode; unit?: string; range?: boolean; disabled?: boolean; downDisabled?: boolean; onStep: (dir: -1 | 1) => void; labels: [string, string];
 }) {
   return (
     <div className="stepper-input" role="group">
-      <button className="icon-btn" type="button" aria-label={labels[0]} disabled={disabled} onClick={() => onStep(-1)}><Icon name="minus" /></button>
+      <button className="icon-btn" type="button" aria-label={labels[0]} disabled={disabled || downDisabled} onClick={() => onStep(-1)}><Icon name="minus" /></button>
       {field ?? <output className={`num stepper-value${range ? " range" : ""}`}>{value}</output>}<span className="unit">{unit}</span>
       <button className="icon-btn" type="button" aria-label={labels[1]} disabled={disabled} onClick={() => onStep(1)}><Icon name="plus" /></button>
     </div>
@@ -50,10 +50,17 @@ function Stepper({ value, field, unit = "mph", range = false, disabled = false, 
 
 export interface SpeedInputProps {
   readonly vehicle: SceneVehicle;
+  /**
+   * False until the claimant gives a speed (a new visitor's vehicle, nothing prefilled): the field is empty, "Slower" is
+   * off, "Faster" starts from 0, and the scene's speed is only a placeholder. Default true.
+   */
+  readonly answered?: boolean;
   readonly onChange: (speed: SceneSpeed) => void;
+  /** The speed goes back to unanswered: "Not sure" turned off when no speed was ever entered. */
+  readonly onClear?: () => void;
 }
 
-export function SpeedInput({ vehicle, onChange }: SpeedInputProps) {
+export function SpeedInput({ vehicle, answered = true, onChange, onClear }: SpeedInputProps) {
   const speed = vehicle.speed;
   const { setFieldError } = useUi();
   const errorId = useId();
@@ -61,27 +68,32 @@ export function SpeedInput({ vehicle, onChange }: SpeedInputProps) {
   // What is being typed, until it is a usable speed (then the scene's own value shows again). null = show the scene's value.
   const [draft, setDraft] = useState<string | null>(null);
   const problem = draft == null ? null : parseSpeedText(draft);
-  const bad = problem != null && !problem.ok ? problem.text : null;
+  // An emptied field on a speed never given is just "not answered yet" (the gate says that once): no red line under it.
+  const untouchedDraft = !answered && draft != null && draft.trim() === "";
+  const bad = problem != null && !problem.ok && !untouchedDraft ? problem.text : null;
   // Leaving (parked, removed, another step) takes a half-typed value with it, so it can't block anything.
   useEffect(() => () => setFieldError(fieldKey, null), [fieldKey, setFieldError]);
   const settle = (d: string | null) => {
     setDraft(d);
     const r = d == null ? null : parseSpeedText(d);
-    setFieldError(fieldKey, r && !r.ok ? { text: r.text, vehicleId: vehicle.id, missing: d != null && d.trim() === "" } : null);
+    // An empty field on a speed never given is just not answered yet: the gate already says so, once (no second line).
+    const untouched = !answered && d != null && d.trim() === "";
+    setFieldError(fieldKey, r && !r.ok && !untouched ? { text: r.text, vehicleId: vehicle.id, missing: d != null && d.trim() === "" } : null);
     return r;
   };
-  // The speed to come back to when "Not sure" is turned off again.
-  const [lastKnown, setLastKnown] = useState(speed.kind === "known" ? speed.mph : 25);
+  // The speed to come back to when "Not sure" is turned off again (none when no speed was ever entered).
+  const [lastKnown, setLastKnown] = useState<number | null>(answered && speed.kind === "known" ? speed.mph : null);
+  const shownMph = answered && speed.kind === "known" ? speed.mph : null;
   const unsure = speed.kind === "unsure";
   const limit = speed.kind === "unsure" ? speed.limitMph : null;
   const range = unsureRangeMph(limit);
   const street = vehicle.travel.roadName;
   return (
-    <div className="group" data-speed-group>
+    <div className="group" data-speed-group data-fix-speed>
       <p className="group-label">{SPEED_QUESTION}</p>
       <div className="speed-row">
         <Stepper
-          value={speed.kind === "known" ? String(speed.mph) : `${range.lo}–${range.hi}`}
+          value={speed.kind === "known" ? (shownMph == null ? "" : String(shownMph)) : `${range.lo}–${range.hi}`}
           field={speed.kind === "known" ? (
             <input
               className="num stepper-value stepper-field"
@@ -92,7 +104,7 @@ export function SpeedInput({ vehicle, onChange }: SpeedInputProps) {
               aria-label={`Speed at impact in mph, vehicle ${vehicle.id}`}
               aria-invalid={bad != null}
               aria-describedby={bad != null ? errorId : undefined}
-              value={draft ?? String(speed.mph)}
+              value={draft ?? (shownMph == null ? "" : String(shownMph))}
               onChange={(e) => {
                 const r = settle(e.target.value);
                 if (r?.ok) onChange({ kind: "known", mph: r.mph });
@@ -102,13 +114,16 @@ export function SpeedInput({ vehicle, onChange }: SpeedInputProps) {
           ) : undefined}
           range={unsure}
           disabled={unsure}
+          downDisabled={shownMph == null}
           labels={[`Slower, vehicle ${vehicle.id}`, `Faster, vehicle ${vehicle.id}`]}
-          onStep={(d) => { if (speed.kind !== "known") return; settle(null); onChange({ kind: "known", mph: clamp(speed.mph + d * SPEED_STEP_MPH, 0, LIMITS.maxSpeedMph) }); }}
+          onStep={(d) => { if (speed.kind !== "known") return; settle(null); onChange({ kind: "known", mph: clamp((shownMph ?? 0) + d * SPEED_STEP_MPH, 0, LIMITS.maxSpeedMph) }); }}
         />
         <button className="chip" type="button" aria-pressed={unsure} onClick={() => {
           settle(null);
-          if (speed.kind === "known") setLastKnown(speed.mph);
-          onChange(unsure ? { kind: "known", mph: lastKnown } : { kind: "unsure", limitMph: DEFAULT_LIMIT_MPH });
+          if (shownMph != null) setLastKnown(shownMph);
+          if (!unsure) onChange({ kind: "unsure", limitMph: DEFAULT_LIMIT_MPH });
+          else if (lastKnown != null) onChange({ kind: "known", mph: lastKnown });
+          else onClear?.();
         }}>Not sure</button>
       </div>
       {bad != null ? <p className="hint field-error" id={errorId} role="alert">{bad}</p> : null}

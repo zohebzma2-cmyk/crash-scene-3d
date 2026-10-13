@@ -3,13 +3,13 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { all, click, flush, get, key, maybe, mockMatchMedia, renderApp, setValue, text } from "./helpers";
-import { FORD_MODELS, makeServices, tbone } from "./fakes";
+import { FORD_MODELS, makeServices, tbone, withAccordA, withAnswers } from "./fakes";
 
 let app: Awaited<ReturnType<typeof renderApp>> | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 /** A located scene (the t-bone pin) so the roads load and the directions are road-relative. */
-const located = (mutate: (d: Doc) => Doc = (d) => d): Doc => mutate({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+const located = (mutate: (d: Doc) => Doc = (d) => d): Doc => mutate(withAnswers({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] }));
 const card = (id: string) => document.getElementById(`vehicle-${id}`) as HTMLElement;
 
 describe("step 2: vehicles", () => {
@@ -72,13 +72,13 @@ describe("step 2: vehicles", () => {
     click(get("button", /Add another vehicle/));
     click(get("button", /Add another vehicle/));
     expect(maybe("button", /Add another vehicle/)).toBeNull();
-    expect([...document.querySelectorAll(".vehicle h2")].map((h) => h.textContent)).toEqual(["Your car", "Vehicle B", "Vehicle C", "Vehicle D"]);
+    expect([...document.querySelectorAll(".vehicle h2")].map((h) => h.textContent)).toEqual(["Your car", "Other car", "Other car", "Other car"]);
     // C gets a make; remove B; C is now B with its details
     setValue(card("C").querySelector('input[id$="-make"]'), "Ford");
     expect(maybe("button", "Remove vehicle A")).toBeNull();
     click(get("button", "Remove vehicle B"));
     await flush();
-    expect([...document.querySelectorAll(".vehicle h2")].map((h) => h.textContent)).toEqual(["Your car", "Vehicle B", "Vehicle C"]);
+    expect([...document.querySelectorAll(".vehicle h2")].map((h) => h.textContent)).toEqual(["Your car", "Other car", "Other car"]);
     expect((card("B").querySelector('input[id$="-make"]') as HTMLInputElement).value).toBe("Ford");
     expect(text()).toContain("Vehicle removed. 3 vehicles now.");
   });
@@ -96,16 +96,29 @@ describe("step 2: vehicles", () => {
     expect(nowB.value).toBe("20");
   });
 
-  it("editing your own car never changes the claim header, and the card says it was changed from the claim", async () => {
+  it("the header's vehicle follows vehicle A live: Your car until a make or model, then year make model on every edit", async () => {
     const { services } = makeServices();
     app = await renderApp(services, { hash: "#vehicles", storage: located() });
     await flush(100);
-    expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toContain("2021 Honda Accord");
-    setValue(card("A").querySelector('input[id$="-make"]'), "Toyota");
-    setValue(card("A").querySelectorAll("input[type=text]")[2] ?? null, "Camry");
-    expect(document.querySelector("[data-testid=claim-chip]")?.textContent).toContain("2021 Honda Accord");
-    expect(document.querySelector("[data-testid=claim-chip]")?.textContent).not.toContain("Toyota");
-    expect(text(card("A"))).toContain("changed from your claim");
+    const chip = () => document.querySelector("[data-testid=claim-chip]")?.textContent ?? "";
+    expect(chip()).toBe("Your car");
+    const [year, make, model] = [...card("A").querySelectorAll<HTMLInputElement>("input[type=text]")] as [HTMLInputElement, HTMLInputElement, HTMLInputElement];
+    setValue(year, "2019");
+    expect(chip()).toBe("Your car");                    // a year alone is not a vehicle yet
+    setValue(make, "Chevrolet");
+    expect(chip()).toBe("2019 Chevrolet");
+    setValue(model, "Silverado");
+    expect(chip()).toBe("2019 Chevrolet Silverado");
+    expect(chip()).not.toMatch(/Accord|Claim/);
+    // B's details never reach the header.
+    setValue(card("B").querySelector('input[id$="-make"]'), "Ford");
+    expect(chip()).toBe("2019 Chevrolet Silverado");
+    // The card's subtitle is just the vehicle (no "from your claim" any more).
+    expect(text(card("A").querySelector(".vehicle-sub") ?? card("A"))).toContain("2019 Chevrolet Silverado");
+    expect(text(card("A"))).not.toContain("from your claim");
+    setValue(make, "");
+    setValue(model, "");
+    expect(chip()).toBe("Your car");
   });
 
   it("changing the make clears the model and reloads the model list for the new make", async () => {
@@ -213,7 +226,7 @@ describe("step 2: vehicles", () => {
 
   it("puts no success check mark on instruction text, only on a type that really came from vPIC", async () => {
     const { services } = makeServices();
-    app = await renderApp(services, { hash: "#vehicles", storage: located() });
+    app = await renderApp(services, { hash: "#vehicles", storage: withAccordA(located()) });
     await flush(100);
     const lookup = (id: string) => card(id).querySelector(".lookup")!;
     expect(text(lookup("B"))).toContain("Enter the year, make and model");

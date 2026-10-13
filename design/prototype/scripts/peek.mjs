@@ -6,6 +6,8 @@ const b = await chromium.launch();
 for (const w of [1440, 390]) {
   const ctx = await b.newContext({ viewport: { width: w, height: w > 500 ? 900 : 844 }, userAgent: UA, reducedMotion: "reduce" });
   const p = await ctx.newPage();
+  // The first-visit welcome (DESIGN.md section 19) is seen already, so the frames show the screens.
+  await ctx.addInitScript(() => { try { localStorage.setItem("csd.welcome.v1", JSON.stringify({ seen: true })); } catch { /* blocked */ } });
   for (const r of routes) {
     await p.goto(`http://localhost:5180/prototype/#${r}`);
     await p.waitForTimeout(r === "location" ? 3500 : 1200);

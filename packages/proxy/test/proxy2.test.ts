@@ -265,7 +265,7 @@ describe("typed text and pins only go into geo/ entries (the dated store)", () =
     const body = (await a.json()) as { center: { lat: number; lon: number }; query: string };
     expect(body.center).toEqual({ lat: 42.76273, lon: -71.46613 });
     expect(JSON.stringify(body)).not.toContain("42.762731");
-    expect(t.setKeys).toEqual(["geo/overpass?lat=42.76273&lon=-71.46613&radius=250"]);
+    expect(t.setKeys).toEqual(["geo/overpass?features=1&lat=42.76273&lon=-71.46613&radius=250"]);
   });
 });
 

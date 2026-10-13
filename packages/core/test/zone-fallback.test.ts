@@ -133,7 +133,9 @@ describe("what still refuses", () => {
 describe("every scene that checkScene only warns about can be drawn (grid over zones, directions and actions)", () => {
   // Refusals that remain are about the speeds and directions, not the zones: vehicles moving apart, not moving toward each other, passing
   // through each other or through a building. They name the cause in plain words. A zone problem ("zones-cannot-touch") is never one of them.
-  const PHYSICS_REFUSALS = new Set(["moving-apart", "not-moving-toward", "too-slow", "passes-through", "on-building", "no-workable-speed", "nothing-moving", "cannot-meet", "off-road"]);
+  const PHYSICS_REFUSALS = new Set(["moving-apart", "not-moving-toward", "too-slow", "passes-through", "on-building", "no-workable-speed", "nothing-moving", "cannot-meet", "off-road",
+    // a direction that follows no road at the pin, or a turn with no road to turn from (2026-10-11): about the directions, not the zones
+    "off-road-direction", "no-road-to-turn-from"]);
 
   it("never refuses with zones-cannot-touch, and every refusal is one of the physics causes", () => {
     let warnedOnly = 0, drawn = 0, usedZone = 0;

@@ -25,10 +25,11 @@ import type { Pose, Vec2 } from "../contracts/geometry";
 import type { LanePath, RoadNetwork, RoadWay } from "../contracts/roads";
 import type { Scene, SceneVehicle, VehicleId, Zone } from "../contracts/scene";
 import type { PlainMessage } from "../contracts/simulation";
-import { ZONE_WORDS, formatSpeedExact } from "../format";
+import { DRIVEWAY_WORDS, ZONE_WORDS, formatSpeedExact } from "../format";
 import { NO_ROAD_TEXT, cannotWorkOut, validatePin, validateScene } from "./validate";
+import { toLocal } from "./projection";
 import {
-  MIN_CLOSING_MPS, OVERLAP_TOLERANCE_M, ROAD_REACH_M, TURN_RADIUS_LEFT_M, TURN_RADIUS_RIGHT_M,
+  DRIVEWAY_M, MIN_CLOSING_MPS, OVERLAP_TOLERANCE_M, ROAD_REACH_M, TURN_RADIUS_LEFT_M, TURN_RADIUS_RIGHT_M,
 } from "./constants";
 import {
   type Poly, add, angleBetween, bearingOf, boxCorners, clipConvex, dist, dot, fwdOf, makePoly, mul, norm, pointAt, pointInRing, polyCrossings, project, rightOf, satDepth,
@@ -61,8 +62,18 @@ export interface Guide {
   /** Heading of the front minus the travel bearing: 0, or pi when backing up. */
   readonly facingOffset: number;
   readonly moving: boolean;
-  /** Road data exists but this vehicle matched no road (and is not in a parking lot), so its path is a straight line. */
-  readonly fallback: boolean;
+  /**
+   * The path really starts where it starts (a driveway, a parking lot's edge, a street that ends): a vehicle needing more
+   * room than that behind it starts from a stop there. False where the path only stops because the map data does (its
+   * edge), or where there is no road data at all: the approach then carries straight on, as the road was heading.
+   */
+  readonly startsThere: boolean;
+  /** The path really ends where it ends (a street ending at a T, a lot's edge), not at the map data's edge. */
+  readonly endsThere: boolean;
+  /** The vehicle came out of a driveway or parking lot: the first part of its path is off the road by design. */
+  readonly driveway: boolean;
+  /** Half the full width of its road (or of a typical two-lane road off the roads), m: how far off its path a vehicle may sit at the impact. */
+  readonly halfRoadM: number;
 }
 
 export interface PlacedBody {
@@ -122,16 +133,31 @@ const alignment = (way: RoadWay, p: Vec2, bearing: number): number => {
   return Math.min(angleBetween(bearing, b), angleBetween(bearing, b + Math.PI));
 };
 
-/** The road a vehicle is on: its road id, else a nearby road with its name, else the nearest one it is lined up with. */
+/** A road picked by its id may point this far off the way entered (either way along it) and still be the road it was on. */
+const ROAD_ID_ALIGN_RAD = toRad(45);
+/** A direction with no road picked is on a road it lines up with this closely. */
+const ROAD_ALIGN_RAD = toRad(30);
+
+/**
+ * The roads at the pin, as the direction list has them (streetsAtPin): within NEAR_PIN_M, else the nearest one within
+ * ROAD_REACH_M. Nearest first.
+ */
+function waysAtPin(roads: RoadNetwork, pin: Vec2): Array<{ w: RoadWay; d: number }> {
+  const all = roads.ways.map((w) => ({ w, d: project(makePoly(w.centerline), pin).dist })).sort((a, b) => a.d - b.d);
+  const close = all.filter((x) => x.d <= NEAR_PIN_M);
+  return close.length ? close : all.filter((x) => x.d <= ROAD_REACH_M && x.d <= all[0]!.d + 0.5);
+}
+
+/**
+ * The road a vehicle is on: its road id (when the way entered runs along it), else a road at the pin with its name, else the
+ * nearest one at the pin it is lined up with. Null when the direction follows no road at the pin.
+ */
 function resolveWay(v: SceneVehicle, roads: RoadNetwork, pin: Vec2, bearing: number): RoadWay | null {
   if (v.travel.roadId) {
     const w = wayById(roads, v.travel.roadId);
-    if (w) return w;
+    if (w) return alignment(w, pin, bearing) <= ROAD_ID_ALIGN_RAD + 1e-9 ? w : null;
   }
-  const near = roads.ways
-    .map((w) => ({ w, d: project(makePoly(w.centerline), pin).dist }))
-    .filter((x) => x.d <= NEAR_PIN_M && alignment(x.w, pin, bearing) <= toRad(30))
-    .sort((a, b) => a.d - b.d);
+  const near = waysAtPin(roads, pin).filter((x) => alignment(x.w, pin, bearing) <= ROAD_ALIGN_RAD);
   const name = v.travel.roadName?.trim().toLowerCase();
   if (name) {
     const m = near.find((x) => (x.w.name ?? "").trim().toLowerCase() === name);
@@ -141,6 +167,23 @@ function resolveWay(v: SceneVehicle, roads: RoadNetwork, pin: Vec2, bearing: num
 }
 
 const roadWords = (w: RoadWay): string => (w.name && w.name.trim() ? w.name.trim() : "this road");
+
+/** Half the road's full width, every lane both ways, m. */
+const halfRoad = (w: RoadWay): number => ((w.oneway ? w.lanesForward : w.lanesForward + w.lanesBackward) * w.laneWidthM) / 2;
+/** Half a typical two-lane road's width where there is no road (no road data, a parking lot), m. */
+const OPEN_HALF_ROAD_M = 3.5;
+/**
+ * A path start this close to the edge of the road data is the edge of the data, not where the road starts, m: the clip at the
+ * edge plus a lane's offset from the centre line on a road meeting the edge at an angle (four wide lanes, about 15 m).
+ */
+const DATA_EDGE_M = 20;
+/** Does a path that starts at p start where the map data stops (so the road goes on), rather than where the road does? */
+const atDataEdge = (net: RoadNetwork, p: Vec2): boolean => Math.max(Math.abs(p.x), Math.abs(p.y)) >= net.radiusM - DATA_EDGE_M;
+
+/** "Vehicle A's direction doesn't follow any road at the pin." The direction list offers the roads that are there. */
+function offRoadDirection(v: SceneVehicle): PlainMessage {
+  return msg("off-road-direction", `${letterName(v.id)}'s direction doesn't follow any road at the pin. Pick the road it was on and the way it was going, or pick ${DRIVEWAY_WORDS} if it came out of one.`, [v.id]);
+}
 
 function laneGuide(v: SceneVehicle, net: RoadNetwork, way: RoadWay, pin: Vec2, travelBearing: number, facingOffset: number, defaultLane: (n: number) => number): Guide | PlainMessage {
   const forward = goesForward(way, pin, travelBearing);
@@ -154,15 +197,18 @@ function laneGuide(v: SceneVehicle, net: RoadNetwork, way: RoadWay, pin: Vec2, t
   if (lane >= n) {
     return msg("no-such-lane", `${letterName(v.id)} is placed in lane ${lane + 1} (counting from the right), but ${roadWords(way)} only has ${n} lane${n === 1 ? "" : "s"} that way. Pick a different lane.`, [v.id]);
   }
-  const pts = chainedLane(net, way, forward, lane)!;
-  return { poly: makePoly(pts), roadId: way.id, laneIndex: lane, facingOffset, moving: v.action !== "parked", fallback: false };
+  const pts = chainedLane(net, way, forward, lane, pin)!;
+  return { poly: makePoly(pts), roadId: way.id, laneIndex: lane, facingOffset, moving: v.action !== "parked", startsThere: !atDataEdge(net, pts[0]!), endsThere: !atDataEdge(net, pts[pts.length - 1]!), driveway: false, halfRoadM: halfRoad(way) };
 }
+
+/** The parking lot the pin is in, if any. */
+const lotAt = (roads: RoadNetwork | null, pin: Vec2) => roads?.parking.find((p) => pointInRing(pin, p.outline));
 
 /** Straight line through the pin; clipped to the parking lot the pin is in, when there is one. */
 function freeLine(v: SceneVehicle, travelBearing: number, facingOffset: number, roads: RoadNetwork | null, pin: Vec2): Guide {
   const u = fwdOf(travelBearing);
   let t0 = -FREE_HALF_M, t1 = FREE_HALF_M;
-  const lot = roads?.parking.find((p) => pointInRing(pin, p.outline));
+  const lot = lotAt(roads, pin);
   if (lot) {
     const inside = (t: number) => pointInRing(add(pin, mul(u, t)), lot.outline);
     const reach = (sign: number): number => {
@@ -174,7 +220,27 @@ function freeLine(v: SceneVehicle, travelBearing: number, facingOffset: number, 
     };
     t0 = -reach(-1); t1 = reach(1);
   }
-  return { poly: makePoly([add(pin, mul(u, t0)), add(pin, mul(u, t1))]), roadId: "template", laneIndex: 0, facingOffset, moving: v.action !== "parked", fallback: roads !== null && !lot };
+  // In a lot the path starts at the lot's edge (a vehicle needing more room starts from a stop in the lot); with no road data it runs on.
+  return {
+    poly: makePoly([add(pin, mul(u, t0)), add(pin, mul(u, t1))]), roadId: "template", laneIndex: 0, facingOffset, moving: v.action !== "parked",
+    startsThere: lot !== undefined && -t0 < FREE_HALF_M, endsThere: lot !== undefined && t1 < FREE_HALF_M, driveway: false, halfRoadM: OPEN_HALF_ROAD_M,
+  };
+}
+
+/** Where the pin meets a road: the nearest point of its centre line, and half the road's full width, m. */
+function roadFoot(way: RoadWay, pin: Vec2): { foot: Vec2; halfRoadM: number } {
+  return { foot: project(makePoly(way.centerline), pin).point, halfRoadM: halfRoad(way) };
+}
+
+/**
+ * Out of a driveway or parking lot, straight across or backing: a straight path along the way it travels, starting
+ * DRIVEWAY_M off the road's edge, through the road at the pin and on to its far edge. Never longer off the road than that.
+ */
+function drivewayGuide(v: SceneVehicle, way: RoadWay, pin: Vec2, travel: number, facingOffset: number): Guide {
+  const { foot, halfRoadM } = roadFoot(way, pin);
+  const u = fwdOf(travel);
+  const pts = [sub(foot, mul(u, halfRoadM + DRIVEWAY_M)), foot, add(foot, mul(u, halfRoadM + DRIVEWAY_M))];
+  return { poly: makePoly(pts), roadId: way.id, laneIndex: 0, facingOffset, moving: v.action !== "parked", startsThere: true, endsThere: false, driveway: true, halfRoadM: halfRoad(way) };
 }
 
 /** Round a corner: approach lane into exit lane with a circular arc of radius R (reduced if the legs are too short). */
@@ -206,45 +272,75 @@ function fillet(aPts: readonly Vec2[], ePts: readonly Vec2[], radius: number, ne
 }
 
 /** A turn with no road data: the arc ends at the pin, heading along the entered (final) bearing. */
-function flatTurn(left: boolean, exitBearing: number, pin: Vec2, fallback: boolean): Guide {
+function flatTurn(left: boolean, exitBearing: number, pin: Vec2): Guide {
   const r = left ? TURN_RADIUS_LEFT_M : TURN_RADIUS_RIGHT_M;
   const approach = exitBearing + (left ? Math.PI / 2 : -Math.PI / 2);
   const c = sub(pin, mul(fwdOf(exitBearing), r));
   const aLine = [sub(c, mul(fwdOf(approach), FREE_HALF_M)), add(c, mul(fwdOf(approach), 20))];
   const eLine = [sub(c, mul(fwdOf(exitBearing), 20)), add(c, mul(fwdOf(exitBearing), FREE_HALF_M))];
   const pts = fillet(aLine, eLine, r, pin)!;
-  return { poly: makePoly(pts), roadId: "template", laneIndex: 0, facingOffset: 0, moving: true, fallback };
+  return { poly: makePoly(pts), roadId: "template", laneIndex: 0, facingOffset: 0, moving: true, startsThere: false, endsThere: false, driveway: false, halfRoadM: OPEN_HALF_ROAD_M };
+}
+
+/** The road a turning vehicle comes from: the leg at a junction near the pin that leads into the turn (null when there is none). */
+export interface TurnFrom { readonly way: RoadWay; readonly forward: boolean; readonly junction: Vec2 }
+
+/**
+ * Where a turn ending on `exitWay` at `exitB` comes from: a left turn ending at bearing b came in at b + 90 degrees, a right
+ * turn at b - 90, along a leg of another road at a junction near the pin (within 35 degrees). Null when no road leads in
+ * (a single road, or only a one-way street the wrong way).
+ */
+export function turnFrom(roads: RoadNetwork, pin: Vec2, exitWayId: string, exitB: number, left: boolean): TurnFrom | null {
+  const approachB = exitB + (left ? Math.PI / 2 : -Math.PI / 2);
+  const legs = streetsAtPin(roads, pin).legs
+    .filter((l) => l.roadId !== exitWayId && angleBetween(toRad(l.outwardBearingDeg), approachB + Math.PI) <= toRad(35))
+    .sort((a, b) => dist(a.junction, pin) - dist(b.junction, pin));
+  const leg = legs[0];
+  const way = leg ? wayById(roads, leg.roadId) : undefined;
+  if (!leg || !way) return null;
+  const forward = goesForward(way, leg.junction, approachB);
+  return lanesIn(way, forward) > 0 ? { way, forward, junction: leg.junction } : null;
+}
+
+function noRoadToTurnFrom(v: SceneVehicle, exitWay: RoadWay): PlainMessage {
+  return msg("no-road-to-turn-from", `${letterName(v.id)} is turning onto ${roadWords(exitWay)}, but no road at the pin leads into that turn. If it came out of ${DRIVEWAY_WORDS}, pick that; otherwise check what it was doing or which way it was going.`, [v.id]);
 }
 
 function turnGuide(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2): Guide | PlainMessage {
   const left = v.action === "turn-left";
   const exitB = toRad(v.travel.bearingDeg);
-  if (!roads) return flatTurn(left, exitB, pin, false);
+  if (!roads) return flatTurn(left, exitB, pin);
   const exitWay = resolveWay(v, roads, pin, exitB);
-  if (!exitWay) return flatTurn(left, exitB, pin, true);
+  if (!exitWay) return offRoadDirection(v);
   const exitForward = goesForward(exitWay, pin, exitB);
   const nExit = lanesIn(exitWay, exitForward);
   if (nExit <= 0) {
     return msg("wrong-way", `${letterName(v.id)} ends its turn going the wrong way on ${roadWords(exitWay)}, which is one-way. Check which way it was going.`, [v.id]);
   }
-  const exitPts = chainedLane(roads, exitWay, exitForward, left ? nExit - 1 : 0)!;
-  // The approach: a left turn ending at bearing b came in at b + 90 degrees, a right turn at b - 90.
+  const exitPts = chainedLane(roads, exitWay, exitForward, left ? nExit - 1 : 0, pin)!;
+  const radius = left ? TURN_RADIUS_LEFT_M : TURN_RADIUS_RIGHT_M;
   const approachB = exitB + (left ? Math.PI / 2 : -Math.PI / 2);
-  const leg = streetsAtPin(roads, pin).legs
-    .filter((l) => l.roadId !== exitWay.id && angleBetween(toRad(l.outwardBearingDeg), approachB + Math.PI) <= toRad(35))
-    .sort((a, b) => dist(a.junction, pin) - dist(b.junction, pin))[0];
-  const appWay = leg ? wayById(roads, leg.roadId) : undefined;
-  if (!leg || !appWay) return flatTurn(left, exitB, pin, true);
-  const appForward = goesForward(appWay, leg.junction, approachB);
-  const nApp = lanesIn(appWay, appForward);
-  if (nApp <= 0) return flatTurn(left, exitB, pin, true);
+  if (v.travel.fromDriveway) {
+    // Out of a driveway on the side the turn comes from: DRIVEWAY_M off the road, then the arc into the exit lane.
+    const { foot, halfRoadM } = roadFoot(exitWay, pin);
+    const u = fwdOf(approachB);
+    const aLine = [sub(foot, mul(u, halfRoadM + DRIVEWAY_M)), add(foot, mul(u, halfRoadM + 2))];
+    const pts = fillet(aLine, exitPts, radius, pin);
+    if (!pts) return noRoadToTurnFrom(v, exitWay);
+    return { poly: makePoly(pts), roadId: exitWay.id, laneIndex: 0, facingOffset: 0, moving: true, startsThere: true, endsThere: !atDataEdge(roads, pts[pts.length - 1]!), driveway: true, halfRoadM: halfRoad(exitWay) };
+  }
+  const from = turnFrom(roads, pin, exitWay.id, exitB, left);
+  if (!from) return noRoadToTurnFrom(v, exitWay);
+  const appWay = from.way;
+  const nApp = lanesIn(appWay, from.forward);
   const lane = v.travel.lane ?? (left ? nApp - 1 : 0);
   if (lane >= nApp) {
     return msg("no-such-lane", `${letterName(v.id)} is placed in lane ${lane + 1} (counting from the right), but ${roadWords(appWay)} only has ${nApp} lane${nApp === 1 ? "" : "s"} that way. Pick a different lane.`, [v.id]);
   }
-  const pts = fillet(chainedLane(roads, appWay, appForward, lane)!, exitPts, left ? TURN_RADIUS_LEFT_M : TURN_RADIUS_RIGHT_M, pin);
-  if (!pts) return flatTurn(left, exitB, pin, true);
-  return { poly: makePoly(pts), roadId: appWay.id, laneIndex: lane, facingOffset: 0, moving: true, fallback: false };
+  const appPts = chainedLane(roads, appWay, from.forward, lane, from.junction)!;
+  const pts = fillet(appPts, exitPts, radius, pin);
+  if (!pts) return noRoadToTurnFrom(v, exitWay);
+  return { poly: makePoly(pts), roadId: appWay.id, laneIndex: lane, facingOffset: 0, moving: true, startsThere: !atDataEdge(roads, pts[0]!), endsThere: !atDataEdge(roads, pts[pts.length - 1]!), driveway: false, halfRoadM: Math.max(halfRoad(appWay), halfRoad(exitWay)) };
 }
 
 /**
@@ -261,7 +357,7 @@ export function buildGuide(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2
   let table = guideCache.get(owner);
   if (!table) { table = new Map(); guideCache.set(owner, table); }
   const t = v.travel;
-  const key = JSON.stringify([pin.x, pin.y, v.id, v.action, t.bearingDeg, t.roadId, t.roadName, t.lane]);
+  const key = JSON.stringify([pin.x, pin.y, v.id, v.action, t.bearingDeg, t.roadId, t.roadName, t.lane, t.fromDriveway === true]);
   const hit = table.get(key);
   if (hit) return hit;
   const g = buildGuideFresh(v, roads, pin);
@@ -276,11 +372,17 @@ function buildGuideFresh(v: SceneVehicle, roads: RoadNetwork | null, pin: Vec2):
   const backing = v.action === "backing";
   const travel = backing ? facing + Math.PI : facing;
   const off = backing ? Math.PI : 0;
-  if (roads) {
-    const way = resolveWay(v, roads, pin, travel);
-    if (way) return laneGuide(v, roads, way, pin, travel, off, () => 0);
+  if (!roads) return freeLine(v, travel, off, null, pin);
+  if (v.travel.fromDriveway && v.action !== "parked") {
+    // The road it came out onto: the one picked, else the nearest at the pin.
+    const way = (v.travel.roadId ? wayById(roads, v.travel.roadId) : undefined) ?? waysAtPin(roads, pin)[0]?.w;
+    if (way) return drivewayGuide(v, way, pin, travel, off);
   }
-  return freeLine(v, travel, off, roads, pin);
+  const way = resolveWay(v, roads, pin, travel);
+  if (way) return laneGuide(v, roads, way, pin, travel, off, () => 0);
+  // Inside a parking lot a vehicle may go any way; anywhere else a path is never drawn across open ground.
+  if (lotAt(roads, pin)) return freeLine(v, travel, off, roads, pin);
+  return offRoadDirection(v);
 }
 
 // ---------------------------------------------------------------- geometry of one placed vehicle
@@ -429,6 +531,8 @@ const SQUARE_PUSH_MAX_M = 1.5;
 const PATCH_GROW_M = 0.03;
 /** Placement leaves two touching bodies at most this deep in each other (the tests allow a gap of at most 2 cm): exactly touching, to a few mm. */
 const TOUCH_TOL_M = 0.002;
+/** At the impact a vehicle's centre may sit this much further off its path than half its road's width plus half its own, m. */
+const OFF_PATH_SLACK_M = 0.75;
 
 // ---------------------------------------------------------------- choosing the impact point
 
@@ -438,6 +542,26 @@ export function contactPoint(ga: Guide, gb: Guide, pin: Vec2): Vec2 {
   if (xs[0]) return xs[0].point;
   const pa = project(ga.poly, pin).point, pb = project(gb.poly, pin).point;
   return { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+}
+
+/**
+ * Two vehicles going the same way on one path (a rear-end: their paths don't cross) meet where the pin is; but where their road
+ * ends just ahead (a street ending at a T, a lot's edge), the one in front would stick out past the end of the road. Then the
+ * meeting point moves back along the path until a body fits before the end (the longer of the two), as a vehicle stopped at the
+ * end of a street. Any other pair, or a road that runs on, keeps the point.
+ */
+function backFromRoadEnd(a: Drafted, b: Drafted, q: Vec2): Vec2 {
+  if (polyCrossings(a.guide.poly, b.guide.poly).length) return q;
+  if (angleBetween(pointAt(a.guide.poly, project(a.guide.poly, q).s).bearing, pointAt(b.guide.poly, project(b.guide.poly, q).s).bearing) > toRad(45)) return q;
+  const need = Math.max(a.dims.lengthM, b.dims.lengthM);
+  let best = q;
+  for (const d of [a, b]) {
+    if (!d.guide.endsThere || !d.guide.moving) continue;
+    const poly = d.guide.poly;
+    const s = project(poly, best).s;
+    if (poly.length - s < need) best = pointAt(poly, Math.max(0, poly.length - need)).p;
+  }
+  return best;
 }
 
 /** First point where a guide, in travel order, enters a vehicle's body. */
@@ -663,7 +787,7 @@ function placeCore(scene: Scene, rawRoads: RoadNetwork | null, pin: Vec2, opts: 
   };
 
   if (n === 2) {
-    const q = contactPoint(drafts[0]!.guide, drafts[1]!.guide, pin);
+    const q = backFromRoadEnd(drafts[0]!, drafts[1]!, contactPoint(drafts[0]!.guide, drafts[1]!.guide, pin));
     if (!placeMutual(0, 1, q)) return fail(msg("zones-cannot-touch", zonesText(vs[0]!, vs[1]!), [vs[0]!.id, vs[1]!.id]));
   } else {
     // Who can hit whose marked zone? Judge by relative motion in any of the low/middle/high cases.
@@ -761,6 +885,18 @@ function placeCore(scene: Scene, rawRoads: RoadNetwork | null, pin: Vec2, opts: 
         return fail(msg("zones-cannot-touch", zonesText(drafts[i]!.veh, drafts[j]!.veh), [drafts[i]!.veh.id, drafts[j]!.veh.id]));
       }
     }
+  }
+  // Every vehicle touches the other where its own path is: a body pulled off its lane to reach the other (two carriageways of a
+  // divided road, parallel lanes far apart) would be drawn where it never drove. Inside a parking lot a vehicle may be anywhere
+  // in the lot (in a stall beside the aisle).
+  for (let i = 0; i < n; i++) {
+    const g = drafts[i]!.guide;
+    const off = project(g.poly, slots[i]!.centre!).dist;
+    if (off <= g.halfRoadM + drafts[i]!.dims.widthM / 2 + OFF_PATH_SLACK_M) continue;
+    if (roads?.parking.some((lot) => pointInRing(slots[i]!.centre!, lot.outline))) continue;
+    const other = contacts.find((c) => c.a === drafts[i]!.veh.id || c.b === drafts[i]!.veh.id);
+    const partner = other ? (other.a === drafts[i]!.veh.id ? other.b : other.a) : drafts[(i + 1) % n]!.veh.id;
+    return fail(msg("paths-dont-meet", `${letterName(drafts[i]!.veh.id)} and ${vehicleWord(partner)} are on paths that don't meet near the pin, so they couldn't have touched there. Check the directions and lanes.`, [drafts[i]!.veh.id, partner]));
   }
   if (opts.checkClosing !== false) {
     const motion: MotionBody[] = drafts.map((d, i) => ({ veh: d.veh, travelBearingRad: slots[i]!.travel!, moving: d.guide.moving }));
@@ -907,6 +1043,31 @@ export function zonesFacing(scene: Scene, rawRoads: RoadNetwork | null, pin: Vec
     }
     return [...best.values()].sort((a, b) => a.off - b.off || ALL_ZONES.indexOf(a.zone) - ALL_ZONES.indexOf(b.zone));
   });
+}
+
+/** A vehicle's own path that doesn't fit the roads at the pin: the Vehicles step blocks on these and offers one-tap fixes. */
+export const ROAD_FIT_CODES: ReadonlySet<string> = new Set(["off-road-direction", "no-road-to-turn-from"]);
+
+/**
+ * Each vehicle whose direction doesn't fit the roads at the pin (it follows no road there, or turns where no road leads into
+ * the turn), in scene order: what the picture would refuse to draw. Empty with no road data, with no road near the pin (that
+ * is the pin's problem, said on Review with "move the pin"), or for a scene the physics can't read. Never throws.
+ */
+export function roadFitProblems(scene: Scene, rawRoads: RoadNetwork | null): PlainMessage[] {
+  try {
+    if (!rawRoads || rawRoads.ways.length === 0 || validateScene(scene).length) return [];
+    const roads = cleanNet(rawRoads);
+    const pin = toLocal(roads.frame, { lat: scene.location.lat, lon: scene.location.lon });
+    if (validatePin(pin).length || !roadNearPin(roads, pin)) return [];
+    const out: PlainMessage[] = [];
+    for (const v of scene.vehicles) {
+      const g = buildGuide(v, roads, pin);
+      if (isMessage(g) && ROAD_FIT_CODES.has(g.code)) out.push(g);
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /** Snap each vehicle to a lane and place it at impact (see the plan's lane-snapping section). Roads null = flat template. */

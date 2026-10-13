@@ -14,7 +14,9 @@ import type { MapBias } from "./mapLayers";
 import { SearchPanel } from "./SearchPanel";
 import { Tips } from "../tips/Tips";
 import { Tile } from "./Tile";
+import { CLAIM_NUMBER_MAX, sanitizeClaimNumber } from "../lib/claim";
 import { GatePanel } from "./Warnings";
+import { SceneQuestions } from "./questions/SceneQuestions";
 
 /** A view zoomed out further than this is not a place to bias a search toward. */
 const VIEW_BIAS_MIN_ZOOM = 9;
@@ -138,7 +140,7 @@ export function LocationStep() {
                 <input className="input" id="time" type="time" value={scene.occurred.time ?? ""} onChange={(e) => dispatch({ type: "time", time: e.target.value || null })} />
               </div>
             </div>
-            <p className="hint">From your claim. Change it if it's wrong.</p>
+            {/* A new visitor starts on today with no time. No claim hands over a date yet, so there is no "From your claim" hint. */}
           </div>
 
           <div className="group" role="group" aria-labelledby="road-label">
@@ -149,6 +151,17 @@ export function LocationStep() {
             <p className="hint">This changes how far the vehicles slide in the picture.</p>
           </div>
 
+          <div className="group">
+            <label className="group-label" htmlFor="claim-number">Claim number (optional)</label>
+            <input
+              className="input claim-number-input" id="claim-number" type="text" autoComplete="off" spellCheck={false} autoCapitalize="characters"
+              maxLength={CLAIM_NUMBER_MAX} aria-describedby="claim-number-hint" value={scene.claim.number}
+              onChange={(e) => dispatch({ type: "claim-number", number: sanitizeClaimNumber(e.target.value) })}
+            />
+            <p className="hint" id="claim-number-hint">Letters, numbers and dashes, up to {CLAIM_NUMBER_MAX}. It goes on your files and their names.</p>
+          </div>
+
+          <SceneQuestions />
           <GatePanel />
 
           <div className="actions">

@@ -1,7 +1,7 @@
 // Catalog models: fitting to the footprint, which material is paint, the paint in a baked texture, tint, dispose.
 import { describe, expect, it, vi } from "vitest";
 import { Box3, BoxGeometry, Color, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Vector3, type Texture } from "three";
-import { analysePaint, applyTint, disposeModel, fitToSceneLighting, hsv, materialAreas, normalise, planNormalisation, planTint, texturePixels, PAINT_CHUNK, PAINT_DECL } from "../../src/viewer/glb-model";
+import { analysePaint, applyTint, disposeModel, dominantPaint, fitToSceneLighting, hsv, materialAreas, normalise, planNormalisation, planTint, texturePixels, PAINT_CHUNK, PAINT_DECL } from "../../src/viewer/glb-model";
 
 const FOOT = { lengthM: 4.76, widthM: 1.81, heightM: 1.45 };
 
@@ -99,7 +99,7 @@ describe("which material is the paint", () => {
   it("nothing to paint: says so instead of painting the wrong thing", () => {
     const root = new Group();
     root.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ name: "Windshield glass", transparent: true, opacity: 0.3 })));
-    expect(planTint(root)).toEqual({ kind: "none", reason: "no-material" });
+    expect(planTint(root)).toEqual({ kind: "none", reason: "no-material", catalogPaint: null });
   });
 });
 
@@ -163,18 +163,36 @@ describe("the paint baked into a texture (the catalog's case)", () => {
     expect(shader.uniforms.uPaint).toBe(plan.uniforms.uPaint);
   });
 
-  it("a black catalog paint keeps its texture: no tint, and applyTint says so", () => {
+  it("a black catalog paint keeps its texture: no tint, applyTint says so, and the plan names the paint it keeps", () => {
     const root = new Group();
     root.add(new Mesh(new BoxGeometry(1, 0.4, 2), new MeshStandardMaterial({ map: bakedTexture([22, 24, 26]) })));
     const plan = planTint(root);
-    expect(plan).toEqual({ kind: "none", reason: "dark-or-unclear" });
+    expect(plan).toEqual({ kind: "none", reason: "dark-or-unclear", catalogPaint: { name: "Black", hex: "#16181b" } });
     expect(applyTint(plan, new Color())).toBe(false);
+  });
+
+  it("a white catalog paint too unclear to tint (under a third of the texels) is named White, never the picked colour (roads and paths, 2026-10-11)", () => {
+    // 30% white paint, 40% grey glass and trim, 30% dark tyres: no paint stands out enough to tint.
+    const size = 32, data = new Uint8Array(size * size * 4);
+    for (let i = 0; i < size * size; i++) {
+      const f = i / (size * size);
+      data.set([...(f < 0.3 ? [236, 237, 233] : f < 0.7 ? [110, 114, 118] : [60, 60, 62]), 255], i * 4);
+    }
+    const map = new DataTexture(data, size, size, RGBAFormat);
+    map.needsUpdate = true;
+    const root = new Group();
+    root.add(new Mesh(new BoxGeometry(1, 0.4, 2), new MeshStandardMaterial({ map })));
+    const plan = planTint(root);
+    expect(plan.kind).toBe("none");
+    if (plan.kind !== "none") return;
+    expect(plan.catalogPaint?.name).toBe("White");
+    expect(dominantPaint(new Uint8Array(16), 2, 2)).toBeNull();
   });
 
   it("a texture that can't be read (no pixels) is not guessed at", () => {
     const root = new Group();
     root.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ map: { isTexture: true, image: null } as unknown as Texture })));
-    expect(planTint(root)).toEqual({ kind: "none", reason: "unreadable-texture" });
+    expect(planTint(root)).toEqual({ kind: "none", reason: "unreadable-texture", catalogPaint: null });
   });
 });
 

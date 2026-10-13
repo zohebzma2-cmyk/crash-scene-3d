@@ -3,7 +3,7 @@ import type { LatLon } from "@csd/core";
 
 export interface OsmWay {
   readonly id: number;
-  readonly nodes: readonly number[];
+  readonly nodes: readonly (number | undefined)[];
   readonly geometry: readonly LatLon[];
   readonly tags: Readonly<Record<string, string>>;
 }
@@ -25,7 +25,9 @@ export function osmWays(json: unknown): OsmWay[] {
       const { lat, lon } = g as { lat?: unknown; lon?: unknown };
       if (typeof lat === "number" && typeof lon === "number") geometry.push({ lat, lon });
     }
-    const nodes = Array.isArray(e.nodes) ? (e.nodes as unknown[]).filter((n): n is number => typeof n === "number") : [];
+    // A clipped example endpoint has no OpenStreetMap node ID. Preserve its slot so
+    // interior node IDs still join adjacent ways and orient connected controls.
+    const nodes = Array.isArray(e.nodes) ? (e.nodes as unknown[]).map(n => typeof n === "number" ? n : undefined) : [];
     const tags: Record<string, string> = {};
     if (typeof e.tags === "object" && e.tags !== null) {
       for (const [k, v] of Object.entries(e.tags as Record<string, unknown>)) if (typeof v === "string") tags[k] = v;

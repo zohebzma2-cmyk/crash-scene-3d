@@ -59,7 +59,7 @@ test("@xb typing year, make and model for two vehicles like a person never shows
   await typeLikeAPerson(page, b.getByLabel("Model"), "Silverado 1500");
   await expect(b.locator(".lookup")).toContainText("Pickup from NHTSA vPIC");
 
-  // Vehicle A, changed from the claim the same way, then a different make.
+  // Vehicle A (empty for a new visitor) typed the same way, then a different make.
   const a = page.locator("#vehicle-A");
   await typeLikeAPerson(page, a.getByLabel("Year"), "2019");
   await page.waitForTimeout(300);
@@ -72,7 +72,8 @@ test("@xb typing year, make and model for two vehicles like a person never shows
 
   expect(await seenText(), "busy or failure text in a vehicle card").toEqual([]);
   expect(proxy.answers.filter((x) => x.status !== 200), "refused vehicle lookups").toEqual([]);
-  // One request per make and year, never per keystroke: the makes list, A's claim make (Honda 2021), Chevrolet 2019
+  // One request per make and year, never per keystroke: the makes list, Honda 2021 (only for a session that still has the old
+  // default claim car on A; a new visitor's A is empty), Chevrolet 2019
   // (asked for once, under the list's spelling, and shared by B and A), Ford 2019, and Honda 2019 when the pause
   // between A's year and its make was longer than the debounce. Never "ch", "chev" or "chevy".
   const paths = proxy.answers.map((x) => x.path);

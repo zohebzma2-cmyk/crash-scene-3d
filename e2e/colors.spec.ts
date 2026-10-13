@@ -7,7 +7,7 @@
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { FACTORY_COLORS } from "@csd/core";
-import { boxes, crossIntersections, exampleSceneFile, expect, fillDefaultClaim, freshStart, isPhone, openExample, pdfText, saveFiles, searchAndPick, test, toReview, waitForViewer, watchCsp } from "./helpers";
+import { boxes, crossIntersections, exampleSceneFile, expect, fillDefaultClaim, freshStart, isPhone, openExample, pdfText, saveFiles, searchAndPick, test, toReview, waitForViewer, watchCsp, enterVehicle } from "./helpers";
 
 const RED = FACTORY_COLORS.find((c) => c.name === "Red")!;
 const BLUE = FACTORY_COLORS.find((c) => c.name === "Blue")!;
@@ -284,17 +284,19 @@ test("@xb the catalog-model note is kept clear: no vehicle label over it (Top an
   }
 });
 
-test("@xb a catalog photo on the card gets a 'Picked: Red' chip once a colour is picked (light and dark)", async ({ page, pageErrors }, info) => {
+test("@xb a catalog photo on the card says it is a catalog photo, and 'Picked: Red' once a colour is picked (light and dark)", async ({ page, pageErrors }, info) => {
   const csp = await watchCsp(page);
   await freshStart(page, "/?media=on#location");
   await searchAndPick(page);
   await page.getByRole("button", { name: /Next: vehicles/ }).click();
   const card = page.locator("#vehicle-A");
+  // A new visitor's A is empty: enter the car whose catalog photo is checked.
+  await enterVehicle(page, "A");
   await expect(card.locator(".vehicle-photo")).toHaveAttribute("data-photo", "photo");
-  await expect(card.locator(".paint-chip")).toHaveCount(0);
+  await expect(card.locator(".vehicle-photo-wrap .paint-chip")).toHaveText("Catalog photo");
   await card.locator('[data-paint-picker="A"]').getByRole("radio", { name: "Red" }).click();
   const chip = card.locator(".vehicle-photo-wrap .paint-chip");
-  await expect(chip).toHaveText("Picked: Red");
+  await expect(chip).toHaveText("Catalog photo · Picked: Red");
   // Inside the card, next to the photo, and no sideways scroll at 390.
   const [cardBox, chipBox, photoBox] = [await card.boundingBox(), await chip.boundingBox(), await card.locator(".vehicle-photo").boundingBox()];
   expect(chipBox!.x).toBeGreaterThanOrEqual(cardBox!.x);

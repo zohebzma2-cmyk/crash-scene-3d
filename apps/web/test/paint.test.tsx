@@ -5,15 +5,15 @@ import { FACTORY_COLORS, contrastRatio, hexToRgb01, type Scene } from "@csd/core
 import { STORAGE_KEY, initialDoc, reducer, type Doc } from "../src/state/doc";
 import { fakePlaceVehicles, fakeSimulate } from "../src/services/fakes";
 import { Diagram } from "../src/components/Diagram";
-import { PaintChip } from "../src/components/PaintChip";
+import { CatalogColourChip, PaintChip } from "../src/components/PaintChip";
 import { INK, inkVar, paintStyle } from "../src/lib/paint";
 import { all, click, flush, get, key, mount, renderApp, setValue } from "./helpers";
-import { makeServices, tbone } from "./fakes";
+import { makeServices, tbone, withAnswers } from "./fakes";
 
 let app: { unmount: () => void } | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.restoreAllMocks(); });
 
-const located = (): Doc => ({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
+const located = (): Doc => withAnswers({ ...reducer(initialDoc(), { type: "pin", lat: tbone.location.lat, lon: tbone.location.lon, how: "tap" }), directionSet: [true, true] });
 const card = (id: string) => document.getElementById(`vehicle-${id}`) as HTMLElement;
 const stored = (): Doc => JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}") as Doc;
 const picker = (id: string) => card(id).querySelector<HTMLElement>(`[data-paint-picker="${id}"]`)!;
@@ -131,6 +131,18 @@ describe("the picked paint in the mini map and the diagram", () => {
       const chips = m.host.querySelectorAll(".paint-chip");
       expect(chips.length).toBe(1);
       expect(chips[0]!.textContent).toBe("Picked: Red");
+    } finally { m.unmount(); }
+  });
+
+  it("a catalog photo's chip says it is the catalog's; an untinted catalog model's chip names its own paint, never the pick (roads and paths)", () => {
+    const m = mount(<>
+      <PaintChip vehicle={{ id: "A", color: { name: "Gray", hex: "#6b7075" } }} photo />
+      <PaintChip vehicle={{ id: "B", color: null }} photo />
+      <CatalogColourChip vehicleId="C" paint={{ name: "White", hex: "#f4f5f2" }} />
+    </>);
+    try {
+      const chips = [...m.host.querySelectorAll(".paint-chip")].map((c) => c.textContent);
+      expect(chips).toEqual(["Catalog photo · Picked: Gray", "Catalog photo", "Catalog colour: White"]);
     } finally { m.unmount(); }
   });
 });

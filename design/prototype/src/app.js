@@ -1,6 +1,6 @@
 // crash-scene-3d prototype controller. One shared scene state (state.js);
 // every screen and every export renders from it plus the physics result.
-import { store, newVehicle, LETTERS, MAX_VEHICLES, MIN_VEHICLES, canonical, sha256Hex, shortFp, isScene } from "./state.js";
+import { store, initialScene, newVehicle, LETTERS, MAX_VEHICLES, MIN_VEHICLES, canonical, sha256Hex, shortFp, isScene } from "./state.js";
 import { simulate, poseAt, ZONES, speedCases, FRICTION, PHYSICS_VERSION, SCHEMA_VERSION } from "./physics.js";
 import { validate } from "./validate.js";
 import { dist, speed, lb, ACTION_WORD, ZONE_WORD, ROAD_WORD, PLACE_WORD, directionCaption, visibleStreets, vehicleName, fmtStamp } from "./format.js";
@@ -75,8 +75,14 @@ window.addEventListener("hashchange", route);
 
 function render(reason = "") {
   const s = store.get();
-  $(".claim-no").textContent = `Claim ${s.claim.number}`;
-  $("#claim-vehicle").textContent = vehicleName(s.vehicles[0]) || "Vehicle not given";
+  // The header (DESIGN.md section 4, AppShell): the claim number only when there is one; vehicle A, live, or "Your car".
+  const number = (s.claim.number || "").trim();
+  $("#claim-no-part").hidden = !number;
+  $(".claim-no", $("#claim-no-part")).textContent = `Claim ${number}`;
+  $("#claim-vehicle-wrap").className = number ? "long" : "";
+  const a = s.vehicles[0];
+  $("#claim-vehicle").textContent = a && (a.make.trim() || a.model.trim()) ? vehicleName(a) : "Your car";
+  if (document.activeElement !== $("#claim-number")) $("#claim-number").value = number;
   if (current === "location") renderLocation(s, reason);
   if (current === "vehicles") renderVehicles(s, reason);
   if (current === "review") renderReview(s, reason);
@@ -761,13 +767,13 @@ $("#save-btn").addEventListener("click", async () => {
     const info = { createdAt, full, short: shortFp(full), text, stateKey: canonical(exportScene(s, null)) };
     ui.lastExport = info;
     renderExport(s);
-    if (chosen.includes("json")) { download(new Blob([text], { type: "application/json" }), `crash-scene-${s.claim.number}.json`); saved.push("scene file"); }
+    if (chosen.includes("json")) { download(new Blob([text], { type: "application/json" }), `${fileBase(s, createdAt)}.json`); saved.push("scene file"); }
     if (chosen.includes("png")) {
       pngScreen.classList.add("offscreen");
       renderPng($("#png-page"), s, simulate(s), info);
       await nextFrame();
       const blob = await pngBlob($("#png-page"));
-      if (blob) { download(blob, `crash-scene-${s.claim.number}-diagram.png`); saved.push("diagram picture"); }
+      if (blob) { download(blob, `${fileBase(s, createdAt)}-diagram.png`); saved.push("diagram picture"); }
     }
     if (chosen.includes("pdf")) {
       if (navigator.webdriver) saved.push("PDF (print window skipped in tests)");
@@ -814,6 +820,74 @@ $("#open-scene").addEventListener("change", async (e) => {
     toast(`That file couldn't be opened (${err.message}).`);
   }
 });
+
+/* ================= Claim number (optional; DESIGN.md section 5, step 1) ================= */
+// Letters, digits and dashes, at most 32, as in the app (apps/web/src/lib/claim.ts); ?claim= fills it from a link.
+const cleanClaim = (t) => t.replace(/[^A-Za-z0-9-]/g, "").slice(0, 32);
+$("#claim-number").addEventListener("input", (e) => {
+  const v = cleanClaim(e.target.value);
+  if (v !== e.target.value) e.target.value = v;
+  store.update((d) => { d.claim.number = v; }, "claim");
+});
+{
+  const fromLink = new URLSearchParams(location.search).get("claim");
+  if (fromLink && /^[A-Za-z0-9-]{1,32}$/.test(fromLink)) store.update((d) => { d.claim.number = fromLink; }, "claim");
+}
+/** The files' shared name: crash-scene-<claim number>, or crash-scene-<date>-<time> with none. */
+function fileBase(s, createdAt) {
+  const n = (s.claim.number || "").trim();
+  if (n) return `crash-scene-${n}`;
+  const d = new Date(createdAt), p = (x) => String(x).padStart(2, "0");
+  return `crash-scene-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/* ================= Welcome on a first visit (DESIGN.md section 19) ================= */
+// Seen once per browser (csd.welcome.v1, as the app); every storage call in try/catch so blocked storage still works.
+const WELCOME_KEY = "csd.welcome.v1";
+let welcomeSeenThisPage = false;
+function welcomeSeen() {
+  if (welcomeSeenThisPage) return true;
+  try { const v = JSON.parse(localStorage.getItem(WELCOME_KEY) || "null"); return v?.seen === true; } catch { return false; }
+}
+function markWelcomeSeen() {
+  welcomeSeenThisPage = true;
+  try { localStorage.setItem(WELCOME_KEY, JSON.stringify({ seen: true })); } catch { /* lasts until the page closes */ }
+}
+const welcomeDialog = $("#welcome-dialog");
+let welcomeOpener = null;
+function openWelcome() {
+  welcomeOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+  welcomeDialog.showModal();
+  $("#welcome-try").focus();
+}
+function closeWelcome() {
+  markWelcomeSeen();
+  if (welcomeDialog.open) welcomeDialog.close();
+  welcomeOpener?.focus?.();
+  welcomeOpener = null;
+}
+welcomeDialog.addEventListener("cancel", (e) => { e.preventDefault(); closeWelcome(); });
+// The dialog box has no padding of its own, so a click on the <dialog> itself is on the backdrop.
+let welcomeDownOnBackdrop = false;
+welcomeDialog.addEventListener("mousedown", (e) => { welcomeDownOnBackdrop = e.target === welcomeDialog; });
+welcomeDialog.addEventListener("click", (e) => { if (e.target === welcomeDialog && welcomeDownOnBackdrop) closeWelcome(); });
+// Tab and Shift+Tab stay inside.
+welcomeDialog.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const items = $$("button", welcomeDialog);
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+$("#welcome-dismiss").addEventListener("click", closeWelcome);
+// The app opens the T-bone example on Review; the prototype's own sample claim stands in for it.
+$("#welcome-try").addEventListener("click", () => { closeWelcome(); store.replace(initialScene()); location.hash = "#review"; });
+$("#about-tool").addEventListener("click", (e) => { e.currentTarget.focus(); openWelcome(); });
+// Phones reach it from Learn more: the About dialog's button swaps that dialog for the welcome.
+$("#about-tool-from-about").addEventListener("click", () => { $("#disclaimer-dialog").close(); openWelcome(); });
+// Never over a link to something specific (an example, a later step).
+const deepLink = (location.hash.slice(1) || "location") !== "location" || new URLSearchParams(location.search).has("example");
+if (!deepLink && !welcomeSeen()) openWelcome();
 
 /* ================= Boot ================= */
 (async () => {

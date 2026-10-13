@@ -11,7 +11,8 @@ import { defineConfig, devices } from "@playwright/test";
 const baseURL = process.env.BASE_URL;
 if (!baseURL) throw new Error("BASE_URL is required for live-mode e2e, e.g. BASE_URL=http://localhost:8851 npm run e2e:live");
 
-const tipsHidden = { cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "csd.tips.v1", value: JSON.stringify({ hidden: [], all: true }) }] }] };
+// Tips hidden and the first-visit welcome seen (DESIGN.md section 19): a live build has no fixtures mode to keep the welcome away.
+const tipsHidden = { cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "csd.tips.v1", value: JSON.stringify({ hidden: [], all: true }) }, { name: "csd.welcome.v1", value: JSON.stringify({ seen: true }) }] }] };
 
 export default defineConfig({
   testDir: "e2e/live",

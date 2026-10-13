@@ -17,12 +17,16 @@ describe("streetsAtPin: roads within 25 m", () => {
     expect(byId.get("park")!.distanceM).toBeCloseTo(8, 6);
   });
 
-  it("draws the line at 25 m", () => {
+  it("draws the line at 25 m, and off to the side of every road offers the nearest one within the picture's reach (40 m)", () => {
     const net = intersectionNet();
-    const inside = streetsAtPin(net, { x: 24, y: 100 }); // Main is 24 m west of the pin
-    expect(inside.roads.map((x) => x.roadId)).toContain("main");
+    const inside = streetsAtPin(net, { x: 24, y: 100 }); // Main is 24 m west of the pin, Hill Road 36 m east
+    expect(inside.roads.map((x) => x.roadId)).toEqual(["main"]);
+    // 26 m from Main and 34 m from Hill Road: nothing within 25 m, so the nearest road the picture would use, and only it.
     const outside = streetsAtPin(net, { x: 26, y: 100 });
-    expect(outside.roads.map((x) => x.roadId)).not.toContain("main");
+    expect(outside.roads.map((x) => x.roadId)).toEqual(["main"]);
+    expect(outside.directions.map((d) => d.label).sort()).toEqual(["northbound on Main Street", "southbound on Main Street"]);
+    // Beyond 40 m there is no road at the pin at all.
+    expect(streetsAtPin(net, { x: 41, y: 100 }).roads.filter((x) => x.roadId === "main")).toEqual([]);
   });
 
   it("returns nothing when no road is near", () => {
@@ -116,8 +120,9 @@ describe("streetsAtPin: unnamed roads are told apart (vehicles step fixes, 2026-
     expect(r.directions).toHaveLength(6);
     expect(new Set(r.directions.map((d) => d.label)).size).toBe(6);
     expect(labels(r)).toEqual([
-      "northbound on the parking aisle (east one)", "northbound on the parking aisle (middle)", "northbound on the parking aisle (west one)",
-      "southbound on the parking aisle (east one)", "southbound on the parking aisle (middle)", "southbound on the parking aisle (west one)",
+      // The aisles run about 37 degrees east of north: "heading northeast", never "northbound" (2026-10-11).
+      "heading northeast on the parking aisle (east one)", "heading northeast on the parking aisle (middle)", "heading northeast on the parking aisle (west one)",
+      "heading southwest on the parking aisle (east one)", "heading southwest on the parking aisle (middle)", "heading southwest on the parking aisle (west one)",
     ]);
     // The aisle the pin is on is the middle one; never a made-up name.
     const onPin = r.directions.find((d) => d.roadId === r.roads[0]!.roadId)!;
@@ -179,10 +184,15 @@ describe("streetsAtPin: unnamed roads are told apart (vehicles step fixes, 2026-
 
   it("the caption, the summary and the PDF say the same words (directionCaption is the one formatter)", () => {
     const travel = { bearingDeg: 37, roadId: "w1", roadName: null, roadDesc: "the parking aisle (west one)", lane: null };
-    expect(directionCaption({ action: "straight", travel })).toBe("Northbound on the parking aisle (west one)");
-    expect(directionCaption({ action: "parked", travel })).toBe("Parked, facing north on the parking aisle (west one)");
-    // A name always wins over a description; neither: just the bound.
-    expect(directionCaption({ action: "straight", travel: { ...travel, roadName: "Main Street" } })).toBe("Northbound on Main Street");
-    expect(directionCaption({ action: "straight", travel: { ...travel, roadDesc: undefined } })).toBe("Northbound");
+    expect(directionCaption({ action: "straight", travel })).toBe("Heading northeast on the parking aisle (west one)");
+    expect(directionCaption({ action: "parked", travel })).toBe("Parked, facing northeast on the parking aisle (west one)");
+    // A name always wins over a description; neither: just the way it was going.
+    expect(directionCaption({ action: "straight", travel: { ...travel, roadName: "Main Street" } })).toBe("Heading northeast on Main Street");
+    expect(directionCaption({ action: "straight", travel: { ...travel, roadDesc: undefined } })).toBe("Heading northeast");
+    // Near north, east, south or west it is still "northbound"; a vehicle out of a driveway says so.
+    expect(directionCaption({ action: "straight", travel: { ...travel, bearingDeg: 12 } })).toBe("Northbound on the parking aisle (west one)");
+    expect(directionCaption({ action: "straight", travel: { ...travel, bearingDeg: 270, roadName: "Main Street", fromDriveway: true } })).toBe("Out of a driveway or parking lot onto Main Street, westbound");
+    expect(directionCaption({ action: "turn-left", travel: { ...travel, bearingDeg: 0, roadName: "Main Street", fromDriveway: true } })).toBe("Turning left out of a driveway or parking lot onto Main Street, northbound");
+    expect(directionCaption({ action: "backing", travel: { ...travel, bearingDeg: 90, roadName: "Main Street", fromDriveway: true } })).toBe("Backing out of a driveway or parking lot onto Main Street, facing east");
   });
 });

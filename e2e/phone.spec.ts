@@ -1,7 +1,7 @@
 // 7. Phone (390 × 844): no big empty map before a pin, the sticky action bar, Measure as a tab,
 // and nothing wider than the screen on any step. Runs in the phone project only.
 import type { Locator, Page } from "@playwright/test";
-import { expect, freshStart, openExample, searchAndPick, searchBox, test, toReview, waitForViewer } from "./helpers";
+import { DEFAULT_ANSWERS, answerVehicle, expect, freshStart, openExample, searchAndPick, searchBox, test, toReview, waitForViewer } from "./helpers";
 
 test.beforeEach(({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) > 600, "phone only");
@@ -99,6 +99,8 @@ test("sticky action bar on every step, and nothing hides under it", async ({ pag
 
   await page.locator("#vehicle-A").getByRole("radio", { name: "Northbound on Main Street" }).click();
   await page.locator("#vehicle-B").getByRole("radio", { name: "Westbound on Park Street" }).click();
+  await answerVehicle(page, "A", { type: "Car", ...DEFAULT_ANSWERS.A });
+  await answerVehicle(page, "B", DEFAULT_ANSWERS.B);
   await page.locator("#vehicle-A").getByRole("radio", { name: "Hit on the right side", exact: true }).click();
   await toReview(page);
   await waitForViewer(page);

@@ -19,8 +19,8 @@
   ],
   "parking-lot-backing": [
     "Vehicle | Type, weight | Direction | Speed at impact, as entered | Hit on",
-    "A | 2020 Subaru | Car, about 3,550 lb | Northbound | about | 8 | mph | · | 13 | km/h | Left side",
+    "A | 2020 Subaru | Car, about 3,550 lb | Heading northeast | about | 8 | mph | · | 13 | km/h | Left side",
     "Outback",
-    "B | 2017 Honda Odyssey | Van, about 4,750 lb | Backing up, facing west | about | 3 | mph | · | 5 | km/h | Rear"
+    "B | 2017 Honda Odyssey | Van, about 4,750 lb | Backing up, facing northwest | about | 3 | mph | · | 5 | km/h | Rear"
   ]
 }

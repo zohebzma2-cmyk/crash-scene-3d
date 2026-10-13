@@ -1,14 +1,15 @@
 // App shell: header with the claim chip, the disclaimer bar, the stepper, the toast and the
 // "About this illustration" dialog. Light and dark follow the OS unless the toggle is used.
-import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { DISCLAIMER_LONG, DISCLAIMER_SHORT, vehicleName } from "@csd/core";
+import { useRef, useState, type MouseEvent } from "react";
+import { DISCLAIMER_LONG, DISCLAIMER_SHORT, vehicleName, type SceneVehicle } from "@csd/core";
 import { Icon } from "../icons/Icon";
 import { Brand } from "./Brand";
 import { STEPS, stepIndex, useFlow, type StepKey } from "../state/Flow";
 import { useServices } from "../services/context";
-import { useScene } from "../state/DocProvider";
+import { useDoc } from "../state/DocProvider";
 import { useUi } from "../state/Ui";
 import { ShowTipsButton } from "../tips/Tips";
+import { ModalDialog } from "./Modal";
 
 const LEAD = "Illustration only.";
 
@@ -19,8 +20,15 @@ function prefersDark(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
+/** The header's vehicle: vehicle A as entered, live; "Your car" until A has a make or model (DESIGN.md section 4, AppShell). */
+export function headerVehicle(a: Pick<SceneVehicle, "year" | "make" | "model"> | undefined): string {
+  return a && (a.make.trim() || a.model.trim()) ? (vehicleName(a) ?? YOUR_CAR) : YOUR_CAR;
+}
+const YOUR_CAR = "Your car";
+
 export function Header({ onClose }: { onClose?: () => void }) {
-  const scene = useScene();
+  const { doc } = useDoc();
+  const scene = doc.scene;
   const flow = useFlow();
   const { mode } = useServices();
   const [dark, setDark] = useState(prefersDark);
@@ -30,15 +38,17 @@ export function Header({ onClose }: { onClose?: () => void }) {
     root.classList.toggle("light", dark);
     setDark(!dark);
   };
-  const vehicle = vehicleName(scene.claim.vehicle);
+  const vehicle = headerVehicle(scene.vehicles[0]);
+  const number = scene.claim.number.trim();
   return (
     <header className="app-header">
       <Brand href="#location" onClick={(e) => { e.preventDefault(); flow.go("location"); }} />
       <span className="claim-chip" data-testid="claim-chip">
-        <span className="claim-no"><span className="claim-word">Claim </span>{scene.claim.number}</span>
-        <span className="long"> · <span id="claim-vehicle">{vehicle ?? "Vehicle not given"}</span></span>
+        {/* No claim number (a new visitor): no "Claim" part at all, and the vehicle shows on phones too. */}
+        {number ? <><span className="claim-no"><span className="claim-word">Claim </span>{number}</span><span className="long"> · </span></> : null}
+        <span className={number ? "long" : undefined}><span id="claim-vehicle">{vehicle}</span></span>
       </span>
-      {mode === "fixtures" ? <span className="mode-chip" title="Fixtures mode: examples only, nothing leaves the browser">Example data</span> : null}
+      {mode === "fixtures" || doc.example ? <span className="mode-chip" title={doc.example ? "A made-up example: its claim and vehicles are not real" : "Fixtures mode: examples only, nothing leaves the browser"}>Example data</span> : null}
       <span className="header-spacer" />
       <ShowTipsButton />
       <button className="icon-btn" type="button" aria-label={dark ? "Switch to the light theme" : "Switch to the dark theme"} onClick={toggle}>
@@ -51,7 +61,9 @@ export function Header({ onClose }: { onClose?: () => void }) {
   );
 }
 
-export function DisclaimerBar({ onLearnMore }: { onLearnMore: () => void }) {
+export const ABOUT_TOOL_LABEL = "About this tool";
+
+export function DisclaimerBar({ onLearnMore, onAbout }: { onLearnMore: () => void; onAbout?: () => void }) {
   return (
     // A labeled landmark (complementary), so the disclaimer isn't content outside every landmark (axe "region").
     <aside className="disclaimer-bar" aria-label="Disclaimer">
@@ -59,6 +71,9 @@ export function DisclaimerBar({ onLearnMore }: { onLearnMore: () => void }) {
       <span><strong>{LEAD}</strong><span className="long">{DISCLAIMER_SHORT.slice(LEAD.length)}</span></span>
       {/* Safari doesn't focus a clicked button, so the dialog would hand focus back to <body> on close: focus it first. */}
       <button type="button" className="link-btn" onClick={(e) => { e.currentTarget.focus(); onLearnMore(); }}>Learn more</button>
+      {/* Reopens the first-visit welcome (DESIGN.md section 19). Not on phones: there the bar sits over the 3D view's labels
+          as the page scrolls, and a second link would crowd them; phones reach it from Learn more. */}
+      {onAbout ? <button type="button" className="link-btn about-tool-link" onClick={(e) => { e.currentTarget.focus(); onAbout(); }}>{ABOUT_TOOL_LABEL}</button> : null}
     </aside>
   );
 }
@@ -107,26 +122,20 @@ export function Toast() {
   );
 }
 
-export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) {
-      if (typeof d.showModal === "function") d.showModal();
-      else d.setAttribute("open", "");
-    } else if (!open && d.open) {
-      if (typeof d.close === "function") d.close();
-      else d.removeAttribute("open");
-    }
-  }, [open]);
+/** `onAboutTool`: an "About this tool" button that swaps this dialog for the welcome (the way there on phones, DESIGN.md section 19). */
+export function AboutDialog({ open, onClose, onAboutTool }: { open: boolean; onClose: () => void; onAboutTool?: () => void }) {
+  const gotIt = useRef<HTMLButtonElement>(null);
+  if (!open) return null;
   return (
-    <dialog ref={ref} aria-labelledby="about-title" onClose={onClose} onCancel={onClose}>
+    <ModalDialog labelledBy="about-title" onDismiss={onClose} initialFocus={gotIt}>
       <div className="dialog-body">
         <h2 id="about-title">About this illustration</h2>
         <p>{DISCLAIMER_LONG}</p>
-        <div className="actions"><button type="button" className="btn btn-primary" onClick={onClose}>Got it</button></div>
+        <div className="actions">
+          {onAboutTool ? <button type="button" className="btn btn-quiet" onClick={onAboutTool}>{ABOUT_TOOL_LABEL}</button> : null}
+          <button ref={gotIt} type="button" className="btn btn-primary" onClick={onClose}>Got it</button>
+        </div>
       </div>
-    </dialog>
+    </ModalDialog>
   );
 }

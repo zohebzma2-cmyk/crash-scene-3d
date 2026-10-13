@@ -290,10 +290,29 @@ export function kvOnBlobs(parts: BlobsParts): KvStore {
   };
 }
 
-/** Production store: Netlify Blobs with strong consistency (opened on first use). */
+/**
+ * A store that is opened again for every call (`open` runs each time), never kept. Netlify Blobs' getStore() takes its
+ * access token from the invocation it is called in, and a warm function instance outlives that token: a store kept from
+ * an earlier request fails every read and write with "Failed to decode token: Token expired" (seen on drafts,
+ * 2026-10-12: tiles, logos and the vehicle lists all answered 500 until the instance was recycled). Opening one makes no
+ * request, so this costs nothing.
+ */
+export function perCallStore(open: () => BlobStoreLike): BlobStoreLike {
+  return {
+    getWithMetadata: ((key: string, opts: { type: "text" } | { type: "arrayBuffer" }) =>
+      open().getWithMetadata(key, opts as { type: "text" })) as BlobStoreLike["getWithMetadata"],
+    set: (key, data, opts) => open().set(key, data, opts),
+    delete: (key) => open().delete(key),
+  };
+}
+
+/**
+ * Production store: Netlify Blobs with strong consistency. The batching and housekeeping state lives as long as the
+ * function instance; every store underneath is opened per call (perCallStore), so it always has the current token.
+ */
 export function blobsStore(): KvStore {
   let kv: KvStore | undefined;
-  const open = (name: string) => getStore({ name, consistency: "strong" }) as unknown as BlobStoreLike;
+  const open = (name: string) => perCallStore(() => getStore({ name, consistency: "strong" }) as unknown as BlobStoreLike);
   const real = () =>
     (kv ??= kvOnBlobs({
       cache: open("csd-proxy-cache"),

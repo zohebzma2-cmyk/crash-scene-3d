@@ -199,7 +199,8 @@ describe("simulate: before impact (constant deceleration, 0 unless braking)", ()
     expect(dist(start, end)).toBeCloseTo(3 * MPH * APPROACH_S, 6);
     for (let i = 0; i <= i0; i++) expect(angleDiffRad(B.track[i]!.headingRad, 0)).toBeLessThan(1e-9); // ...while facing north
     const A = vr(sim, "A");
-    expect(Math.abs(bearingDegOf(posOf(A.track[0]!), posOf(A.track[i0]!)) - 90)).toBeLessThan(1);
+    // A goes east along its aisle lane; hit on its side, it eases over to where the contact puts it in the last 20 m.
+    expect(Math.abs(bearingDegOf(posOf(A.track[0]!), posOf(A.track[i0]!)) - 90)).toBeLessThan(5);
   });
 
   it("follows a left turn's path at constant speed, turning only to the left", () => {
@@ -215,7 +216,8 @@ describe("simulate: before impact (constant deceleration, 0 unless braking)", ()
     let turned = 0;
     for (let i = 1; i <= i0; i++) {
       const d = wrap(A.track[i]!.headingRad - A.track[i - 1]!.headingRad);
-      expect(d).toBeLessThanOrEqual(1e-9); // compass heading only decreases on a left turn
+      // Compass heading only decreases on a left turn (a hair either way where it eases to its place at the impact).
+      expect(d).toBeLessThanOrEqual(0.01);
       turned += d;
     }
     expect(turned).toBeLessThanOrEqual(0);

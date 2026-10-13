@@ -9,12 +9,13 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { type Pose, type RoadNetwork, type SimulationResult, type VehicleResult, type Vec2 } from "@csd/core";
 import type { CameraKeyEvent, CameraView, ViewerHandle, ViewerProps } from "./types";
 import { cameraFor, compassRotationDeg, heightAt, layoutLabels, northUpSpin, screenUpHeading, spunOffset, toThree, type LabelRequest, type PlacedLabel, type Rect, type NorthSpin } from "./math";
-import { LIFT, RING_M } from "./scene-geometry";
+import { LIFT, RING_M, ringPlacement } from "./scene-geometry";
 import { World } from "./World";
+import { Environment } from "./Environment";
 import { readSceneColors, vehicleToken, type SceneColors } from "./tokens";
 import { VehicleMesh, RestOutline, useVehicleMaterials } from "./vehicle-view";
 import { useCatalogModels } from "./catalog-models";
-import { PaintChip } from "../components/PaintChip";
+import { CatalogColourChip } from "../components/PaintChip";
 import { disposeVehicleModels, vehicleModel } from "./vehicle-models";
 import { projectRing, projectVehicle, vehicleLabel } from "./labels";
 import { renderStill, type CaptureContext } from "./capture";
@@ -65,13 +66,26 @@ function Paths({ sim, colors, terrain }: { sim: SimulationResult; colors: SceneC
   return <>{lines.map((l) => <Line key={l.key} points={l.points} color={l.color} lineWidth={3} dashed={l.dashed} dashSize={1.2} gapSize={0.9} />)}</>;
 }
 
+/**
+ * The impact ring, beside the crash and clear of both cars (scene-geometry ringPlacement), with a thin leader line from its
+ * edge to where the vehicles touched. Where it can sit on the contact without touching a body, it does, with no line.
+ */
 function ImpactRing({ sim, colors, terrain }: { sim: SimulationResult; colors: SceneColors; terrain: RoadNetwork["terrain"] | null }) {
-  const p = sim.impactPointM;
+  const { center, anchor } = useMemo(() => ringPlacement(sim), [sim]);
+  const leader = useMemo<Array<[number, number, number]> | null>(() => {
+    const dx = anchor.x - center.x, dy = anchor.y - center.y, d = Math.hypot(dx, dy);
+    if (d <= RING_M.outer) return null;
+    const edge = { x: center.x + (dx / d) * RING_M.outer, y: center.y + (dy / d) * RING_M.outer };
+    return [toThree(edge, heightAt(terrain ?? null, edge) + LIFT.ring), toThree(anchor, heightAt(terrain ?? null, anchor) + LIFT.ring)];
+  }, [center, anchor, terrain]);
   return (
-    <mesh position={toThree(p, heightAt(terrain ?? null, p) + LIFT.ring)} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[RING_M.inner, RING_M.outer, 48]} />
-      <meshBasicMaterial color={colors["--color-scene-impact"]} />
-    </mesh>
+    <>
+      <mesh position={toThree(center, heightAt(terrain ?? null, center) + LIFT.ring)} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[RING_M.inner, RING_M.outer, 48]} />
+        <meshBasicMaterial color={colors["--color-scene-impact"]} />
+      </mesh>
+      {leader ? <Line points={leader} color={colors["--color-scene-impact"]} lineWidth={2} /> : null}
+    </>
   );
 }
 
@@ -110,12 +124,14 @@ function Rig(props: {
   resetToken: number; /** Changes when the compass is pressed: turn to look north, same distance and elevation. */ northToken: number; controls: React.RefObject<OrbitControlsImpl | null>; userMoved: React.RefObject<boolean>;
   /** FX: debris and slide-mark end points, for framing the Aftermath view. */
   extraPoints?: () => readonly Vec2[];
+  /** Pixels along the bottom of the picture under the legend and zoom buttons (math.ts Viewport.bottomInset). */
+  hudInset: number;
 }) {
   const { camera, size } = useThree();
   const lastKey = useRef("");
   const lastSize = useRef("");
   const anim = useRef<{ from: Vector3; to: Vector3; fromT: Vector3; toT: Vector3; fromZoom: number; toZoom: number; t0: number } | null>(null);
-  const { view, sim, terrain, timeS, reducedMotion, resetToken, northToken, controls, userMoved, extraPoints } = props;
+  const { view, sim, terrain, timeS, reducedMotion, resetToken, northToken, controls, userMoved, extraPoints, hudInset } = props;
   // The compass turn: an orbit around the target by azimuth (a straight lerp of the position would cut through the target on a half turn).
   const spin = useRef<{ s: NorthSpin; t0: number } | null>(null);
   const lastNorth = useRef(northToken);
@@ -123,13 +139,13 @@ function Rig(props: {
   const spec = useCallback(() => cameraFor(view, sim, (id) => {
     const v = sim.vehicles.find((x) => x.id === id);
     return v ? trackPose(sim, v, timeS) : null;
-  }, { w: size.width, h: size.height }, terrain, view === "aftermath" ? extraPoints?.() : undefined), [view, sim, timeS, terrain, size.width, size.height, extraPoints]);
+  }, { w: size.width, h: size.height, bottomInset: hudInset }, terrain, view === "aftermath" ? extraPoints?.() : undefined), [view, sim, timeS, terrain, size.width, size.height, hudInset, extraPoints]);
 
   useEffect(() => {
     const s = spec();
     if (isOrtho(camera) !== (s.kind === "orthographic")) return;      // the camera swap is still in flight
     const key = `${view}|${resetToken}|${camera.uuid}|${sim.vehicles.length}`;
-    const sizeKey = `${size.width}x${size.height}`;
+    const sizeKey = `${size.width}x${size.height}-${hudInset}`;
     const keyChanged = key !== lastKey.current;
     const resized = sizeKey !== lastSize.current;
     lastSize.current = sizeKey;
@@ -150,7 +166,7 @@ function Rig(props: {
       return;
     }
     anim.current = { from: camera.position.clone(), to, fromT: ctl.target.clone(), toT, fromZoom: isOrtho(camera) ? camera.zoom : 1, toZoom: s.zoom, t0: performance.now() };
-  }, [camera, spec, view, resetToken, reducedMotion, controls, userMoved, sim.vehicles.length, size.width, size.height]);
+  }, [camera, spec, view, resetToken, reducedMotion, controls, userMoved, sim.vehicles.length, size.width, size.height, hudInset]);
 
   // Pressing the compass: look north. The driver views follow their vehicle, so they ignore it.
   useEffect(() => {
@@ -211,7 +227,7 @@ const LABEL_GAP_PX = 8;
 const LABEL_STEP_PX = 8;
 const PILL_REACH_PX = 150;
 const estimateWidth = (it: LabelItem) => (it.kind === "vehicle" ? 14 + it.text.length * 6.6 : 30 + it.text.length * 7.2);
-const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass, .viewer3d-model-note, .viewer-notice";
+const OBSTACLES = ".view-controls, .scene-caption, .viewer3d-controls, .viewer3d-legend, .viewer3d-compass, .viewer3d-model-note, .viewer-notice, .account-icons";
 
 function LabelProjector({ vehicles, measures, ring, showVehicleLabels, sizes, obstacles, layer, onLayout }: {
   vehicles: readonly VehicleAnchor[]; measures: readonly MeasureAnchor[]; ring: { center: Vec2; ground: number }; showVehicleLabels: boolean;
@@ -321,6 +337,12 @@ function Capture({ build, register }: { build: () => Omit<CaptureContext, "live"
 
 /* ---------------- the viewer ---------------- */
 const HINT_TEXT = "Use Ctrl + scroll or pinch to zoom";
+/** Road features mount in the first idle moment after the view is shown, at most this long after it. */
+const FURNITURE_WAIT_MS = 1500;
+/** Where there is no requestIdleCallback (older Safari): this long after the view is shown. */
+const FURNITURE_FALLBACK_MS = 300;
+/** Longest a still waits for the road features to join the picture before it is taken without them. */
+const FURNITURE_CAPTURE_WAIT_MS = 5000;
 const HINT_MS = 2200;
 const HINT_FADE_MS = 400;
 const KEY_ZOOM = 1 / 0.85;
@@ -343,6 +365,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const extraPoints = useCallback(() => fxApi.current?.extraPoints() ?? [], []);   // FX
   const sizes = useRef<Sizes>(new Map());
   const obstacles = useRef<Rect[]>([]);
+  /** How much of the picture's bottom the legend and zoom buttons cover, px (measured with the obstacles; the Top view frames above it). */
+  const [hudInset, setHudInset] = useState(0);
   const [resetToken, setResetToken] = useState(0);
   const [northToken, setNorthToken] = useState(0);
   const compassRef = useRef<HTMLButtonElement>(null);
@@ -374,6 +398,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   // Notes about catalog models: a watermarked preview, and a model that keeps the catalog's paint (it can't be tinted).
   const watermarked = [...catalog.values()].some((m) => m.watermarked);
   const untinted = props.scene.vehicles.filter((v) => catalog.get(v.id)?.plan.kind === "none");
+  // The paint an untinted catalog model shows (named), never the picked one it doesn't show.
+  const catalogPaintOf = (id: string) => { const plan = catalog.get(id)?.plan; return plan?.kind === "none" ? plan.catalogPaint : null; };
   const noteKey = `${watermarked}|${untinted.map((v) => v.id).join()}`;
 
   // Everything the still capture needs, read at capture time so it is always current.
@@ -389,8 +415,38 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
     };
   }, [extraPoints]);
 
+  // The tagged road features (signs, signals, lamps, crossing and turn paint) mount after the first frame, once the
+  // view has been shown, and join the picture once their shaders have compiled (RoadFurniture), so they never hold
+  // up the picture ("Drawing the scene" ends at the vehicles' first frame). Stills wait for them (bounded), so a
+  // picture doesn't miss them.
+  const [firstFrame, setFirstFrame] = useState(false);
+  const [furniture, setFurniture] = useState(false);
+  const [furnitureGate] = useState(() => {
+    let open = () => {};
+    const promise = new Promise<void>((r) => { open = r; });
+    return { promise, open };
+  });
+  const onReadyProp = props.onReady;
+  const onFirstFrame = useCallback(() => { setFirstFrame(true); onReadyProp?.(); }, [onReadyProp]);
+  useEffect(() => {
+    if (!firstFrame || props.building || furniture) return;
+    // In idle time: by then the GPU has finished the first frame, so the features' new shader doesn't stall the
+    // page waiting on it (that wait was ~1.3 s at 4× CPU in SwiftShader). The timeout bounds it on a busy page.
+    const go = () => setFurniture(true);
+    if (typeof requestIdleCallback === "function") {
+      const id = requestIdleCallback(go, { timeout: FURNITURE_WAIT_MS });
+      return () => cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(go, FURNITURE_FALLBACK_MS);
+    return () => window.clearTimeout(id);
+  }, [firstFrame, props.building, furniture]);
+  const still = useCallback<ViewerHandle["captureStill"]>(
+    (t, view, size) => Promise.race([furnitureGate.promise, new Promise<void>((r) => window.setTimeout(r, FURNITURE_CAPTURE_WAIT_MS))]).then(() => (captureFn.current ? captureFn.current(t, view, size) : Promise.reject(new Error("The 3D view isn't ready yet.")))),
+    [furnitureGate],
+  );
+
   useImperativeHandle(ref, () => ({
-    captureStill: (t, view, size) => (captureFn.current ? captureFn.current(t, view, size) : Promise.reject(new Error("The 3D view isn't ready yet."))),
+    captureStill: still,
     handleKey: (e) => cameraKey(e),
   }));
 
@@ -398,7 +454,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   useEffect(() => {
     if (!(import.meta.env.DEV || import.meta.env.VITE_FIXTURES === "1")) return;
     const hook = {
-      captureStill: (t: number, view: CameraView, size: { width: number; height: number }) => captureFn.current!(t, view, size),
+      captureStill: (t: number, view: CameraView, size: { width: number; height: number }) => still(t, view, size),
       hide: (id: string, hidden: boolean) => { const g = groups.current.get(id); if (g) g.visible = !hidden; },
       camera: () => { const c = controls.current?.object; return c ? { orthographic: isOrtho(c), zoom: c.zoom, position: c.position.toArray(), target: controls.current!.target.toArray() } : null; },
       // Read-only: the live scene graph, camera and vehicle groups, for the visibility sweep (e2e/visibility-sweep.spec.ts).
@@ -408,7 +464,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
     };
     (window as unknown as { __csdViewer?: typeof hook }).__csdViewer = hook;
     return () => { delete (window as unknown as { __csdViewer?: typeof hook }).__csdViewer; };
-  }, []);
+  }, [still]);
   // Where the vehicles go, one point every few meters: street names are kept off these.
   const pathPoints = useMemo(() => props.sim.vehicles.flatMap((v) => v.track.filter((_, i) => i % 20 === 0).map((p): Vec2 => ({ x: p.xM, y: p.yM }))), [props.sim]);
 
@@ -447,6 +503,13 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
       if (r.width > 0 && r.height > 0) rects.push({ x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height });
     }
     obstacles.current = rects;
+    // The band along the bottom under the legend and the zoom buttons (the HUD's bottom row): the Top view keeps the crash above it.
+    let top = base.height;
+    for (const el of root.querySelectorAll(".viewer3d-legend, .viewer3d-controls, .viewer3d-compass")) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && r.bottom - base.top > base.height / 2) top = Math.min(top, r.top - base.top);
+    }
+    setHudInset(Math.max(0, Math.round(base.height - top)));
   }, []);
   useEffect(() => {
     const root = rootRef.current;
@@ -544,7 +607,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   };
 
   const onLayout = useCallback((l: LiveLabel[]) => setLabels(l), []);
-  const ringAt = useMemo(() => ({ center: props.sim.impactPointM, ground: heightAt(terrain, props.sim.impactPointM) + LIFT.ring }), [props.sim.impactPointM, terrain]);
+  const ringAt = useMemo(() => { const c = ringPlacement(props.sim).center; return { center: c, ground: heightAt(terrain, c) + LIFT.ring }; }, [props.sim, terrain]);
   const registerCapture = useCallback((fn: ViewerHandle["captureStill"]) => { captureFn.current = fn; }, []);
 
   return (
@@ -552,9 +615,8 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
       <Canvas shadows="percentage" dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} onCreated={onCreated}>
         <PerspectiveCamera makeDefault={!ortho} fov={45} near={0.3} far={4000} position={[0, 120, 0.01]} />
         <OrthographicCamera makeDefault={ortho} near={0.3} far={4000} zoom={8} position={[0, 400, 0.001]} />
-        <hemisphereLight args={[colors["--color-scene-sky"], colors["--color-scene-lot"], 1]} />
-        <directionalLight color={colors["--color-scene-sun"]} position={[60, 120, 40]} intensity={1.6} castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-120} shadow-camera-right={120} shadow-camera-top={120} shadow-camera-bottom={-120} />
-        <World roads={props.roads} colors={colors} focus={props.sim.impactPointM} avoid={pathPoints} />
+        <Environment scene={props.scene} colors={colors} />
+        <World roads={props.roads} colors={colors} focus={props.sim.impactPointM} avoid={pathPoints} scene={props.scene} furniture={furniture} onFurnitureShown={furnitureGate.open} />
         {props.showPaths && <Paths sim={props.sim} colors={colors} terrain={terrain} />}
         <ImpactRing sim={props.sim} colors={colors} terrain={terrain} />
         {poses.map(({ v, pose }) => <VehicleMesh key={v.id} v={v} paint={props.scene.vehicles.find((x) => x.id === v.id)} catalog={catalog.get(v.id) ?? null} pose={pose} mats={mats} terrain={terrain} register={registerGroup} damage={damage.get(v.id)} />)}
@@ -564,12 +626,12 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
           <RestOutline key={`rest-${v.id}`} v={v} terrain={terrain} strokePx={ghostStroke} color={colors[vehicleToken(v.id)]} />
         ))}
         <OrbitControls ref={controls} makeDefault enableDamping={!props.reducedMotion} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={6} maxDistance={900} minZoom={ORTHO_ZOOM.min} maxZoom={ORTHO_ZOOM.max} onStart={() => { userMoved.current = true; }} />
-        <Rig view={props.view} sim={props.sim} terrain={terrain} timeS={props.timeS} reducedMotion={props.reducedMotion} resetToken={resetToken} northToken={northToken} controls={controls} userMoved={userMoved} extraPoints={extraPoints} />
+        <Rig view={props.view} sim={props.sim} terrain={terrain} timeS={props.timeS} reducedMotion={props.reducedMotion} resetToken={resetToken} northToken={northToken} controls={controls} userMoved={userMoved} extraPoints={extraPoints} hudInset={hudInset} />
         <LabelProjector vehicles={vehicleAnchors} measures={measureAnchors} ring={ringAt} showVehicleLabels={props.showLabels} sizes={sizes} obstacles={obstacles} layer={labelLayerRef} onLayout={onLayout} />
         <CompassSync target={compassRef} />
         <Capture build={buildCapture} register={registerCapture} />
         {import.meta.env.DEV || import.meta.env.VITE_FIXTURES === "1" ? <ProbeSource into={probe} /> : null}
-        <Ready onReady={props.onReady} />
+        <Ready onReady={onFirstFrame} />
       </Canvas>
 
       <div className="viewer3d-labels" ref={labelLayerRef}>
@@ -600,7 +662,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
             <div className="viewer3d-model-note" role="note">
               {watermarked ? <span>Vehicle models from the catalog are watermarked previews.</span> : null}
               {untinted.map((v) => (
-                <span key={v.id} className="viewer3d-model-paint">{v.id}&apos;s model keeps the catalog&apos;s paint.{v.color ? <> <PaintChip vehicle={v} /></> : null}</span>
+                <span key={v.id} className="viewer3d-model-paint">{v.id}&apos;s model keeps the catalog&apos;s paint.{catalogPaintOf(v.id) ? <> <CatalogColourChip vehicleId={v.id} paint={catalogPaintOf(v.id)!} /></> : null}</span>
               ))}
             </div>
           ) : null}

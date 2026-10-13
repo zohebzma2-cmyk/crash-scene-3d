@@ -26,7 +26,7 @@ export function selectRange(good: readonly number[], midK: number): RangeChoice 
 }
 
 /** Why the speed next to the shown range doesn't work. */
-export type CutKind = "closing" | "pass" | "building";
+export type CutKind = "closing" | "pass" | "building" | "start";
 
 /** Runs of consecutive step numbers, as [first, last] pairs: [2, 3, 4, 18, 19] gives [[2, 4], [18, 19]]. */
 export function excludedRuns(steps: readonly number[]): Array<[number, number]> {
@@ -52,6 +52,7 @@ export function cutSentence(side: "start" | "end", kind: CutKind, cause: string,
   const V = `vehicle ${cause}`, O = `vehicle ${other}`;
   if (kind === "building") return `${when}, ${V} would have driven through a building before the crash, ${tail}`;
   if (kind === "pass") return `${when}, ${V} would have passed through ${O} before the crash, ${tail}`;
+  if (kind === "start") return `${when}, ${V} couldn't have reached that speed from a stop in the room it had, ${tail}`;
   return side === "start"
     ? `${when}, ${V} wouldn't have reached ${O}, ${tail}`
     : `${when}, ${V} and ${O} wouldn't have been closing in on each other, ${tail}`;

@@ -10,11 +10,15 @@ const withVehicles = (n: 3 | 4): Doc => {
 };
 
 describe("scene store reducer", () => {
-  it("starts as a valid scene v3 from the claim, with the claim vehicle on A", () => {
+  it("starts as a valid scene v3 with no claim number and no vehicle details (a new visitor)", () => {
     const d = initialDoc();
     expect(parseScene(d.scene).ok).toBe(true);
     expect(d.located).toBe(false);
-    expect(d.scene.vehicles[0]).toMatchObject({ id: "A", role: "claimant", year: 2021, make: "Honda", model: "Accord", typeSource: "claim" });
+    expect(d.scene.claim).toEqual({ number: "", vehicle: { year: null, make: "", model: "" } });
+    for (const v of d.scene.vehicles) expect(v).toMatchObject({ year: null, make: "", model: "", typeSource: "manual" });
+    expect(d.scene.vehicles[0]).toMatchObject({ id: "A", role: "claimant" });
+    expect(d.directionSet).toEqual([false, false]);
+    expect(d.example).toBeUndefined();
   });
 
   it("adds up to four vehicles and no more", () => {
@@ -45,12 +49,28 @@ describe("scene store reducer", () => {
     expect(reducer(two, { type: "remove-vehicle", id: "B" })).toBe(two);
   });
 
-  it("editing your own car never rewrites the claim vehicle (the header)", () => {
+  it("the claim's vehicle follows vehicle A's year, make and model on every edit; other vehicles never touch it", () => {
     const d0 = initialDoc();
-    const d1 = reducer(d0, { type: "vehicle", id: "A", patch: { year: 2015, make: "Toyota", model: "Camry" } });
-    expect(d1.scene.vehicles[0]).toMatchObject({ year: 2015, make: "Toyota", model: "Camry" });
-    expect(d1.scene.claim).toEqual(d0.scene.claim);
-    expect(d1.scene.claim.vehicle).toEqual({ year: 2021, make: "Honda", model: "Accord" });
+    const d1 = reducer(d0, { type: "vehicle", id: "A", patch: { year: 2019 } });
+    expect(d1.scene.claim.vehicle).toEqual({ year: 2019, make: "", model: "" });
+    const d2 = reducer(d1, { type: "vehicle", id: "A", patch: { make: "Chevrolet" } });
+    const d3 = reducer(d2, { type: "vehicle", id: "A", patch: { model: "Silverado" } });
+    expect(d3.scene.claim.vehicle).toEqual({ year: 2019, make: "Chevrolet", model: "Silverado" });
+    // A new make clears the model, and the claim's vehicle with it.
+    const d4 = reducer(d3, { type: "vehicle", id: "A", patch: { make: "Toyota" } });
+    expect(d4.scene.claim.vehicle).toEqual({ year: 2019, make: "Toyota", model: "" });
+    const d5 = reducer(d4, { type: "vehicle", id: "B", patch: { year: 2015, make: "Ford", model: "Escape" } });
+    expect(d5.scene.claim.vehicle).toEqual(d4.scene.claim.vehicle);
+    // Non-vehicle edits keep the claim number and the vehicle.
+    expect(reducer(d5, { type: "vehicle", id: "A", patch: { zone: "front" } }).scene.claim).toEqual(d5.scene.claim);
+  });
+
+  it("the claim number is set as the field keeps it, and is the only claim change it makes", () => {
+    const d0 = initialDoc();
+    const d1 = reducer(d0, { type: "claim-number", number: "CLM-77" });
+    expect(d1.scene.claim).toEqual({ number: "CLM-77", vehicle: d0.scene.claim.vehicle });
+    expect(reducer(d1, { type: "claim-number", number: "CLM-77" })).toBe(d1);
+    expect(parseScene(reducer(d1, { type: "claim-number", number: "" }).scene).ok).toBe(true);
   });
 
   it("changing the make clears the model, and a type from the claim or vPIC becomes manual", () => {
@@ -70,12 +90,12 @@ describe("scene store reducer", () => {
     expect(d.scene.location).toMatchObject({ lat: 42.7601, label: "", nearLabel: "Main Street, Nashua", source: "pin" });
   });
 
-  it("falls back to the claim when the stored scene is missing, old or broken", () => {
+  it("falls back to a new start when the stored scene is missing, old or broken", () => {
     const store = (v: unknown) => ({ getItem: () => (v === undefined ? null : typeof v === "string" ? v : JSON.stringify(v)) });
-    expect(loadDoc(store(undefined)).scene.claim.number).toBe("CLM-2419");
+    expect(loadDoc(store(undefined)).scene.claim.number).toBe("");
     expect(loadDoc(store("{not json")).located).toBe(false);
     const good = initialDoc();
-    expect(loadDoc(store({ ...good, scene: { ...good.scene, schemaVersion: 2 } })).scene.schemaVersion).toBe(3);
+    expect(loadDoc(store({ ...good, scene: { ...good.scene, schemaVersion: 2 } })).scene.schemaVersion).toBe(4);
     expect(loadDoc(store({ ...good, scene: { ...good.scene, vehicles: [] } })).scene.vehicles).toHaveLength(2);
     expect(loadDoc(null).scene.vehicles).toHaveLength(2);
   });

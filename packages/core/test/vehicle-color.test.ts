@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CUSTOM_PAINT_NAME, FACTORY_COLORS, canonicalJson, contrastRatio, customPaint, factoryColor, hexToRgb01, inkOn, paintLabel, paintMap, paintOf,
-  parseScene, pickedChipText, sha256Hex, vehicleColor,
+  catalogColourChipText, catalogPhotoChipText, nearestFactoryColor, parseScene, pickedChipText, sha256Hex, vehicleColor,
 } from "../src";
 import { sampleScene } from "./fixtures";
 
@@ -146,5 +146,19 @@ describe("ink on paint: badge text, glyphs and lines drawn ON a paint pick light
       worst = Math.min(worst, inkOn(hex, LIGHT.surface, LIGHT.text).ratio);
     }
     expect(worst).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("naming a catalog model's own paint (roads and paths, 2026-10-11)", () => {
+  it("every factory colour names itself, and near ones name the nearest", () => {
+    for (const c of FACTORY_COLORS) expect(nearestFactoryColor(hexToRgb01(c.hex)).name).toBe(c.name);
+    expect(nearestFactoryColor([0.97, 0.97, 0.96]).name).toBe("White");
+    expect(nearestFactoryColor([0.05, 0.05, 0.06]).name).toBe("Black");
+    expect(nearestFactoryColor([0.75, 0.1, 0.1]).name).toBe("Red");
+  });
+  it("the chips say whose colour it is: the catalog photo's, the pick, or the catalog model's own", () => {
+    expect(catalogPhotoChipText(null)).toBe("Catalog photo");
+    expect(catalogPhotoChipText({ name: "Gray", hex: "#6b7075" })).toBe("Catalog photo · Picked: Gray");
+    expect(catalogColourChipText({ name: "White", hex: "#f4f5f2" })).toBe("Catalog colour: White");
   });
 });

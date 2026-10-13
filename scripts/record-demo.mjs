@@ -97,11 +97,19 @@ try {
   await pause(page, 1500);
   await click(page.getByRole("button", { name: /Next: vehicles/ }));
 
-  // Step 2: directions, vehicle B, speed, zones.
+  // Step 2: type, what each was doing, direction, speed and zones (a new visitor's cards start with nothing picked).
   const a = page.locator("#vehicle-A");
   const b = page.locator("#vehicle-B");
   await a.waitFor();
   await pause(page, 900);
+  for (const [card, type, mph] of [[a, "Car", "25"], [b, "SUV", "30"]]) {
+    await click(card.locator("[data-fix-type]").getByRole("radio", { name: type, exact: true }));
+    await pause(page, 300);
+    await click(card.locator("[data-fix-action]").getByRole("radio", { name: "Straight", exact: true }));
+    await pause(page, 300);
+    await card.locator("[data-fix-speed] input").fill(mph);
+    await pause(page, 300);
+  }
   await click(a.getByRole("radio", { name: "Northbound on Main Street" }));
   await pause(page, 500);
   await click(b.getByRole("radio", { name: "Westbound on Park Street" }));

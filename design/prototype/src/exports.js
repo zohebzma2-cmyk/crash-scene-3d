@@ -111,7 +111,7 @@ export function renderPdf(host, scene, sim, warnings, info, thumb) {
   ];
 
   host.replaceChildren(...[
-    h("header", { class: "pdf-head" }, h("span", { class: "logo" }, icon("shield", "icon logo-mark"), h("span", { class: "logo-word" }, "Insurify", h("span", { text: "AI" }))), h("span", { class: "claim", text: `Claim ${scene.claim.number}` })),
+    h("header", { class: "pdf-head" }, h("span", { class: "logo" }, icon("shield", "icon logo-mark"), h("span", { class: "logo-word" }, "Insurify", h("span", { text: "AI" }))), (scene.claim.number || "").trim() ? h("span", { class: "claim", text: `Claim ${scene.claim.number}` }) : null),
     h("div", {}, h("h1", { class: "pdf-title", text: "Crash scene illustration" }), h("p", { class: "sub", text: "Illustration only. Made from the details the claimant entered." })),
     h("div", { class: "pdf-grid" },
       h("section", {},
@@ -140,7 +140,7 @@ export function renderPdf(host, scene, sim, warnings, info, thumb) {
         s.local ? h("span", {}, "Made ", h("strong", { text: s.local }), " · ", num(s.utc)) : h("span", { class: "unsaved", text: "Not saved yet. The time and fingerprint are added when you save." }),
         s.short ? h("span", {}, "Fingerprint ", h("strong", {}, num(s.short))) : null,
         h("span", { text: `Map ${mapProvider.tiles.attributionText}` })),
-      s.full ? h("p", { class: "pdf-check" }, h("strong", { text: "How to check: " }), `the fingerprint is the SHA-256 of the scene file from the same save (crash-scene-${scene.claim.number}.json). Hashing that file must give `, num(s.full), ". If it doesn't, the scene was changed. Without the scene file, the fingerprint can't be checked.") : null),
+      s.full ? h("p", { class: "pdf-check" }, h("strong", { text: "How to check: " }), `the fingerprint is the SHA-256 of the scene file from the same save ${(scene.claim.number || "").trim() ? `(crash-scene-${scene.claim.number}.json)` : "(saved beside it)"}. Hashing that file must give `, num(s.full), ". If it doesn't, the scene was changed. Without the scene file, the fingerprint can't be checked.") : null),
   ].filter(Boolean));
   queueMicrotask(() => renderDiagram(dhost, scene, sim, { t: sim.restTime_s, aspect: 16 / 10, measure: true, markers: true, tags: true, paths: true }));
 }
