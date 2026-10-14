@@ -37,7 +37,7 @@ export const TIPS: readonly TipDef[] = [
     id: "save",
     step: "export",
     title: "Saving your files",
-    text: "The PDF is a one-page summary, the picture is a top-down diagram, and the scene file reopens this recreation. Save to my device gives you all of it as one ZIP.",
+    text: "The PDF summary is usually one page, the picture is a top-down diagram, and the scene file reopens this recreation. Save to my device gives you all of it as one ZIP.",
   },
   // The "We can't draw this yet" screen's tip (copy from DESIGN.md section 18), rendered by review/RefusalFixes.tsx.
   {

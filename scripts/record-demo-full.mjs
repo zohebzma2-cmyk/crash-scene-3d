@@ -9,6 +9,8 @@
 // Add --no-build to reuse apps/web/dist from an earlier `VITE_FIXTURES=1 npm run build`. Needs ffmpeg (FFMPEG=...),
 // and pdftoppm + unzip for the PDF still. Serves on DEMO_PORT (default 4521) and stops that server by its own PID.
 // Synthetic data only: the example claim, public Nashua streets and fixture files; nothing here is a real photo.
+// The video opens on the first-visit welcome (?welcome=1, honoured in a fixtures build) and dismisses it; the stills
+// start with the welcome already seen (csd.welcome.v1), as a returning visitor would.
 import { chromium, devices } from "@playwright/test";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
@@ -21,7 +23,7 @@ const PORT = Number(process.env.DEMO_PORT ?? 4521);
 const BASE = `http://localhost:${PORT}`;
 const FFMPEG = process.env.FFMPEG ?? "ffmpeg";
 // The full flow is longer than record-demo.mjs's T-bone walk, so its GIF is sped up more and uses fewer colours to
-// stay under 2.5 MB; the MP4 keeps record-demo.mjs's 1.35x.
+// stay small (about 4 MB with the welcome; the README limit is 10 MB); the MP4 keeps record-demo.mjs's 1.35x.
 const FPS = Number(process.env.DEMO_FPS ?? 9);
 const WIDTH = Number(process.env.DEMO_WIDTH ?? 960);
 const SPEED = Number(process.env.DEMO_SPEED ?? 1.35);          // MP4
@@ -53,15 +55,26 @@ try {
     await new Promise((r) => setTimeout(r, 500));
   }
   browser = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+  const seeded = [{ name: "csd.tips.v1", value: JSON.stringify({ hidden: [], all: true }) }];
+  if (STILLS) seeded.push({ name: "csd.welcome.v1", value: JSON.stringify({ seen: true }) });
   const ctxBase = {
     colorScheme: "light", reducedMotion: "no-preference", acceptDownloads: true,
-    storageState: { cookies: [], origins: [{ origin: BASE, localStorage: [{ name: "csd.tips.v1", value: JSON.stringify({ hidden: [], all: true }) }] }] },
+    storageState: { cookies: [], origins: [{ origin: BASE, localStorage: seeded }] },
   };
   const context = await browser.newContext(
     STILLS === "phone" ? { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...ctxBase }
     : STILLS === "desktop" ? { viewport: { width: 1440, height: 900 }, ...ctxBase }
     : { viewport: VIDEO_SIZE, recordVideo: { dir: work, size: VIDEO_SIZE }, ...ctxBase });
   const phone = STILLS === "phone";
+  // A fixtures build marks every screen with an "Example data" chip (Shell.tsx, mode === "fixtures"). The live site shows
+  // it only on an example, never on someone's own claim, which is what this walkthrough is, so the recording hides it.
+  await context.addInitScript(() => {
+    const hide = () => { for (const el of document.querySelectorAll(".mode-chip")) el.style.display = "none"; };
+    addEventListener("DOMContentLoaded", () => {
+      hide();
+      new MutationObserver(hide).observe(document.body, { childList: true, subtree: true });
+    });
+  });
   if (!STILLS) {
     // A visible pointer: recorded video has none.
     await context.addInitScript(() => {
@@ -103,12 +116,22 @@ try {
   };
 
   // Fresh start on step 1 (the first frames are trimmed away below).
-  await page.goto(`${BASE}/?media=on#location`);
+  await page.goto(`${BASE}/?media=on${STILLS ? "" : "&welcome=1"}#location`);
   await page.evaluate(() => { try { sessionStorage.clear(); } catch { /* ignore */ } });
   await page.reload();
   await page.locator("main h1").waitFor();
   await pause(600);
   const tStart = (Date.now() - t0) / 1000;
+
+  // The video opens on the first-visit welcome, then dismisses it.
+  if (!STILLS) {
+    const welcome = page.getByTestId("welcome");
+    await welcome.waitFor({ timeout: 10_000 });
+    await pause(3200);
+    await click(welcome.getByRole("button", { name: "Dismiss", exact: true }));
+    await welcome.waitFor({ state: "detached" });
+    await pause(500);
+  }
 
   // Step 1: search, pick the crossing (the pin is set on it).
   const search = page.getByRole("combobox", { name: "Address, intersection or landmark" });
@@ -124,6 +147,9 @@ try {
   await page.locator(".streets-here").waitFor();
   await pause(1800);   // the camera flies in
   await shot("location");
+  // The road surface is a question like the rest (nothing is picked for a new visitor): the demo answers Dry.
+  await click(page.getByRole("radiogroup", { name: "What was the road like?" }).getByRole("radio", { name: "Dry", exact: true }));
+  await pause(500);
   await click(page.getByRole("button", { name: /Next: vehicles/ }));
 
   // Step 2: year, make, model, colour, direction for A and B.
@@ -197,6 +223,11 @@ try {
   await click(page.getByRole("button", { name: "Looks right: save it" }));
   await page.locator("#app[data-step=export]").waitFor();
   await pause(1200);
+  // The stills show the PDF preview once it is made (the video carries on while it renders).
+  if (STILLS) {
+    await page.getByText(/^Preview made /).waitFor({ timeout: 45_000 }).catch(() => console.warn("the save preview was not ready"));
+    await page.waitForTimeout(1500);   // the page drawing into the preview
+  }
   await shot("save");
   const saveBtn = page.getByRole("button", { name: "Save to my device" });
   await moveTo(saveBtn);

@@ -2,9 +2,10 @@
 // terrain and the vehicles from the SimulationResult at time t. All colors
 // come from tokens; all text is React text (overlay), never HTML strings.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Line, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
-import { Vector3, type Color, type Group, type OrthographicCamera as ThreeOrthographicCamera, type PerspectiveCamera as ThreePerspectiveCamera } from "three";
+import { Vector3, type Color, type Group, type Mesh, type Object3D, type OrthographicCamera as ThreeOrthographicCamera, type PerspectiveCamera as ThreePerspectiveCamera } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { type Pose, type RoadNetwork, type SimulationResult, type VehicleResult, type Vec2 } from "@csd/core";
 import type { CameraKeyEvent, CameraView, ViewerHandle, ViewerProps } from "./types";
@@ -19,7 +20,7 @@ import { CatalogColourChip } from "../components/PaintChip";
 import { disposeVehicleModels, vehicleModel } from "./vehicle-models";
 import { projectRing, projectVehicle, vehicleLabel } from "./labels";
 import { renderStill, type CaptureContext } from "./capture";
-import { ImpactEffects, useDamage, type EffectsApi } from "./effects/ImpactEffects"; // FX
+import { ImpactEffects, useCrumple, useDamage, type EffectsApi } from "./effects/ImpactEffects"; // FX
 import { Icon } from "../icons/Icon";
 import { Compass } from "./Compass";
 import { tokenPx } from "../lib/dom";
@@ -347,6 +348,13 @@ const HINT_MS = 2200;
 const HINT_FADE_MS = 400;
 const KEY_ZOOM = 1 / 0.85;
 const BUTTON_ZOOM = 1.25;
+/** The catalog-model note's close button. */
+const HIDE_MODEL_NOTE_LABEL = "Hide the note about catalog models";
+/**
+ * The catalog-model note the person closed (by what it says), for the rest of the page's life: going back to the
+ * vehicles and returning to Review doesn't bring it back; a note that says something else (another model) does.
+ */
+let closedModelNote: string | null = null;
 
 export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(props, ref) {
   const colors = useSceneColors();
@@ -361,6 +369,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const fxApi = useRef<EffectsApi | null>(null);        // FX
   const measureRef = useRef<Group | null>(null);         // FX: measurements stay mounted so the Aftermath still can show them
   const damage = useDamage(props.scene, props.sim);      // FX: dent callbacks per vehicle
+  const crumple = useCrumple(props.scene, props.sim);    // FX: crumple callbacks per vehicle, for its catalog model
   const catalog = useCatalogModels(props.scene, props.sim, props.loadModel);   // round B: catalog GLBs, swapped in when loaded
   const extraPoints = useCallback(() => fxApi.current?.extraPoints() ?? [], []);   // FX
   const sizes = useRef<Sizes>(new Map());
@@ -401,6 +410,16 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   // The paint an untinted catalog model shows (named), never the picked one it doesn't show.
   const catalogPaintOf = (id: string) => { const plan = catalog.get(id)?.plan; return plan?.kind === "none" ? plan.catalogPaint : null; };
   const noteKey = `${watermarked}|${untinted.map((v) => v.id).join()}`;
+  // The note can be closed (a small picture needs all its room); it stays closed until it says something else.
+  const [closedNote, setClosedNote] = useState(closedModelNote);
+  const showNote = (watermarked || untinted.length > 0) && closedNote !== noteKey;
+  const closeNote = () => {
+    closedModelNote = noteKey;
+    setClosedNote(noteKey);
+    // The button goes away with the note: focus moves to the picture (the page's one focus target for it), not the page top.
+    const canvas = rootRef.current?.parentElement;
+    if (canvas && canvas.tabIndex >= 0) canvas.focus({ preventScroll: true });
+  };
 
   // Everything the still capture needs, read at capture time so it is always current.
   const latest = useRef({ props, colors, terrain });
@@ -461,6 +480,21 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
       three: () => (probe.current ? { ...probe.current, groups: Object.fromEntries(groups.current) } : null),
       // Which vehicles show a catalog model, and how it is tinted (round B e2e).
       models: () => Object.fromEntries([...catalogRef.current].map(([id, m]) => [id, { tint: m.plan.kind, watermarked: m.watermarked }])),
+      // The dents and crumples drawn now: per vehicle, the meshes carrying one, how far in it is (0 intact, 1 full) and
+      // whether they belong to a catalog model; `source` is the loaded catalog model's own geometry, which never carries one.
+      dents: () => Object.fromEntries([...groups.current].map(([id, g]) => {
+        const out = { meshes: 0, influence: null as number | null, catalog: false, source: 0 };
+        g.traverse((o) => {
+          const m = o as Mesh;
+          if (!m.isMesh || !m.geometry.morphAttributes["position"]?.length) return;
+          out.meshes++;
+          out.influence = m.morphTargetInfluences?.[0] ?? null;
+          let p: Object3D | null = m;
+          while (p && p !== g) { if (p.name === "catalog-model") out.catalog = true; p = p.parent; }
+        });
+        catalogRef.current.get(id)?.object.traverse((o) => { const m = o as Mesh; if (m.isMesh && m.geometry.morphAttributes["position"]?.length) out.source++; });
+        return [id, out];
+      })),
     };
     (window as unknown as { __csdViewer?: typeof hook }).__csdViewer = hook;
     return () => { delete (window as unknown as { __csdViewer?: typeof hook }).__csdViewer; };
@@ -525,8 +559,9 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
     const hud = root.querySelector(".viewer3d-hud");
     if (hud) ro.observe(hud);
     return () => { ro.disconnect(); window.removeEventListener("scroll", measureObstacles); };
-    // `noteKey`: the model note mounts later (when a catalog model arrives), so it must be measured and observed then.
-  }, [measureObstacles, props.showPaths, props.view, noteKey]);
+    // `noteKey`, `showNote`, `noteSlot`: the model note mounts later (when a catalog model arrives), moves out of the picture
+    // on phones and can be closed, so it must be measured and observed (or dropped) then.
+  }, [measureObstacles, props.showPaths, props.view, noteKey, showNote, props.noteSlot]);
 
   // Real label sizes, measured from the DOM after each layout, replace the estimates.
   useLayoutEffect(() => {
@@ -610,6 +645,22 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
   const ringAt = useMemo(() => { const c = ringPlacement(props.sim).center; return { center: c, ground: heightAt(terrain, c) + LIFT.ring }; }, [props.sim, terrain]);
   const registerCapture = useCallback((fn: ViewerHandle["captureStill"]) => { captureFn.current = fn; }, []);
 
+  // The catalog-model note: in the picture's bottom-left corner with the legend, or (phones) as one compact line in the
+  // slot the shell gives it outside the picture, so it never covers the crash. Either way it can be closed.
+  const noteSlot = props.noteSlot ?? null;
+  const modelNote = showNote ? (
+    <div className={`viewer3d-model-note${noteSlot ? " is-line" : ""}`} role="note" aria-label="About the vehicle models">
+      <Icon name="info" className="icon-sm viewer3d-model-icon" />
+      <p className="viewer3d-model-text">
+        {watermarked ? <span>Vehicle models from the catalog are watermarked previews.</span> : null}
+        {untinted.map((v) => (
+          <span key={v.id} className="viewer3d-model-paint">{v.id}&apos;s model keeps the catalog&apos;s paint.{catalogPaintOf(v.id) ? <> <CatalogColourChip vehicleId={v.id} paint={catalogPaintOf(v.id)!} /></> : null}</span>
+        ))}
+      </p>
+      <button type="button" className="icon-btn viewer3d-model-close" aria-label={HIDE_MODEL_NOTE_LABEL} onClick={closeNote}><Icon name="close" className="icon-sm" /></button>
+    </div>
+  ) : null;
+
   return (
     <div className={`viewer3d${props.building ? " is-building" : ""}`} ref={rootRef}>
       <Canvas shadows="percentage" dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} onCreated={onCreated}>
@@ -619,7 +670,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
         <World roads={props.roads} colors={colors} focus={props.sim.impactPointM} avoid={pathPoints} scene={props.scene} furniture={furniture} onFurnitureShown={furnitureGate.open} />
         {props.showPaths && <Paths sim={props.sim} colors={colors} terrain={terrain} />}
         <ImpactRing sim={props.sim} colors={colors} terrain={terrain} />
-        {poses.map(({ v, pose }) => <VehicleMesh key={v.id} v={v} paint={props.scene.vehicles.find((x) => x.id === v.id)} catalog={catalog.get(v.id) ?? null} pose={pose} mats={mats} terrain={terrain} register={registerGroup} damage={damage.get(v.id)} />)}
+        {poses.map(({ v, pose }) => <VehicleMesh key={v.id} v={v} paint={props.scene.vehicles.find((x) => x.id === v.id)} catalog={catalog.get(v.id) ?? null} pose={pose} mats={mats} terrain={terrain} register={registerGroup} damage={damage.get(v.id)} crumple={crumple.get(v.id)} />)}
         <group ref={measureRef} visible={props.showMeasurements}><Measurements sim={props.sim} colors={colors} terrain={terrain} groups={shownGroups} /></group>{/* FX: always mounted, shown by the toggle or the Aftermath still */}
         <ImpactEffects scene={props.scene} sim={props.sim} roads={props.roads} colors={colors} timeS={props.timeS} reducedMotion={props.reducedMotion} apiRef={fxApi} measureRef={measureRef} groups={groups} />{/* FX */}
         {(props.showMeasurements || props.showPaths) && props.sim.vehicles.map((v) => (
@@ -658,14 +709,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
 
       <div className="viewer3d-hud-rail">
         <div className="viewer3d-hud">
-          {watermarked || untinted.length ? (
-            <div className="viewer3d-model-note" role="note">
-              {watermarked ? <span>Vehicle models from the catalog are watermarked previews.</span> : null}
-              {untinted.map((v) => (
-                <span key={v.id} className="viewer3d-model-paint">{v.id}&apos;s model keeps the catalog&apos;s paint.{catalogPaintOf(v.id) ? <> <CatalogColourChip vehicleId={v.id} paint={catalogPaintOf(v.id)!} /></> : null}</span>
-              ))}
-            </div>
-          ) : null}
+          {noteSlot ? null : modelNote}
           {props.showPaths ? <span className="viewer3d-legend">Dashed: before impact · Solid: after</span> : null}
           {/* The compass sits in one row with the zoom buttons, so the legend above keeps its place (labels plan around both). */}
           <div className="viewer3d-hud-row">
@@ -680,6 +724,7 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(prop
       </div>
 
       <div className={`viewer3d-hint${hint === "on" ? " is-on" : ""}`} role="status" aria-live="polite">{hint === "off" ? "" : HINT_TEXT}</div>
+      {noteSlot && modelNote ? createPortal(modelNote, noteSlot) : null}
     </div>
   );
 });

@@ -53,6 +53,19 @@ describe("simulate: result shape and time base", () => {
     }
   });
 
+  it("runs a road condition that wasn't given on its placeholder, and says so instead of 'as entered'", () => {
+    const given = run(flatTBoneScene({ condition: "dry" }));
+    const skipped = run({ ...flatTBoneScene({ condition: "dry" }), road: { condition: "dry", conditionNotGiven: true } });
+    // The motion is the placeholder's: the same friction and the same tracks as a dry road.
+    expect(skipped.frictionCoefficient).toBe(FRICTION.dry);
+    expect(skipped.vehicles.map((v) => v.restPose)).toEqual(given.vehicles.map((v) => v.restPose));
+    const friction = (s: SimulationResult) => s.assumptions.find((a) => a.id === "friction")!;
+    expect(friction(skipped).value).toBe(FRICTION.dry);
+    expect(friction(skipped).text).toMatch(/^Road surface not given: the picture uses dry-road friction /);
+    expect(friction(skipped).text).not.toMatch(/as entered/);
+    expect(friction(given).text).toMatch(/^Road dry, as entered: friction /);
+  });
+
   it("steps at DT_S from -APPROACH_S to rest, every vehicle on the same clock", () => {
     expect(sim.dtS).toBe(DT_S);
     expect(sim.startTimeS).toBe(-APPROACH_S);

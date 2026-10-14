@@ -45,9 +45,30 @@ button.viewer3d-label:focus-visible { outline: var(--size-focus-ring) solid var(
 .viewer3d-controls .icon-btn { color: var(--color-text); }
 .viewer3d-controls .icon-btn:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: calc(var(--size-focus-offset) * -1); }
 .viewer3d-legend { padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); background: var(--glass-bg); font-size: var(--text-xs); color: var(--color-text-secondary); }
-/* Catalog models (round B): a watermarked preview, or a model that keeps the catalog's paint, said in one small note. */
-.viewer3d-model-note { display: flex; flex-direction: column; gap: var(--space-1); max-width: min(100%, var(--size-dialog-max)); padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); background: var(--glass-bg); font-size: var(--text-xs); color: var(--color-text-secondary); }
+/* Catalog models (round B): a watermarked preview, or a model that keeps the catalog's paint, said in one small note
+   that can be closed. In the picture (wide screens) it is a glass chip with the legend; the close button keeps its
+   touch-size target but overhangs the chip's edges, so the chip stays as slim as the legend. */
+.viewer3d-model-note {
+  display: flex; align-items: center; gap: var(--space-2); max-width: min(100%, var(--size-dialog-max));
+  padding: var(--space-1) var(--space-0) var(--space-1) var(--space-3); border-radius: var(--radius-sm);
+  background: var(--glass-bg); font-size: var(--text-xs); color: var(--color-text-secondary);
+}
+.viewer3d-model-icon { flex: none; }
+.viewer3d-model-text { display: flex; flex-direction: column; gap: var(--space-1); margin: var(--space-0); min-width: var(--space-0); }
 .viewer3d-model-paint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.viewer3d-model-close { margin-block: calc((var(--size-touch) - var(--space-6)) / -2); color: var(--color-text-secondary); }
+.viewer3d-model-close:hover { background: transparent; color: var(--color-text); }
+.viewer3d-model-close:focus-visible { outline: var(--size-focus-ring) solid var(--color-focus-ring); outline-offset: calc(var(--size-focus-offset) * -1); }
+
+/* Phones: the note leaves the picture and is one compact line under the timeline (the shell's .viewer-note-slot),
+   its sentences running on in one paragraph, so it never covers the crash or the impact ring. */
+.viewer-note-slot:empty { display: none; }
+.viewer-note-slot { border-top: var(--size-border) solid var(--color-border); background: var(--color-surface); }
+.viewer3d-model-note.is-line { max-width: none; padding: var(--space-0) var(--space-0) var(--space-0) var(--space-3); border-radius: var(--radius-xs); background: transparent; line-height: var(--leading-snug); }
+.viewer3d-model-note.is-line .viewer3d-model-text { display: block; padding-block: var(--space-2); }
+.viewer3d-model-note.is-line .viewer3d-model-text > span { display: inline; }
+.viewer3d-model-note.is-line .viewer3d-model-text > span + span::before { content: " "; }
+.viewer3d-model-note.is-line .viewer3d-model-close { margin-block: var(--space-0); }
 
 /* The one-time hint on the first plain wheel over the picture. */
 .viewer3d-hint {

@@ -121,7 +121,9 @@ export function initialDoc(): Doc {
     location: { lat: NO_PIN_VIEW.lat, lon: NO_PIN_VIEW.lon, label: "", nearLabel: "", source: "pin", place: "intersection" },
     // Today, no time: a new visitor enters their own (examples and opened files keep theirs).
     occurred: { date: todayLocal(), time: null },
-    road: { condition: "dry" },
+    // The road condition isn't prefilled either: no tile is picked, and the summary and PDF say it was not given. The
+    // physics needs a grip, so the scene holds the dry placeholder, never shown as an answer (core `conditionNotGiven`).
+    road: { condition: "dry", conditionNotGiven: true },
     vehicles: [newVehicle("A"), newVehicle("B", { travel: { bearingDeg: 90, roadId: null, roadName: null, lane: null } })],
   };
   return {
@@ -229,6 +231,7 @@ export function reducer(doc: Doc, a: Action): Doc {
       return { ...doc, located: true, reconcile: true, scene: { ...s, location: { ...s.location, lat: r.lat, lon: r.lon, label: r.label, nearLabel: "", source: "search" } } };
     }
     case "place": return { ...doc, scene: { ...s, location: { ...s.location, place: a.place } } };
+    // Picking a tile answers the question (even the placeholder's own value): the condition counts as given from then on.
     case "condition": return { ...doc, scene: { ...s, road: { condition: a.condition } } };
     case "conditions": return { ...doc, scene: { ...s, conditions: a.conditions } };
     // An optional lane answer never marks the required travel direction as picked.

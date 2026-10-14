@@ -217,7 +217,18 @@ export const SceneSchema = z.object({
       .refine((d) => !DATE_SHAPE.test(d) || !isRealDate(d) || d <= latestAllowedDate(), { error: "The date is in the future. Use the date the crash happened." }),
     time: z.string({ error: "The time should look like 17:15." }).regex(/^\d{2}:\d{2}$/, { error: "The time should look like 17:15." }).nullable(),
   }, section("The scene is missing the date of the crash.", "The scene's date of the crash isn't readable.")),
-  road: z.object({ condition: z.enum(ROAD_CONDITIONS, { error: "Pick what the road was like." }) }, section("The scene is missing the road condition.", "The scene's road condition isn't readable.")),
+  road: z.object({
+    condition: z.enum(ROAD_CONDITIONS, { error: "Pick what the road was like." }),
+    /**
+     * The claimant didn't say what the road was like (a new visitor starts with nothing prefilled; owner, 2026-10-14).
+     * `condition` then holds a placeholder the physics runs on (dry) that is never shown as an answer: the summary, the
+     * PDF and the assumptions say the road surface was not given. Additive: absent (or false, or null) means the
+     * condition was entered, as in every older file, and is left out of the canonical JSON then, so their fingerprints
+     * don't change.
+     */
+    conditionNotGiven: z.boolean({ error: "Say whether the road condition was given." }).nullable()
+      .transform((d) => (d === true ? true : undefined)).optional(),
+  }, section("The scene is missing the road condition.", "The scene's road condition isn't readable.")),
   vehicles: z.array(VehicleSchema, section("The scene is missing its vehicles.", "The scene's vehicles aren't readable."))
     .min(LIMITS.minVehicles, { error: "Add at least two vehicles." })
     .max(LIMITS.maxVehicles, { error: `A scene can have ${LIMITS.maxVehicles} vehicles at most.` }),

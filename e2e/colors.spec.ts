@@ -161,6 +161,39 @@ test("@xb a catalog model swaps in for our model without a frame of nothing, tin
   await shot(page, "glb-box", info.project.name);   // after the CSP check: WebKit reports Playwright's own screenshot styles
 });
 
+type Dents = Record<string, { meshes: number; influence: number | null; catalog: boolean; source: number }>;
+const dents = (page: Page) => page.evaluate(() => (window as unknown as { __csdViewer?: { dents(): Dents } }).__csdViewer?.dents() ?? {});
+
+test("@xb a catalog model crumples where it was hit: a copy is crumpled from impact on, scrubbing back undoes it, the loaded model never changes", async ({ page, pageErrors }, info) => {
+  test.setTimeout(150_000);
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+  // The T-bone: B's front hits A's right side. B is drawn with the catalog-like model (one mesh, paint baked in).
+  await openSceneFile(page, (f) => {
+    Object.assign(f.vehicles[0]!, { make: "Synthetic", model: "Box car" });
+    Object.assign(f.vehicles[1]!, { make: "Synthetic", model: "Baked car" });
+  });
+  await expect.poll(async () => (await models(page)).B?.tint, { timeout: 30_000, message: "B's catalog model never arrived" }).toBe("texture");
+  await expect.poll(async () => (await models(page)).A?.tint, { timeout: 30_000 }).toBe("material");
+  const timeline = page.getByRole("slider", { name: "Timeline" });
+  const at = async (key: string) => { await timeline.focus(); await page.keyboard.press(key); await page.waitForTimeout(300); return dents(page); };
+  // From impact on (reduced motion: no growing), the crumple is on the catalog model B shows.
+  let d = await at("I");
+  expect(d.B, JSON.stringify(d)).toMatchObject({ catalog: true, influence: 1 });
+  expect(d.B!.meshes).toBeGreaterThan(0);
+  // Before the impact it is intact, and back at the end it is crumpled again.
+  d = await at("Home");
+  expect(d.B!.influence).toBe(0);
+  d = await at("End");
+  expect(d.B!.influence).toBe(1);
+  // The loaded catalog models themselves never carry it (each vehicle draws its own copy).
+  expect(d.A!.source).toBe(0);
+  expect(d.B!.source).toBe(0);
+  expect(consoleErrors.filter((e) => /shader|WebGL|THREE/i.test(e))).toEqual([]);
+  expect(pageErrors(), pageErrors().join(" | ")).toEqual([]);
+  await shot(page, "glb-crumple", info.project.name);
+});
+
 test("@xb a catalog model with the paint baked into its texture is recoloured by the shader (both engines compile it)", async ({ page, pageErrors }, info) => {
   test.setTimeout(150_000);
   const violations = await watchCsp(page);
@@ -282,6 +315,48 @@ test("@xb the catalog-model note is kept clear: no vehicle label over it (Top an
       await clear(`view ${view}, ${k}`);
     }
   }
+});
+
+test("@xb on a phone the catalog-model note is one compact line under the picture, never over it; it can be closed and stays closed", async ({ page, pageErrors }, info) => {
+  test.setTimeout(150_000);
+  await openSceneFile(page, (f) => {
+    Object.assign(f.vehicles[0]!, { make: "Synthetic", model: "Box car" });
+  });
+  await expect.poll(async () => (await models(page)).A?.tint, { timeout: 30_000 }).toBe("material");
+  const note = page.locator(".viewer3d-model-note");
+  await expect(note).toBeVisible();
+  await expect(note).toContainText("watermarked previews");
+  const close = note.getByRole("button", { name: "Hide the note about catalog models" });
+  const [noteBox, closeBox] = [(await note.boundingBox())!, (await close.boundingBox())!];
+  if (isPhone(page)) {
+    // Out of the picture: in the slot under the timeline, below the picture's bottom edge, at no width over it.
+    await expect(page.locator(".viewer-canvas .viewer3d-model-note")).toHaveCount(0);
+    await expect(page.locator(".viewer-note-slot .viewer3d-model-note")).toHaveCount(1);
+    const [canvas, timeline] = [(await page.locator(".viewer-canvas").boundingBox())!, (await page.locator(".timeline").boundingBox())!];
+    expect(noteBox.y, "under the picture").toBeGreaterThanOrEqual(canvas.y + canvas.height);
+    expect(noteBox.y, "under the timeline").toBeGreaterThanOrEqual(timeline.y + timeline.height - 1);
+    // Compact: one row with its close button, less than two touch targets tall.
+    expect(noteBox.height).toBeLessThan(closeBox.height * 2);
+    // So the ring and the labels have the whole picture: nothing of the note crosses the picture.
+    expect(crossIntersections(await boxes(page, ".viewer-canvas", "picture"), await boxes(page, ".viewer3d-model-note", "model note"))).toEqual([]);
+  } else {
+    // Wide screens keep it in the picture's corner with the legend (the labels keep clear of it, test above).
+    await expect(page.locator(".viewer-canvas .viewer3d-model-note")).toHaveCount(1);
+  }
+  await shot(page, "model-note", info.project.name);
+  await close.click();
+  await expect(note).toHaveCount(0);
+  await expect(page.locator(".viewer-canvas")).toBeFocused();
+  await expect(page.locator(".viewer-note-slot")).toBeHidden();
+  // Closed for the rest of the visit: back to the vehicles and Review again, it doesn't come back.
+  await page.getByRole("button", { name: "Edit details" }).click();
+  await expect(page.locator("#app")).toHaveAttribute("data-step", "vehicles");
+  await toReview(page);
+  await waitForViewer(page);
+  await expect.poll(async () => (await models(page)).A?.tint, { timeout: 30_000 }).toBe("material");
+  await page.waitForTimeout(500);
+  await expect(note).toHaveCount(0);
+  expect(pageErrors()).toEqual([]);
 });
 
 test("@xb a catalog photo on the card says it is a catalog photo, and 'Picked: Red' once a colour is picked (light and dark)", async ({ page, pageErrors }, info) => {

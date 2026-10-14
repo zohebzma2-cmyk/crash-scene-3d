@@ -1,6 +1,10 @@
-// Location search through our proxy. Search on submit only (no autocomplete). Repeat presses
-// within 300 ms are merged; requests are at least 1 s apart; results are cached for the session.
-// Only the typed text leaves the browser (and only to our own /api).
+// Location search through our proxy, only to our own /api.
+//  - On submit (search): Nominatim, or the crossing route for "X and Y". Repeat presses within 300 ms are merged;
+//    requests are at least 1 s apart; results are cached for the session.
+//  - As you type (suggest, crossStreets): Photon and Overpass. Never Nominatim, whose usage policy forbids
+//    autocomplete, and never the on-submit search as a fallback: a failure is the caller's to show.
+// Time limits, each inside the next: the proxy gives Photon 7 s (SUGGEST_DEADLINE_MS), a whole request 8 s
+// (limits.timeoutMs), and the browser gives up on any /api call after 9.5 s (API_TIMEOUT_MS).
 import { PROXY_ROUTES, type CrossStreet, type CrossStreetsResult, type LatLon, type PlaceResult } from "@csd/core";
 import { mapConfig } from "../config/map";
 import { API_TIMEOUT_MS, getJson, getJsonRetrying, type FetchLike } from "./http";
@@ -104,6 +108,10 @@ export function createGeoService(fetchFn: FetchLike, deps: GeoDeps): GeoService 
 
   const suggestCache = new Map<string, PlaceResult[]>();
   const crossCache = new Map<string, CrossStreetsResult>();
+  /**
+   * Type-ahead. A failure is not cached and asks nothing else: still busy after the one retry rejects with code
+   * "busy", a Photon slower than the proxy's limit (a 504) or no answer within API_TIMEOUT_MS with "timeout".
+   */
   const suggest: GeoService["suggest"] = async (query, opts = {}) => {
     const q = query.trim();
     if (q.length < mapConfig.suggestMinChars) return [];

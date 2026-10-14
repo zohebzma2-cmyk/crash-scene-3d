@@ -31,8 +31,14 @@ const FALLBACK_RESERVE_MS = 1500;
 const SEARCH_KEEP_S = 7 * 24 * 60 * 60;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const isPng = (b: Uint8Array) => b.byteLength >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((v, i) => b[i] === v);
-/** Type-ahead has to feel fast: give up on Photon after this long (the app falls back on submit). */
-const SUGGEST_DEADLINE_MS = 4000;
+/**
+ * Type-ahead gives up on Photon after this long, and the app then says "Suggestions are slow right now. Press
+ * Search to look it up." (the on-submit search; Nominatim is never asked as you type). The public Photon server
+ * takes about 4.8 s for a query it hasn't cached (measured 2026-10-14), so 4 s failed every new street. It stays
+ * under the request's own deadline (`limits.timeoutMs`, 8 s), which stays under the browser's (API_TIMEOUT_MS,
+ * 9.5 s in apps/web/src/services/http.ts), so a slow Photon is always answered with a timeout the app can word.
+ */
+export const SUGGEST_DEADLINE_MS = 7000;
 /** Photon is asked for more than we show, so merging pieces of one street still leaves enough. */
 const SUGGEST_OVERFETCH = 2;
 /** Where the second dropdown looks for crossings, and how many candidate streets "A and B" tries. */
@@ -175,10 +181,14 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     };
   };
 
-  /** Streets (not addresses or places) Photon finds for `name` near a bias point. */
+  /**
+   * Streets (not addresses or places) Photon finds for `name` near a bias point. Part of the no-town crossing: like
+   * its Overpass step, it leaves FALLBACK_RESERVE_MS of the request's deadline for the plain-search fallback.
+   */
   async function photonStreets(ctx: Ctx, name: string, bias: { lat: number; lon: number }): Promise<PlaceResult[]> {
     const near = { lat: round2(bias.lat), lon: round2(bias.lon) };
-    const entry = await fetchUpstream({ ...ctx, deadline: Math.min(ctx.deadline, ctx.deps.now() + SUGGEST_DEADLINE_MS) }, suggestSpec(name, near, undefined, 8));
+    const deadline = Math.min(ctx.deadline - FALLBACK_RESERVE_MS, ctx.deps.now() + SUGGEST_DEADLINE_MS);
+    const entry = await fetchUpstream({ ...ctx, deadline }, suggestSpec(name, near, undefined, 8));
     return placesOf(entry).filter((p) => p.category === "street").slice(0, MAX_STREET_CANDIDATES);
   }
 

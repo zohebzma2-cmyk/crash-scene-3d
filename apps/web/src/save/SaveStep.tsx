@@ -66,6 +66,21 @@ export function SaveStep() {
     if (hadSecondTap.current !== (secondTap != null) && free) el?.focus();
     hadSecondTap.current = secondTap != null;
   }, [secondTap]);
+  // Wide screens hold the Back / Save row at the bottom of the screen while the page scrolls (save.css): mark when it is
+  // held there, so it shows its top edge only then. It sits a border's width past the bottom, so held = not wholly in view.
+  const actionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = actionsRef.current;
+    if (!el || typeof IntersectionObserver !== "function") return;
+    const io = new IntersectionObserver((entries) => {
+      const e = entries[entries.length - 1];   // the latest, when several arrive together
+      if (!e) return;
+      const held = e.intersectionRatio < 1 && e.boundingClientRect.top > 0 && e.boundingClientRect.bottom >= (e.rootBounds?.bottom ?? window.innerHeight);
+      el.toggleAttribute("data-stuck", held);
+    }, { threshold: [1] });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
   const current = lastExport && lastExport.sceneKey === sceneKey ? lastExport : null;
   const stale = lastExport != null && current == null;
 
@@ -143,7 +158,7 @@ export function SaveStep() {
   }
 
   const options: Array<{ id: Choice; title: string; desc: string }> = [
-    { id: "pdf", title: "PDF summary", desc: "One page: place and time, map, diagram, each vehicle, distances, assumptions and the notice." },
+    { id: "pdf", title: "PDF summary", desc: "Usually one page: place and time, map, diagram, each vehicle, distances, assumptions and the notice." },
     { id: "png", title: "Diagram picture", desc: "Top-down picture with distances in feet and meters. Impact and final-rest pictures come with 3D." },
     { id: "json", title: "Scene file", desc: "Open it here again to get the exact same recreation." },
   ];
@@ -197,17 +212,19 @@ export function SaveStep() {
             })}
           </fieldset>
 
-          <div className="open-scene">
-            <label className="link-btn" htmlFor="open-scene">Open a saved scene file</label>
-            <input id="open-scene" ref={fileInput} type="file" className="visually-hidden" accept="application/json,.json" onChange={(e) => void openFile(e)} />
-            {openErrors.length ? <ul className="open-errors" role="alert">{openErrors.map((m) => <li key={m}>{m}</li>)}</ul> : null}
+          {/* The primary action comes right after the choices, so it is in the first view (on wide screens the row also
+              stays at the bottom of the screen while the page scrolls; on phones it is the fixed bar). */}
+          <div className="actions save-actions" ref={actionsRef}>
+            <button type="button" className="btn btn-quiet" onClick={() => flow.go("review")}><Icon name="arrow-left" className="icon-sm" />Back</button>
+            {secondTap ? (
+              <button ref={primaryRef} type="button" className="btn btn-primary" onClick={() => { downloadFile(secondTap.item); setReady(null); showToast("Saved to your device."); }}><Icon name="download" className="icon-sm" />Download your files</button>
+            ) : (
+              <button ref={primaryRef} type="button" className="btn btn-primary" aria-busy={saving || undefined} disabled={!outcome?.ok} onClick={() => void save()}><Icon name="download" className="icon-sm" />Save to my device</button>
+            )}
           </div>
-
-          <div className="coming">
-            <p className="group-label">Coming next</p>
-            <p className="coming-row"><strong>Video clip.</strong> Needs an in-browser video encoder and a size limit.</p>
-            <p className="coming-row"><strong>Share link.</strong> Needs hosting, link expiry and control over who can open it.</p>
-          </div>
+          {/* Always in the page (a region added with its text is often not read): shown and read out when the second tap is
+              needed, and it stays until then (a toast would time out). The one place that says it, so it is read once. */}
+          <p className={secondTap ? "hint save-ready" : "visually-hidden"} aria-live="polite" data-testid="save-ready">{secondTap ? SECOND_TAP_TEXT : ""}</p>
 
           <div className={`stamp${stale ? " is-stale" : ""}`} aria-live="polite" data-testid="stamp">
             {current ? (
@@ -222,17 +239,11 @@ export function SaveStep() {
             )}
           </div>
 
-          <div className="actions">
-            <button type="button" className="btn btn-quiet" onClick={() => flow.go("review")}><Icon name="arrow-left" className="icon-sm" />Back</button>
-            {secondTap ? (
-              <button ref={primaryRef} type="button" className="btn btn-primary" onClick={() => { downloadFile(secondTap.item); setReady(null); showToast("Saved to your device."); }}><Icon name="download" className="icon-sm" />Download your files</button>
-            ) : (
-              <button ref={primaryRef} type="button" className="btn btn-primary" aria-busy={saving || undefined} disabled={!outcome?.ok} onClick={() => void save()}><Icon name="download" className="icon-sm" />Save to my device</button>
-            )}
+          <div className="open-scene">
+            <label className="link-btn" htmlFor="open-scene">Open a saved scene file</label>
+            <input id="open-scene" ref={fileInput} type="file" className="visually-hidden" accept="application/json,.json" onChange={(e) => void openFile(e)} />
+            {openErrors.length ? <ul className="open-errors" role="alert">{openErrors.map((m) => <li key={m}>{m}</li>)}</ul> : null}
           </div>
-          {/* Always in the page (a region added with its text is often not read): shown and read out when the second tap is
-              needed, and it stays until then (a toast would time out). The one place that says it, so it is read once. */}
-          <p className={secondTap ? "hint save-ready" : "visually-hidden"} aria-live="polite" data-testid="save-ready">{secondTap ? SECOND_TAP_TEXT : ""}</p>
         </div>
       </div>
     </section>

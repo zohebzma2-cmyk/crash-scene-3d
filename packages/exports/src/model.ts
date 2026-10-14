@@ -2,7 +2,7 @@
 // simulation result. Every distance, speed and weight goes through the core
 // formatter; nothing here holds a measurement of its own.
 import {
-  DEFAULT_LIMIT_MPH, MPH_TO_MPS, PLACE_WORDS, PRESETS, RANGE_HALF_MPH, ROAD_WORDS, ZONE_WORDS,
+  DEFAULT_LIMIT_MPH, MPH_TO_MPS, PLACE_WORDS, PRESETS, RANGE_HALF_MPH, ROAD_NOT_GIVEN_WORDS, ROAD_WORDS, ZONE_WORDS, roadConditionGiven,
   directionCaption, formatDistance, formatMassLb, formatOccurred, formatSpeed, formatStamp, paintLabel, paintOf, roleWords, vehicleName, accountItems, type AccountItem,
 } from "@csd/core";
 import type { ExportStamp, Scene, SceneVehicle, SimulationResult, VehicleResult } from "@csd/core";
@@ -239,7 +239,8 @@ export function buildModel(rawScene: Scene, sim: SimulationResult, stamp: Export
     place: placeLine(loc),
     coordinates: `${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`,
     occurred: formatOccurred(scene.occurred.date, scene.occurred.time) || "Not given",
-    road: `${PLACE_WORDS[loc.place]} · ${ROAD_WORDS[scene.road.condition]}`,
+    // A condition the claimant never gave is said to be not given, never shown as the placeholder the physics runs on.
+    road: `${PLACE_WORDS[loc.place]} · ${roadConditionGiven(scene.road) ? ROAD_WORDS[scene.road.condition] : ROAD_NOT_GIVEN_WORDS}`,
     vehicles,
     measurements: rows,
     assumptions: sim.assumptions.map((a) => printable(a.text)),

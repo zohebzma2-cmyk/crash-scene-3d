@@ -179,6 +179,18 @@ export function dentProgress(t: number, settled = false): number {
 }
 
 /**
+ * Marks a geometry whose morph target 0 is a dent made by this viewer (morphParts here, crumple.ts for catalog
+ * models). applyDentProgress drives only these, so a catalog model's own morph targets (blend shapes such as an
+ * opening door) are never animated by an impact. Set on a fresh userData object: BufferGeometry.clone() shares it.
+ */
+export const DENT_MORPH = "csdDentMorph";
+
+/** Marks g as carrying a viewer-made dent in morph target 0 (see DENT_MORPH). */
+export function markDentMorph(g: BufferGeometry): void {
+  g.userData = { ...g.userData, [DENT_MORPH]: true };
+}
+
+/**
  * Like dentParts, but each dented panel is a copy of the INTACT geometry carrying the dent as a morph target
  * (relative). Drawn with morphTargetInfluences = [dentProgress(t)] it is intact at 0, fully dented at 1, and
  * the viewer can show any time (scrubbing, stills) without swapping geometry. Tires come back as they are.
@@ -199,20 +211,28 @@ export function morphParts<P extends { readonly [K in keyof P]: BufferGeometry }
     base.morphAttributes["position"] = [delta("position")];
     if (g.getAttribute("normal")) base.morphAttributes["normal"] = [delta("normal")];
     base.morphTargetsRelative = true;
+    markDentMorph(base);
     d.dispose();
     out[slot] = base;
   }
   return out as P;
 }
 
-/** Set the dent on every morph-carrying mesh under a vehicle group. No allocation after the first call per mesh. */
+/**
+ * Set the dent on every mesh under a vehicle group, at any depth (a crumpled catalog model, crumple.ts, is a nested
+ * group), whose geometry carries a viewer-made dent (DENT_MORPH). Meshes with their own morph targets are left alone.
+ * No allocation after the first call per mesh.
+ */
 export function applyDentProgress(group: Object3D, k: number): void {
   const kids = group.children;
   for (let i = 0; i < kids.length; i++) {
-    const m = kids[i] as Mesh;
-    if (!m.isMesh || !m.geometry.morphAttributes["position"]?.length) continue;
-    if (!m.morphTargetInfluences) m.morphTargetInfluences = [0];
-    m.morphTargetInfluences[0] = k;
+    const o = kids[i]!;
+    const m = o as Mesh;
+    if (m.isMesh && m.geometry.userData?.[DENT_MORPH] === true && m.geometry.morphAttributes["position"]?.length) {
+      if (!m.morphTargetInfluences) m.morphTargetInfluences = [0];
+      m.morphTargetInfluences[0] = k;
+    }
+    if (o.children.length) applyDentProgress(o, k);
   }
 }
 

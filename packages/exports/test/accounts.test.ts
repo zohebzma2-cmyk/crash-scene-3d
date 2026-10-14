@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { accountItems, CONTROL, LIGHTING, WEATHER, YES_NO, VISIBILITY, type Scene } from "@csd/core";
+import { accountItems, CONTROL, LIGHTING, PLACE_WORDS, ROAD_WORDS, WEATHER, YES_NO, VISIBILITY, simulate, type Scene } from "@csd/core";
 import { parseOverpass } from "@csd/mapdata";
 import { sceneSummary } from "../../../apps/web/src/lib/text";
 import { buildModel } from "../src/model";
@@ -20,6 +20,33 @@ const cases: Array<[string, (s: Scene) => void]> = [
   ["lane", (s) => { s.vehicles[0]!.travel.lane = 2; s.vehicles[0]!.account = { lane: "entered" }; }],
   ["lane not sure", (s) => { s.vehicles[0]!.account = { lane: "not-sure" }; }],
 ];
+describe("a road condition the claimant didn't give", () => {
+  it("is said to be not given in the summary, the PDF and the scene file, never shown as the placeholder", async () => {
+    const scene: Scene = { ...twoVehicle().scene, road: { condition: "dry", conditionNotGiven: true } };
+    const out = simulate(scene, null);
+    if (!out.ok) throw new Error(out.errors.map((e) => e.text).join("; "));
+    const sim = out.result;
+    const { text: file, stamp } = await sceneFile(scene, sim, "2026-10-10T00:00:00Z");
+    const model = buildModel(scene, sim, stamp);
+    expect(model.road).toBe(`${PLACE_WORDS[scene.location.place]} · road surface not given`);
+    expect(sceneSummary(scene, sim, "us")).toContain("The road surface was not given.");
+    expect(sceneSummary(scene, sim, "us")).not.toMatch(/The road was/);
+    const pdf = await buildPdf({ model, scene, sim, roads: null, fonts: brandFonts(), createdAt: stamp.createdAt, sceneFileName: "synthetic.json" });
+    const text = norm((await readPdf(pdf.bytes)).text);
+    expect(text).toContain("road surface not given");
+    expect(text).toContain("Road surface not given: the picture uses dry-road friction");
+    expect(text).not.toMatch(/Road dry, as entered/);
+    // The file keeps it, so reopening it says the same.
+    expect(JSON.parse(file).road).toEqual({ condition: "dry", conditionNotGiven: true, friction: sim.frictionCoefficient });
+  });
+
+  it("an entered condition (and every older scene) still reads as entered", () => {
+    const { scene, sim } = twoVehicle();
+    expect(scene.road.conditionNotGiven).toBeUndefined();
+    expect(sceneSummary(scene, sim, "us")).toContain(`The road was ${ROAD_WORDS[scene.road.condition]}.`);
+  });
+});
+
 describe("every optional answer in summary and actual PDF", () => {
   it("does not call the default no-braking physics assumption a claimant answer", async () => {
     const { scene, sim } = twoVehicle();

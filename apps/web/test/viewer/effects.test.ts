@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BoxGeometry, BufferGeometry, Group, Mesh } from "three";
 import { BRAKING_S, MPH_TO_MPS, ZONES, type Pose, type RoadNetwork, type SimulationResult, type VehicleResult, type Zone } from "@csd/core";
-import { DENT_GROW_S, DENT_MAX_M, applyDentProgress, dentDepthM, dentGeometry, dentParts, dentProgress, morphParts, planDents, severityFromDeltaV } from "../../src/viewer/effects/damage";
+import { DENT_GROW_S, DENT_MAX_M, DENT_MORPH, applyDentProgress, dentDepthM, dentGeometry, dentParts, dentProgress, morphParts, planDents, severityFromDeltaV } from "../../src/viewer/effects/damage";
 import { buildShards, hashString, rng, settledPositions, shardCounts, shardPoseAt, type ShardPose } from "../../src/viewer/effects/debris";
 import { deltaVFromTrack, getImpactInfo, zoneDistance, zoneOfPoint } from "../../src/viewer/effects/impact-info";
 import { SHAKE_MS, WARP_MIN, effectiveRate, shakeOffset, warpFactor } from "../../src/viewer/effects/shake";
@@ -165,6 +165,20 @@ describe("dent as a morph target", () => {
     applyDentProgress(g, 0.5);
     expect(a.morphTargetInfluences).toEqual([0.5]);
     expect(b.morphTargetInfluences).toBeUndefined();
+  });
+  it("leaves a model's own morph targets alone (a blend shape that isn't a dent)", () => {
+    const own = new BoxGeometry(1, 1, 1);
+    own.morphAttributes["position"] = [own.getAttribute("position").clone()];   // e.g. a door-open blend shape in a GLB
+    const parts = morphParts({ body: carBox() }, [{ zone: "front", severity: 1 }]);
+    const g = new Group(), door = new Mesh(own), body = new Mesh(parts.body), nested = new Group();
+    door.morphTargetInfluences = [0];
+    nested.add(door);
+    g.add(body, nested);
+    applyDentProgress(g, 1);
+    expect(body.morphTargetInfluences).toEqual([1]);
+    expect(door.morphTargetInfluences).toEqual([0]);
+    expect(own.userData[DENT_MORPH]).toBeUndefined();
+    expect(parts.body.userData[DENT_MORPH]).toBe(true);
   });
 });
 

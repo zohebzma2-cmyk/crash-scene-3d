@@ -9,6 +9,7 @@ import { vehicleToken, type SceneColors, type SceneToken } from "./tokens";
 import { applyTint, type TintPlan } from "./glb-model";
 import { vehicleModel, type VehicleParts } from "./vehicle-models";
 import { LIFT } from "./scene-geometry";
+import type { Crumpled } from "./effects/crumple";
 
 /** The materials every vehicle shares, plus one body and one ghost material per vehicle color. */
 export class VehicleMaterials {
@@ -82,15 +83,27 @@ export interface VehicleMeshProps {
    * geometry for any part it changes; the clones are disposed here when they are replaced or unmounted.
    */
   readonly damage?: (parts: VehicleParts) => VehicleParts;
+  /**
+   * Optional crumple for the catalog model (effects/crumple.ts): called once per catalog model, returns a copy of it to
+   * draw (sharing its materials; its geometry copies are freed here) or null to draw the model as it is.
+   */
+  readonly crumple?: (model: Group) => Crumpled | null;
 }
 
-export function VehicleMesh({ v, paint, catalog, pose, mats, terrain, register, damage }: VehicleMeshProps) {
+export function VehicleMesh({ v, paint, catalog, pose, mats, terrain, register, damage, crumple }: VehicleMeshProps) {
   const model = vehicleModel(v.type, v.lengthM, v.widthM);
   const parts = useMemo(() => (damage ? damage(model.parts) : model.parts), [damage, model]);
   useEffect(() => () => {
     if (parts === model.parts) return;
     for (const k of ["body", "glass", "headlight", "taillight", "tire"] as const) if (parts[k] !== model.parts[k]) parts[k].dispose();
   }, [parts, model]);
+  // The catalog model crumples on a per-vehicle copy: the loaded model itself is never changed. A model that can't be
+  // crumpled is drawn as it is (the picture never waits on, or breaks over, the crumple).
+  const crumpled = useMemo(() => {
+    if (!catalog || !crumple) return null;
+    try { return crumple(catalog.object); } catch { return null; }
+  }, [catalog, crumple]);
+  useEffect(() => () => crumpled?.dispose(), [crumpled]);
   const ground = heightAt(terrain ?? null, { x: pose.xM, y: pose.yM });
   const body = mats.bodyFor(v.id);
   const fill = VehicleMaterials.fillOf(paint ?? { id: v.id });
@@ -102,7 +115,7 @@ export function VehicleMesh({ v, paint, catalog, pose, mats, terrain, register, 
   }, [mats, body, fill, catalog]);
   return (
     <group ref={(g) => register?.(v.id, g)} position={toThree({ x: pose.xM, y: pose.yM }, ground)} rotation={[0, headingToYaw(pose.headingRad), 0]}>
-      {catalog ? <primitive object={catalog.object} /> : (
+      {catalog ? <primitive object={crumpled?.object ?? catalog.object} /> : (
         <>
           <mesh geometry={parts.body} material={body} castShadow />
           <mesh geometry={parts.glass} material={mats.glass} />

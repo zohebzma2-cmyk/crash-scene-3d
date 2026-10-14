@@ -6,8 +6,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PROXY_ROUTES } from "@csd/core";
 import { createProxy, defaultProviderConfig, memoryStore } from "@csd/proxy";
+import { SUGGEST_SLOW_TEXT } from "../src/components/SearchPanel";
 import { createServices } from "../src/services";
-import { all, click, flush, renderApp, setValue, text } from "./helpers";
+import { all, click, flush, key, renderApp, setValue, text } from "./helpers";
 
 let app: { unmount: () => void } | null = null;
 afterEach(() => { app?.unmount(); app = null; vi.restoreAllMocks(); });
@@ -28,21 +29,37 @@ const CROSS = { elements: [
   { type: "way", id: 20, nodes: [4, 2, 5], geometry: [{ lat: 42.7652, lon: -71.469 }, { lat: 42.7651, lon: -71.4679 }, { lat: 42.765, lon: -71.4668 }], tags: { highway: "residential", name: "Park Street" } },
 ] };
 
-function liveServices() {
+/** A Nominatim row for the on-submit search (made-up street in a public town). */
+const ELM_NOMINATIM = [{ lat: "42.7621", lon: "-71.4652", display_name: "Elm Street, Nashua, Hillsborough County, New Hampshire, United States", name: "Elm Street", type: "residential", addresstype: "road", address: { road: "Elm Street", city: "Nashua", state: "New Hampshire" } }];
+
+interface LiveOptions {
+  /** Photon never answers these queries (the proxy gives up on them). */
+  readonly photonHangs?: (q: string) => boolean;
+  /** The proxy's request deadline (limits.timeoutMs), shortened so a give-up takes real seconds, not 7. */
+  readonly timeoutMs?: number;
+}
+
+function liveServices(opts: LiveOptions = {}) {
   const upstreamCalls: string[] = [];
   const upstream = (async (url: RequestInfo | URL, init?: RequestInit) => {
     const u = String(url);
     upstreamCalls.push(u);
     if (u.includes("photon")) {
       const q = new URL(u).searchParams.get("q") ?? "";
+      if (opts.photonHangs?.(q)) {
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+      }
       // Unbiased, "Main St" really does put Lyons, Colorado first.
       return json({ type: "FeatureCollection", features: q.startsWith("Nashua") ? [NASHUA] : [MAIN_LYONS, MAIN_NASHUA] });
     }
+    if (u.includes("nominatim")) return json(ELM_NOMINATIM);
     if (u.includes("overpass")) return json((new URLSearchParams(String(init?.body ?? "")).get("data") ?? "").includes("way(id:") ? CROSS : { elements: [] });
     return new Response(PNG, { headers: { "content-type": "image/png" } }); // terrain
 
   }) as typeof fetch;
-  const proxy = createProxy(defaultProviderConfig(), { fetch: upstream, store: memoryStore(), now: () => Date.now(), userKey: () => "claimant" });
+  const base = defaultProviderConfig();
+  const config = opts.timeoutMs ? { ...base, limits: { ...base.limits, timeoutMs: opts.timeoutMs } } : base;
+  const proxy = createProxy(config, { fetch: upstream, store: memoryStore(), now: () => Date.now(), userKey: () => "claimant" });
   const answers: Array<{ path: string; status: number }> = [];
   // The browser's fetch to its own origin, answered by the proxy (no abort signal: jsdom's isn't Node's).
   const fetchFn = (async (input: string) => {
@@ -81,5 +98,32 @@ describe("a normal search through the real proxy", () => {
     // One cross-streets request: none again for the label the pick put in the box.
     expect(answers.filter((a) => a.path.startsWith(PROXY_ROUTES.crossStreets))).toHaveLength(1);
     expect(answers.filter((a) => a.path.startsWith(PROXY_ROUTES.overpass))).toHaveLength(2); // the street's roads, the pin's roads
+  }, 20_000);
+
+  it("a Photon too slow to answer: the list says so and points to Search; nothing asks Nominatim until Search is pressed", async () => {
+    // The proxy's deadline is cut to 1.5 s here so the test doesn't wait 7 s (packages/proxy/test/suggest.test.ts
+    // checks the real 7 s; e2e/search-slow.spec.ts sees it in a browser).
+    const { services, answers, upstreamCalls } = liveServices({ photonHangs: (q) => q.toLowerCase().startsWith("elm"), timeoutMs: 1500 });
+    app = await renderApp(services);
+    for (const t of ["Elm", "Elm S", "Elm St"]) await type(t);
+    await flush(2000);
+    const list = document.querySelector(".combo-pop")!;
+    expect(text(list)).toContain(SUGGEST_SLOW_TEXT);
+    expect(text(list)).not.toContain("Searching…");
+    expect(all("option")).toHaveLength(0);
+    const last = answers.filter((a) => a.path.startsWith(PROXY_ROUTES.suggest)).at(-1)!;
+    expect(new URL(last.path, "https://app.test").searchParams.get("q")).toBe("Elm St");
+    expect(last.status).toBe(504);
+    // While typing, only Photon was asked (the claim's town, then the street); never Nominatim, never /api/geo/search.
+    expect(upstreamCalls.filter((u) => !u.includes("photon"))).toEqual([]);
+    expect(answers.some((a) => a.path.startsWith(PROXY_ROUTES.search))).toBe(false);
+
+    // Search (Enter, nothing highlighted) is the on-submit search, and it finds the street.
+    key(input(), "Enter");
+    await flush(500);
+    expect(answers.filter((a) => a.path.startsWith(PROXY_ROUTES.search)).map((a) => a.status)).toEqual([200]);
+    expect(upstreamCalls.filter((u) => u.includes("nominatim"))).toHaveLength(1);
+    const results = document.querySelector("ul.results")!;
+    expect(text(results)).toContain("Elm Street");
   }, 20_000);
 });

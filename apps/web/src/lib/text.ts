@@ -2,7 +2,8 @@
 // names keep their capitals and no word repeats ("going straight going straight").
 // Numbers come from the simulation result through formatSpeed; nothing is typed in.
 import {
-  ACTION_WORDS, DEFAULT_LIMIT_MPH, PRESETS, ROAD_WORDS, ZONE_WORDS, directionCaption, formatSpeed, joinClauses, accountItems, roleWords,
+  ACTION_WORDS, DEFAULT_LIMIT_MPH, PLACE_WORDS, PRESETS, ROAD_NOT_GIVEN_WORDS, ROAD_WORDS, ZONE_WORDS, directionCaption, formatSpeed, joinClauses,
+  accountItems, roadConditionGiven, roleWords,
   type Scene, type SceneVehicle, type SimulationResult, type Units,
 } from "@csd/core";
 
@@ -59,9 +60,19 @@ export function vehicleClause(v: SceneVehicle, sim: SimulationResult | null, uni
   return `${head}${speed ? ` ${speed}` : ""} when it was hit on the ${ZONE_WORDS[v.zone]}`;
 }
 
+/** "The road was wet.", or, when the claimant didn't say, "The road surface was not given." (never the placeholder). */
+export function roadSentence(scene: Pick<Scene, "road">): string {
+  return roadConditionGiven(scene.road) ? `The road was ${ROAD_WORDS[scene.road.condition]}.` : "The road surface was not given.";
+}
+
+/** "Intersection, wet road" on Review, or "Intersection, road surface not given". */
+export function placeRoadWords(scene: Pick<Scene, "road" | "location">): string {
+  return joinClauses([PLACE_WORDS[scene.location.place], roadConditionGiven(scene.road) ? `${ROAD_WORDS[scene.road.condition]} road` : ROAD_NOT_GIVEN_WORDS]);
+}
+
 export function sceneNarrative(scene: Scene, sim: SimulationResult | null, units: Units): string {
   const sentence = scene.vehicles.map((v) => vehicleClause(v, sim, units)).join("; ");
-  return `${ucFirst(sentence)}. The road was ${ROAD_WORDS[scene.road.condition]}.`;
+  return `${ucFirst(sentence)}. ${roadSentence(scene)}`;
 }
 
 export function sceneSummary(scene: Scene, sim: SimulationResult | null, units: Units): string {

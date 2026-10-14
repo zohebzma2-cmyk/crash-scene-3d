@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 // @ts-expect-error plain .mjs script, no types
-import { buildMarkSvg, parseOfficial, pathBounds } from "../../../scripts/build-brand.mjs";
+import { ICO_SIZES, buildMarkSvg, icoFromPngs, parseOfficial, pathBounds } from "../../../scripts/build-brand.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (p: string) => readFileSync(`${root}${p}`, "utf8");
@@ -49,5 +49,32 @@ describe("official logo files", () => {
       const buf = readFileSync(`${root}apps/web/public/${name}`);
       expect([buf.readUInt32BE(16), buf.readUInt32BE(20)]).toEqual([size, size]);
     }
+  });
+  it("serves a real /favicon.ico: an icon file holding the mark as 16, 32 and 48 px PNGs", () => {
+    const ico = readFileSync(`${root}apps/web/public/favicon.ico`);
+    expect([ico.readUInt16LE(0), ico.readUInt16LE(2)]).toEqual([0, 1]);   // reserved, type icon
+    const count = ico.readUInt16LE(4);
+    expect(count).toBe(ICO_SIZES.length);
+    const sizes: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const at = 6 + 16 * i;
+      const size = ico.readUInt8(at), length = ico.readUInt32LE(at + 8), offset = ico.readUInt32LE(at + 12);
+      const png = ico.subarray(offset, offset + length);
+      expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)], `entry ${i}`).toEqual([size, size]);
+      expect(ico.readUInt16LE(at + 6)).toBe(32);
+      sizes.push(size);
+    }
+    expect(sizes).toEqual(ICO_SIZES);
+  });
+  it("packs PNGs into an .ico with each entry pointing at its own bytes", () => {
+    const a = Buffer.from("first png"), b = Buffer.from("second, longer png");
+    const ico = icoFromPngs([[16, a], [256, b]]) as Buffer;
+    expect(ico.readUInt16LE(4)).toBe(2);
+    expect(ico.readUInt8(6 + 16)).toBe(0);   // 256 px is written as 0
+    const entry = (i: number) => ico.subarray(ico.readUInt32LE(6 + 16 * i + 12), ico.readUInt32LE(6 + 16 * i + 12) + ico.readUInt32LE(6 + 16 * i + 8));
+    expect(entry(0).toString()).toBe("first png");
+    expect(entry(1).toString()).toBe("second, longer png");
+    expect(ico.length).toBe(6 + 32 + a.length + b.length);
   });
 });

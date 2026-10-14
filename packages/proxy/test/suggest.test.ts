@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUSY_MESSAGES, PROXY_ROUTES, type CrossStreetsResult, type PlaceResult, type ProxyCapabilities, type ProxyError } from "@csd/core";
-import { photonToPlaces, stateAbbreviation } from "../src";
+import { BUSY_MESSAGES, PROXY_ROUTES, TIMEOUT_MESSAGES, type CrossStreetsResult, type PlaceResult, type ProxyCapabilities, type ProxyError } from "@csd/core";
+import { SUGGEST_DEADLINE_MS, photonToPlaces, stateAbbreviation } from "../src";
 import { loadCassette, replay } from "./cassette";
-import { START, config, hang, jsonResponse, settle, setup, type Call, type Upstream } from "./helpers";
+import { START, config, hang, jsonResponse, nominatimRows, settle, setup, type Call, type Upstream } from "./helpers";
 
 beforeEach(() => { vi.useFakeTimers({ now: START }); });
 afterEach(() => { vi.useRealTimers(); });
@@ -13,6 +13,11 @@ const feature = (props: Record<string, unknown>, lon = -71.4, lat = 42.7) => ({
 });
 const photon = (...features: unknown[]) => ({ type: "FeatureCollection", features });
 const suggestPath = (q: string, extra = "") => `${PROXY_ROUTES.suggest}?q=${encodeURIComponent(q)}${extra}`;
+/** An upstream that answers like `answer`, but only after `ms` (on the fake clock); aborting it rejects at once. */
+const slowly = (ms: number, answer: (c: Call) => Response): Upstream => (c, signal) => new Promise<Response>((resolve, reject) => {
+  const timer = setTimeout(() => resolve(answer(c)), ms);
+  signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("aborted", "AbortError")); });
+});
 
 describe("photonToPlaces", () => {
   it("shows 'Town, ST' on every suggestion, falling back to the county, and keeps the state", () => {
@@ -161,11 +166,34 @@ describe("/api/geo/suggest", () => {
     }
   });
 
-  it("gives up on a hanging Photon after 4 s with the timeout error", async () => {
+  it("waits for a Photon that takes 4.8 s (the public server on a new query, 2026-10-14) and answers its suggestions", async () => {
+    const t = setup(slowly(4800, goodPhoton));
+    const res = await settle(t.get(suggestPath("elm st", "&lat=42.76563&lon=-71.4677")));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PlaceResult[])[0]).toMatchObject({ main: "Elm Street", sub: "Hudson, NH" });
+    expect(Date.now() - START).toBeGreaterThanOrEqual(4800);
+    // …and it is kept, so the next person typing it gets it at once.
+    const again = await settle(t.get(suggestPath("elm st", "&lat=42.76563&lon=-71.4677"), "user-2"));
+    expect(again.headers.get("x-proxy-cache")).toBe("hit");
+    expect(t.calls).toHaveLength(1);
+  });
+
+  it("gives up on a hanging Photon at 7 s with the search timeout error, and never asks Nominatim instead", async () => {
     const t = setup(hang);
     const res = await settle(t.get(suggestPath("elm st")));
     expect(res.status).toBe(504);
-    expect(Date.now() - START).toBeLessThanOrEqual(4100);
+    expect(await res.json()).toMatchObject({ code: "timeout", message: TIMEOUT_MESSAGES.search });
+    expect(Date.now() - START).toBeGreaterThanOrEqual(SUGGEST_DEADLINE_MS - 100);
+    expect(Date.now() - START).toBeLessThanOrEqual(SUGGEST_DEADLINE_MS + 100);
+    expect(t.calls.length).toBeGreaterThan(0);
+    expect(t.calls.every((c) => c.url.includes("photon"))).toBe(true);
+    expect(t.setKeys).toEqual([]); // a timeout is not remembered
+  });
+
+  it("gives Photon 7 s, inside the request's 8 s deadline (the browser waits 9.5 s, apps/web/src/services/http.ts)", () => {
+    expect(SUGGEST_DEADLINE_MS).toBe(7000);
+    expect(config.limits.timeoutMs).toBe(8000);
+    expect(SUGGEST_DEADLINE_MS).toBeLessThan(config.limits.timeoutMs);
   });
 
   it("is limited by a token bucket, not 1 req/s: a typing burst of 12 passes, a flood does not", async () => {
@@ -334,6 +362,22 @@ describe("/api/geo/crossing without a town (bias)", () => {
     const res = await settle(t.get(path("north main street", "south pleasant street")));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([]);
+  });
+
+  it("a Photon that never answers still leaves the plain search its 1.5 s before the 8 s deadline", async () => {
+    let nominatimAt = 0;
+    const nominatim = slowly(1200, () => jsonResponse(nominatimRows));
+    const t = setup((c, signal) => {
+      if (!c.url.includes("nominatim")) return hang(c, signal);
+      nominatimAt = Date.now();
+      return nominatim(c, signal);
+    });
+    const res = await settle(t.get(path("north main street", "pleasant street")));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PlaceResult[]).map((p) => p.main)).toEqual(["Nashua"]);
+    expect(t.calls[0]!.url).toContain("photon");
+    // Photon is given up on at 8 s - 1.5 s, not at its 7 s type-ahead limit, which would leave the plain search 1 s.
+    expect(nominatimAt - START).toBeLessThanOrEqual(config.limits.timeoutMs - 1500 + 100);
   });
 
   it("when Photon is down and the plain search finds nothing, the failure is reported, not an empty list", async () => {

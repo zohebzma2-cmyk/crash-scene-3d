@@ -6,10 +6,19 @@
 .option-body { display: flex; flex-direction: column; gap: var(--space-1); }
 .option-title { font-weight: var(--weight-bold); }
 .option-desc { font-size: var(--text-sm); color: var(--color-text-secondary); }
-.coming { display: flex; flex-direction: column; gap: var(--space-2); }
-.coming .group-label { font-size: var(--text-sm); color: var(--color-text-secondary); }
-.coming-row { font-size: var(--text-sm); color: var(--color-text-secondary); }
-.coming-row strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+/* Wide screens: Back and Save to my device come right after the choices and stay at the bottom of the screen while
+   the page scrolls (as the fixed bar does on phones), so the primary action is never below the fold. The padding is
+   taken back with a negative margin, so the row sits where it would anyway; the page colour hides what passes under it,
+   and a hairline marks the edge only while the row is held at the bottom (data-stuck, set by SaveStep; it sits a
+   border's width past the edge so an observer can tell). */
+@media (min-width: 768px) {
+  .save-actions {
+    position: sticky; bottom: calc(var(--size-border) * -1); z-index: var(--z-controls);
+    margin-block: calc(var(--space-3) * -1); padding-block: var(--space-3);
+    background: var(--color-bg); border-top: var(--size-border) solid transparent;
+  }
+  .save-actions[data-stuck] { border-top-color: var(--color-border); }
+}
 .stamp { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); font-size: var(--text-sm); color: var(--color-text-secondary); }
 .stamp strong { color: var(--color-text); font-weight: var(--weight-semibold); }
 .stamp.is-stale { background: var(--color-warning-tint); color: var(--color-warning-tint-text); }

@@ -269,7 +269,7 @@
             <legend class="visually-hidden">Files to save</legend>
             <label class="option"><input type="checkbox" name="fmt" value="pdf" checked>
               <span class="option-body"><span class="option-title">PDF summary</span>
-              <span class="option-desc">One page: place and time, map, diagram, each vehicle, distances, assumptions and the notice.</span></span></label>
+              <span class="option-desc">Usually one page: place and time, map, diagram, each vehicle, distances, assumptions and the notice.</span></span></label>
             <label class="option"><input type="checkbox" name="fmt" value="png" checked>
               <span class="option-body"><span class="option-title">Diagram picture</span>
               <span class="option-desc">Top-down picture with distances in feet and meters. Impact and final-rest pictures come with 3D.</span></span></label>
@@ -278,19 +278,15 @@
               <span class="option-desc">Open it here again to get the exact same recreation.</span></span></label>
           </fieldset>
 
-          <p class="open-scene"><label class="link-btn" for="open-scene">Open a saved scene file</label><input type="file" id="open-scene" class="visually-hidden" accept="application/json,.json"></p>
-
-          <div class="coming">
-            <p class="group-label">Coming next</p>
-            <p class="coming-row"><strong>Video clip.</strong> Needs an in-browser video encoder and a size limit.</p>
-            <p class="coming-row"><strong>Share link.</strong> Needs hosting, link expiry and control over who can open it.</p>
-          </div>
-
-          <div class="stamp" id="export-stamp" aria-live="polite"></div>
+          <!-- The primary action right after the choices (DESIGN.md section 6, 2026-10-14); the formats still to come are in the README, not here. -->
           <div class="actions">
             <a class="btn btn-quiet" href="#review"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back</a>
             <button class="btn btn-primary" type="button" id="save-btn"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-download"/></svg>Save to my device</button>
           </div>
+
+          <div class="stamp" id="export-stamp" aria-live="polite"></div>
+
+          <p class="open-scene"><label class="link-btn" for="open-scene">Open a saved scene file</label><input type="file" id="open-scene" class="visually-hidden" accept="application/json,.json"></p>
         </div>
       </div>
     </section>

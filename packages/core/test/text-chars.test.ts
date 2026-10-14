@@ -62,6 +62,8 @@ function triggerEverything(): void {
   // ---- assumptions: a spread of runs
   [
     simulate(flatTBoneScene(), null),
+    // the road condition not given (a new visitor who skipped it): the friction sentence says so
+    simulate({ ...flatTBoneScene(), road: { condition: "dry", conditionNotGiven: true } }, null),
     simulate(flatTBoneScene({ bSpeed: unsure(null), condition: "ice" }), null),
     simulate(flatTBoneScene({ bSpeed: unsure(30), condition: "snow" }), null),
     simulate(flatRearEndScene({ braking: true, condition: "wet" }), null),
@@ -286,6 +288,8 @@ const TEMPLATES: Array<[string, RegExp]> = [
   ["range end, pass through", /^At .* and above, vehicle . would have passed through vehicle . before the crash, so the numbers shown end at/],
   ["picture speed", /middle speed \(.*\) doesn't work here, so the picture uses/],
   ["same direction", /were both going/],
+  ["friction, as entered", /^Road wet, as entered: friction 0\.5 for the whole road \(dry 0\.7 · wet 0\.5 · snow 0\.25 · ice 0\.1\)\.$/],
+  ["friction, not given", /^Road surface not given: the picture uses dry-road friction 0\.7 for the whole road \(dry 0\.7 · wet 0\.5 · snow 0\.25 · ice 0\.1\)\.$/],
   ["rigid bodies", /^For the motion, vehicles are rigid bodies of typical weight for their type that don't tip over or break apart\.$/],
   ["damage illustrated", /^The dents show roughly where and how hard each vehicle was hit\. They are drawn for illustration only and don't change the motion\.$/],
   ["zone mismatch", /would have come at/],

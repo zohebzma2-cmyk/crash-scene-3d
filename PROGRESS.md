@@ -1,20 +1,24 @@
-# Release status (2026-10-12)
+# Release status (2026-10-14)
 
-**Production = GitHub `main`**, deployed to https://crash-scene-3d.netlify.app on 2026-10-12 at 23:02 ET with `netlify deploy --prod` from the same tree. Previous release: `d4ae95c` (2026-10-11). Rollback: Netlify → Deploys → the 2026-10-11 deploy → "Publish deploy", and `git revert` the release commit on `main`.
+**Production = GitHub `main`**, deployed to https://crash-scene-3d.netlify.app from the same tree, after a draft deploy and the release smoke (docs/DEPLOY.md). Previous release: `75d71f6` (2026-10-12). Rollback: Netlify → Deploys → the 2026-10-12 deploy → "Publish deploy", and `git revert` the release commit on `main`.
 
-**Why one squashed commit:** the working branches were squashed into a single release commit on top of `d4ae95c`, so that intermediate example data from earlier iterations is never published. Work continues from `main`.
+**One release commit:** the four fixes (PDF, search, viewer, layout and link previews) and the docs were combined into a single commit on top of `75d71f6`.
 
 **What shipped:**
-- Road features and optional questions (scene v4), with the first frame within 8% of the previous release.
-- A first-visit welcome dialog; the header follows vehicle A; no made-up claim number; an optional claim number and `?claim=`.
-- Directions taken from the roads, paths that follow the lanes, a check before Review with one-tap fixes, contact geometry, honest paint chips and one label per vehicle; the impact ring framed in view; the Top view kept above the controls on phones.
-- Neutral defaults: a new visitor's vehicles start with nothing picked (no type, action, direction, speed or hit side); unanswered items are shown as unanswered and are never drawn, checked or offered in a fix.
-- Proxy fix: Netlify Blobs stores are opened per call.
-- A release smoke test (`npm run smoke`), and README and DESIGN updates.
+- PDF: the top-down diagram shows the whole crash with the impact ring; the key to the road symbols runs under the caption, and the scale and north chip sits in a clear corner. The diagram PNG is unchanged.
+- Search: type-ahead waits up to 7 s for Photon; a timeout or a second busy answer says "Suggestions are slow right now. Press Search to look it up."
+- Viewer: catalog 3D models crumple on the face that was hit, from the impact on; scrubbing back undoes it.
+- Phones: the catalog-model note sits under the timeline and can be closed.
+- Save step: Back and "Save to my device" come right after the file choices; "Coming next" moved to the README's Next version; the PDF is described as "usually one page".
+- Road condition: nothing is picked for a new visitor; the summary, Review and PDF say the road surface was not given, and the picture uses dry-road friction, which the assumptions list says (optional scene field `road.conditionNotGiven`).
+- Link previews: a description, Open Graph and Twitter tags, `og.png`, `favicon.ico` and `robots.txt`.
+- README: the demo GIF, MP4 and step pictures re-recorded from this build; the pitch and live link at the top; a License section; facts brought up to date.
 
-**Checks on the release tree:** `./check.sh` (typecheck, lint, stylelint, build): 2,153 unit tests and 543 browser tests passed (58 skipped); the privacy scan of the tree and of every pushed commit is clean; the release smoke passed end to end on Chromium.
+**Checks on the release tree:** `./check.sh` (typecheck, lint, stylelint, design tokens, build): 2,198 unit and property tests and 575 browser tests passed (64 skipped); the privacy scan of the tree is clean; the release smoke passed on a draft deploy (40 passed; its 6 media checks skip on a draft, which has no media keys).
 
-# PROGRESS: handoff (updated 2026-10-12)
+**Open after this release:** the highway example opens too far out in the Top view (a framing decision); the parking-lot example shows no crumple, because neither car's speed changes by more than 3 mph in the hit; the PDF's road-symbol key lists symbols outside the picture; the crossing-streets list does not use the new slow message; the PDF map thumbnail can show blank tiles in a corner when it is captured before every tile has loaded (seen on the 2026-10-12 release too).
+
+# PROGRESS: handoff (updated 2026-10-14)
 
 **Read this and `git log --oneline -20` before doing anything.** The release status above is the current state. Earlier, detailed progress notes are in this file's git history.
 
@@ -39,13 +43,13 @@
   - The proxy, with the claim-town search bias, a per-user Overpass slot reservation (no 429s) and typed "A and B, Town".
   - Exports: one ZIP of PDF, PNGs and the scene JSON, all carrying the same SHA-256 fingerprint.
   - Fixer v2: wider fixes in a Web Worker, a regression corpus, and a "remembered fixes" memory that stays on the device.
-- **Secrets set on Netlify (values never read):** `PROXY_USER_SALT`, plus two logo.dev keys for round B, which isn't built.
-- **`./check.sh` on the release tree (2026-10-12):**
-  - 2,153 unit and property tests;
-  - 543 browser tests on Chromium and WebKit at 1440 and 390;
-  - 58 skipped (WebKit runs the `@xb` subset; plus the known fixme and opt-in cases).
+- **Secrets set on Netlify (values never read):** `PROXY_USER_SALT`, and the CarImages and logo.dev keys for production only (drafts have none, so the smoke skips its media checks there).
+- **`./check.sh` on the release tree (2026-10-14):**
+  - 2,198 unit and property tests;
+  - 575 browser tests on Chromium and WebKit at 1440 and 390;
+  - 64 skipped (WebKit runs the `@xb` subset; plus the known fixme and opt-in cases).
   - **The release smoke** (`npm run smoke -- <url>`, `scripts/smoke.mjs`, added 2026-10-12) is the one unstubbed check: one person's flow, one take, Chromium 1440 then WebKit 390, real search, real vPIC, real media, then the saved files. Media is required against production and SKIP-on-miss on a draft (the CarImages/logo.dev keys are production-only). Release flow (docs/DEPLOY.md): build → Netlify draft (no `--prod`) → smoke → report → owner says "promote" → the same commit `--prod` + push `main` → smoke live → "last known good" note here.
-- **In production:** the 2026-10-12 release (the release commit on `main`). Previous: `d4ae95c` (2026-10-11 22:51). Rollback = Netlify "Publish deploy" on that deploy.
+- **In production:** the 2026-10-14 release (the release commit on `main`). Previous: `75d71f6` (2026-10-12). Rollback = Netlify "Publish deploy" on that deploy.
 - **Live checks after each deploy:**
   - `BASE_URL=https://crash-scene-3d.netlify.app npm run e2e:live`, which covers search near the claim and, since 2026-10-11, typing two vehicles (`e2e/live/vehicles.live.spec.ts`; run once, see the hard rules);
   - `e2e/csp-steps.spec.ts` and `e2e/viewer-clear.spec.ts` against the live URL;
@@ -63,7 +67,7 @@
 ## What's next (in order)
 1. **Two more scene rules + the scenario corpus gate** (specs agreed 2026-10-12): RULE 1 vehicles stay on the road, including after the impact (obstacles in the physics; "Did A end up off the road?"; a Parked option); RULE 2 single-vehicle crashes ("What was hit?": objects from OSM, leaving the road, fixed-object physics, a 4th guard-rail example); `npm run check:scenarios` over Codex's `qa/scenario-corpus` (branch `codex/scenarios`, blocked on an approval prompt last night) wired into check.sh.
 2. **Context questions** answered only from the OSM data at the pin (lanes, signal, sign, turn, speed limit, lot, conditions), schema minor bump, "As described" PDF section, fingerprint unchanged for old files.
-3. **Crash damage + the real scene**: crumple at the contact patch (animated, effects, stills caption; illustration wording only, CLAUDE.md rule 4) and signals facing traffic, signs, markings, kerbs, buildings with heights, trees, lamps, night and weather, a legend; instanced, mounted after the first frame.
+3. **Crash damage + the real scene** (crumple on catalog models shipped 2026-10-14): crumple at the contact patch (animated, effects, stills caption; illustration wording only, CLAUDE.md rule 4) and signals facing traffic, signs, markings, kerbs, buildings with heights, trees, lamps, night and weather, a legend; instanced, mounted after the first frame.
 4. **Realistic surroundings research spike** (Google 3D Tiles, Cesium, NAIP + OSM massing); if it needs a paid key, write the plan and move on.
 5. **README demo with real catalog media**, recorded on the live site (check CarImages and logo.dev terms first; MP4 ≤ 15 MB, GIF ≤ 10 MB, caption).
 6. The follow-ups in README "Next version" (fixer bench re-time, GLB fit-guard unit test, smoke Save navigation, makes retry after a 500, the fix-button flicker seen once under load, the rest of the camera framing fixes from docs/VISIBILITY-SWEEP.md).

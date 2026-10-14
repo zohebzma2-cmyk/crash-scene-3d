@@ -54,11 +54,22 @@ export interface CreateServicesOptions {
    * test can see (and hold) those requests (e2e/vehicles-fixes.spec.ts: none while on the Vehicles step).
    */
   readonly modelsFromProxy?: boolean;
+  /**
+   * Fixture builds only (?geo=proxy): the real geo service (type-ahead, cross streets, search) through /api/geo/*
+   * while the roads and everything else stay on fixtures, so a test can put a fake proxy behind it
+   * (e2e/search-slow.spec.ts: a slow or busy type-ahead).
+   */
+  readonly geoFromProxy?: boolean;
 }
 
 /** ?vehicles=proxy, honoured only where fixtures are allowed (a dev server or a VITE_FIXTURES=1 build). */
 export function vehiclesFromProxyRequested(search: string): boolean {
   return fixturesAllowed() && new URLSearchParams(search).get("vehicles") === "proxy";
+}
+
+/** ?geo=proxy, honoured only where fixtures are allowed. */
+export function geoFromProxyRequested(search: string): boolean {
+  return fixturesAllowed() && new URLSearchParams(search).get("geo") === "proxy";
 }
 
 /** ?models=proxy, honoured only where fixtures are allowed. */
@@ -96,7 +107,7 @@ export function createServices(opts: CreateServicesOptions): Services {
   return {
     mode: fx ? "fixtures" : "live",
     media,
-    geo: fx ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
+    geo: fx && !opts.geoFromProxy ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
     roads: shareRoadLoads(fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps)),
     vehicles: fx && !opts.vehiclesFromProxy ? createFixtureVehicles() : createVehiclesService(fetchFn),
     physics,

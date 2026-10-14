@@ -2,7 +2,7 @@
 // View tabs. On phones the panel is a bottom sheet and the primary action is fixed at its foot.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  PRESETS, ROAD_WORDS, formatDistance, PLACE_WORDS, ZONE_WORDS, directionCaption, formatSpeed, joinClauses, vehicleName,
+  PRESETS, formatDistance, ZONE_WORDS, directionCaption, formatSpeed, roadConditionGiven, vehicleName,
   type SimulationResult, type Units, type Scene,
 } from "@csd/core";
 import type { Vec2 } from "@csd/core";
@@ -10,7 +10,7 @@ import { Radio, RadioGroup, Tab, TabList, TabPanel } from "../a11y/roving";
 import { Icon } from "../icons/Icon";
 import { prefersReducedMotion, usePhone } from "../lib/dom";
 import { distanceText, hasRanges, measureRows, shownRows } from "../lib/measure";
-import { roleName, sceneNarrative } from "../lib/text";
+import { placeRoadWords, roleName, sceneNarrative } from "../lib/text";
 import { useDoc } from "../state/DocProvider";
 import { useFlow } from "../state/Flow";
 import type { GateProblem } from "../state/Flow";
@@ -163,6 +163,8 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
   const playing = timeline.playing;
   useEffect(() => (viewerReady && !playing ? preloadStepsWhenIdle(["export", "vehicles"], NEXT_STEPS_DELAY_MS) : undefined), [viewerReady, playing]);
   const [saving, setSaving] = useState(false);
+  /** Phones: where the 3D view puts its catalog-model note, under the timeline, so it never covers the small picture. */
+  const [noteSlot, setNoteSlot] = useState<HTMLDivElement | null>(null);
 
   // The export stills are taken here, while the 3D view exists: the moment of impact (Wide camera) and final rest (the Aftermath view).
   const saveIt = async () => {
@@ -214,7 +216,7 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
             showLabels={labels} showMeasurements={measure} showPaths={paths} units={units} reducedMotion={reduced}
             measureGroups={groups} measureTool={twoPoint} measurePoints={points} onMeasurePoint={addPoint}
             onSelectVehicle={(id) => { setSelected(id); setTab("vehicles"); }}
-            onReady={markReady} onRebuild={markRebuilding}
+            onReady={markReady} onRebuild={markRebuilding} noteSlot={phone ? noteSlot : null}
           />
           <RadioGroup className="view-controls" aria-label="View" values={shownViews.map((v) => v.id)} value={shownView === "aftermath" ? null : shownView} onChange={chooseView}>
             {shownViews.map((v) => <Radio key={v.id} value={v.id} className="seg">{v.label}</Radio>)}
@@ -222,6 +224,7 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
           <span className="scene-caption">{view === "aftermath" ? "Aftermath" : VIEWS.find((v) => v.id === view)?.label ?? ""} view</span>
         </div>
         <Timeline api={{ ...timeline, t }} t0={t0} t1={t1} onAftermath={() => chooseView("aftermath")} aftermathOn={shownView === "aftermath"} />
+        <div className="viewer-note-slot" ref={setNoteSlot} />
       </div>
 
       <aside className="panel" aria-label="Scene details">
@@ -248,7 +251,8 @@ function ReviewBody({ scene, sim }: { scene: Scene; sim: SimulationResult }) {
               );
             })}
           </ul>
-          <p className="summary-road"><Icon name={`road-${scene.road.condition}`} className="icon-sm" />{joinClauses([PLACE_WORDS[scene.location.place], `${ROAD_WORDS[scene.road.condition]} road`])}</p>
+          {/* The road condition's icon only when it was given: the placeholder the physics runs on is never shown as an answer. */}
+          <p className="summary-road">{roadConditionGiven(scene.road) ? <Icon name={`road-${scene.road.condition}`} className="icon-sm" /> : <Icon name={`place-${scene.location.place}`} className="icon-sm" />}{placeRoadWords(scene)}</p>
           <div aria-live="polite" data-testid="scene-summary">
             <p className="summary-text">{sceneNarrative(scene, sim, units)}</p>
             <AccountNotes scene={scene} />

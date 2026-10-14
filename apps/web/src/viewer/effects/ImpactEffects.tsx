@@ -3,7 +3,7 @@
 // capture a `prepare(t, view)` that puts everything where it is at the still's time.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import type { BufferGeometry, Group } from "three";
+import type { BufferGeometry, Group, Object3D } from "three";
 import { canonicalJson, type RoadNetwork, type Scene, type SimulationResult, type Vec2 } from "@csd/core";
 import type { CameraView } from "../types";
 import type { SceneColors } from "../tokens";
@@ -11,6 +11,7 @@ import { ImpactFx } from "./controller";
 import { hashString } from "./debris";
 import { getImpactInfo } from "./impact-info";
 import { applyDentProgress, dentProgress, morphParts, planDents, type DentSpec } from "./damage";
+import { crumpleModel, planCrumples, type Crumpled, type CrumpleSpec } from "./crumple";
 import { SHAKE_MS, shakeOffset } from "./shake";
 
 export interface EffectsApi {
@@ -120,6 +121,25 @@ function ImpactShake({ timeS, reducedMotion, seed }: { timeS: number; reducedMot
 
 /** What VehicleMesh calls with a model's parts to get the dented ones. */
 export type DamageFn = <P extends { readonly [K in keyof P]: BufferGeometry }>(parts: P) => P;
+
+/** What VehicleMesh calls with a catalog model to get a crumpled copy of it (null: draw the model as it is). */
+export type CrumpleFn = (model: Object3D) => Crumpled | null;
+
+/**
+ * The per-vehicle `crumple` callbacks for VehicleMesh's catalog models: one STABLE callback per vehicle that took a
+ * hit (none for one that didn't). Each returns a copy of the model carrying the crumple as a morph target, placed from
+ * the physics' contact point and push (crumple.ts); ImpactEffects drives it from the timeline time like the dents.
+ */
+export function useCrumple(scene: Scene, sim: SimulationResult): ReadonlyMap<string, CrumpleFn> {
+  return useMemo(() => {
+    const m = new Map<string, CrumpleFn>();
+    for (const [id, specs] of planCrumples(sim, scene)) {
+      const frozen: readonly CrumpleSpec[] = specs;
+      m.set(id, (model) => crumpleModel(model, frozen));
+    }
+    return m;
+  }, [scene, sim]);
+}
 
 /**
  * The per-vehicle `damage` callbacks for VehicleMesh: one STABLE callback per dented vehicle (none for a

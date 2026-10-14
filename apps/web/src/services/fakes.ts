@@ -223,7 +223,11 @@ export function fakeSimulate(scene: Scene, roads: RoadNetwork | null): Simulatio
   const result: SimulationResult = {
     physicsVersion: `${PHYSICS_VERSION}-fixtures-stand-in`, dtS: FAKE_DT, startTimeS, impactTimeS: 0, restTimeS,
     frictionCoefficient: mu, restitution: 0, impactPointM: pin, vehicles, gaps,
-    assumptions: [{ id: "friction", text: `Road ${scene.road.condition}, as entered: friction ${mu} for the whole road.`, value: mu }],
+    assumptions: [{
+      id: "friction",
+      text: scene.road.conditionNotGiven ? `Road surface not given: the picture uses ${scene.road.condition}-road friction ${mu} for the whole road.` : `Road ${scene.road.condition}, as entered: friction ${mu} for the whole road.`,
+      value: mu,
+    }],
     warnings: [],
   };
   return { ok: true, result };

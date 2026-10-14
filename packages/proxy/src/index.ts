@@ -3,7 +3,7 @@
 export type { EntryMeta, KvStore, ProxyDeps, SecretName, StoredEntry } from "./types";
 export { imageKind, isGlb, pickGeneration } from "./media";
 export { MAKE_DOMAINS, canonicalMake, normMake } from "./make-domains";
-export { createProxy } from "./handler";
+export { createProxy, SUGGEST_DEADLINE_MS } from "./handler";
 export { defaultProviderConfig, DEFAULT_CONTACT } from "./config";
 export { memoryStore } from "./memory";
 export { NO_TILE_PNG, type FixtureTileLookup } from "./fixture-tiles";

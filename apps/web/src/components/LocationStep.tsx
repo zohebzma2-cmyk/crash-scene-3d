@@ -1,6 +1,6 @@
 // Step 1: where did it happen? Search, the map and pin, the kind of place, when, and the road.
 import { useEffect, useState } from "react";
-import { PLACE_KINDS, ROAD_CONDITIONS, type LatLon, type PlaceKind, type RoadCondition, type RoadNetwork } from "@csd/core";
+import { PLACE_KINDS, ROAD_CONDITIONS, ROAD_WORDS, roadConditionGiven, type LatLon, type PlaceKind, type RoadCondition, type RoadNetwork } from "@csd/core";
 import { RadioGroup } from "../a11y/roving";
 import { Icon } from "../icons/Icon";
 import { usePhone } from "../lib/dom";
@@ -32,6 +32,10 @@ const ROAD_TILES: Record<RoadCondition, { icon: string; label: string }> = {
   snow: { icon: "road-snow", label: "Snow" },
   ice: { icon: "road-ice", label: "Ice" },
 };
+export const ROAD_HINT = "This changes how far the vehicles slide in the picture.";
+/** Added while the road condition is unanswered: what the picture does meanwhile (the placeholder), and what the files say. */
+export const roadNotGivenHint = (placeholder: RoadCondition): string =>
+  `Not sure? Leave it: the picture then uses a ${ROAD_WORDS[placeholder]} road, and your files say the road surface was not given.`;
 
 export function streetNames(streets: { roads: ReadonlyArray<{ name: string | null }> } | null): string[] {
   const seen = new Set<string>();
@@ -145,10 +149,11 @@ export function LocationStep() {
 
           <div className="group" role="group" aria-labelledby="road-label">
             <p className="group-label" id="road-label">What was the road like?</p>
-            <RadioGroup className="tiles tiles-4" aria-labelledby="road-label" values={ROAD_CONDITIONS} value={scene.road.condition} onChange={(condition) => dispatch({ type: "condition", condition })}>
+            {/* Nothing is picked until the claimant answers (the scene's dry placeholder is never shown as their answer). */}
+            <RadioGroup className="tiles tiles-4" aria-labelledby="road-label" aria-describedby="road-hint" values={ROAD_CONDITIONS} value={roadConditionGiven(scene.road) ? scene.road.condition : null} onChange={(condition) => dispatch({ type: "condition", condition })}>
               {ROAD_CONDITIONS.map((c) => <Tile key={c} value={c} icon={ROAD_TILES[c].icon} label={ROAD_TILES[c].label} />)}
             </RadioGroup>
-            <p className="hint">This changes how far the vehicles slide in the picture.</p>
+            <p className="hint" id="road-hint">{roadConditionGiven(scene.road) ? ROAD_HINT : `${ROAD_HINT} ${roadNotGivenHint(scene.road.condition)}`}</p>
           </div>
 
           <div className="group">

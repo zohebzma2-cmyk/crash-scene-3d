@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { BUSY_MESSAGE, PROXY_ROUTES } from "@csd/core";
-import { createServices } from "../src/services";
+import { BUSY_MESSAGE, PROXY_ROUTES, TIMEOUT_MESSAGES } from "@csd/core";
+import { SUGGEST_DEADLINE_MS, defaultProviderConfig } from "@csd/proxy";
+import { createServices, geoFromProxyRequested } from "../src/services";
+import { API_TIMEOUT_MS } from "../src/services/http";
 import { fakeMergeSearchResults, fakeSplitCrossingQuery } from "../src/services/fakes";
 import { BUSY_RETRY_MAX_MS, busyRetryDelayMs, createGeoService, crossStreetsUrl, searchUrl, suggestUrl } from "../src/services/geo";
 import { pickStreetIn, pickTown, townName } from "../src/services/towns";
@@ -60,7 +62,35 @@ describe("suggest (/api/geo/suggest)", () => {
     await expect(svc.suggest("Already aborted", { signal: done.signal })).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("does not cache a failure, and shows the busy message as text once the one retry is busy too", async () => {
+  it("a Photon slower than the proxy's limit (its 504) rejects as a timeout, is not cached, and never falls back to the on-submit search", async () => {
+    let n = 0;
+    const { svc, fetchFn } = geo(() => (++n === 1 ? json({ code: "timeout", message: TIMEOUT_MESSAGES.search, retryAfterS: 5 }, 504) : json([place("Elm Street")])));
+    await expect(svc.suggest("Elm St")).rejects.toMatchObject({ code: "timeout" });
+    expect(fetchFn).toHaveBeenCalledTimes(1); // not retried, and nothing else asked
+    expect((await svc.suggest("Elm St")).map((r) => r.label)).toEqual(["Elm Street"]);
+    const paths = fetchFn.mock.calls.map((c) => new URL(String(c[0]), "http://x").pathname);
+    expect(paths).toEqual([PROXY_ROUTES.suggest, PROXY_ROUTES.suggest]);
+  });
+
+  it("no answer within the browser's own limit (9.5 s) rejects as a timeout too", async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc } = geo((_u, init) => new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));
+      const p = svc.suggest("Elm St").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(API_TIMEOUT_MS);
+      expect(await p).toMatchObject({ code: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("each time limit sits inside the next: Photon 7 s < the proxy's request 8 s < the browser's 9.5 s", () => {
+    expect(SUGGEST_DEADLINE_MS).toBeLessThan(defaultProviderConfig().limits.timeoutMs);
+    expect(defaultProviderConfig().limits.timeoutMs).toBeLessThan(API_TIMEOUT_MS);
+    expect([SUGGEST_DEADLINE_MS, defaultProviderConfig().limits.timeoutMs, API_TIMEOUT_MS]).toEqual([7000, 8000, 9500]);
+  });
+
+  it("does not cache a failure, and rejects with the busy error once the one retry is busy too", async () => {
     let n = 0;
     const sleep = vi.fn(async (_ms: number) => undefined);
     const fetchFn = vi.fn(async () => (++n <= 2 ? json({ code: "busy", message: BUSY_MESSAGE }, 429) : json([place("Elm Street")])));
@@ -192,6 +222,16 @@ describe("fixtures mode (cached examples, no network)", () => {
     const fetchSpy = vi.fn(async () => { throw new Error("no network in fixtures mode"); });
     return { services: createServices({ fixtures: true, fetch: fetchSpy as unknown as typeof fetch }), fetchSpy };
   };
+
+  it("?geo=proxy (fixture builds only, for e2e) swaps in the real geo service over /api; the rest stays on fixtures", async () => {
+    expect(geoFromProxyRequested("?geo=proxy")).toBe(true);
+    expect(geoFromProxyRequested("?geo=1")).toBe(false);
+    const fetchFn = vi.fn(async (_u: string) => json([place("Elm Street")]));
+    const services = createServices({ fixtures: true, geoFromProxy: true, fetch: fetchFn as unknown as typeof fetch });
+    expect(services.mode).toBe("fixtures");
+    expect((await services.geo.suggest("Elm St")).map((r) => r.label)).toEqual(["Elm Street"]);
+    expect(new URL(String(fetchFn.mock.calls[0]?.[0]), "http://x").pathname).toBe(PROXY_ROUTES.suggest);
+  });
 
   it("suggests the example streets with 'Town, State', nearest the bias first", async () => {
     const { services, fetchSpy } = fx();

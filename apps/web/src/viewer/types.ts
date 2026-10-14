@@ -39,6 +39,12 @@ export interface ViewerProps {
   readonly building?: boolean;
   /** The browser took the WebGL context away (GPU reset, too many contexts): the picture can't go on. */
   readonly onContextLost?: () => void;
+  /**
+   * Where the catalog-model note goes instead of the picture's corner: an element outside the picture (phones, under
+   * the timeline), so the note never covers the crash on a small view. Absent or null: the note sits in the picture's
+   * bottom-left corner with the legend.
+   */
+  readonly noteSlot?: HTMLElement | null;
 }
 
 /** The parts of a keyboard event the camera keys need. */

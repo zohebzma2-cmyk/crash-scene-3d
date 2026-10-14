@@ -3,11 +3,19 @@
 // PNG both replay this plan, so they show the same picture. World frame:
 // x east, y north, meters. Output frame: y down, in the box's units.
 import { M_TO_FT, buildRoadArt, formatDistance, inkOn, placeStreetNames, streetNameSpots, vehicleColor as bodyColor, featureIcon, FEATURE_NAMES, taggedTurnArrows, taggedCrosswalkPaint } from "@csd/core";
-import type { Pose, RoadNetwork, SimulationResult, Vec2, VehicleResult, VehicleType } from "@csd/core";
+import type { Pose, RoadFeatureKind, RoadNetwork, SimulationResult, Vec2, VehicleResult, VehicleType } from "@csd/core";
 import { roundedRectPts, wrapText, type Measure, type Pt, type Prim } from "./draw";
 import { MIN_DRAWN_MOVE_M, markerKeys } from "./model";
 import { color, mix, vehicleColor } from "./style";
 import { iconPrims } from "./feature-icons";
+
+/** The note under the key to the road-feature symbols, in the PNG's legend strip and under the PDF's caption alike. */
+export const FEATURE_LEGEND_NOTE = "OpenStreetMap tags; positions and models schematic. Missing tags unknown.";
+
+/** The kinds of tagged road feature the diagram draws a symbol for, in the order their key lists them. */
+export function featureKinds(roads: RoadNetwork | null): RoadFeatureKind[] {
+  return [...new Set(roads?.features?.map((f) => f.kind) ?? [])];
+}
 
 /** How much of the approach is kept in view (s). The dashed path itself runs the whole approach and is clipped. */
 const NEAR_WINDOW_S = 0.6;
@@ -45,6 +53,12 @@ export interface DiagramOptions {
    * `vehicleColor()`; the outline, the ghost, the path and the letter stay in the vehicle token colour.
    */
   readonly paint?: Readonly<Record<string, string>>;
+  /**
+   * The key to the road-feature symbols. "inside" (the default, the PNG) gives it a strip along the bottom of the box,
+   * and the scene is fitted above it. "none" leaves it out, so the scene has the whole box: the caller prints the key
+   * outside the picture (the PDF puts it under the diagram's caption, where it never covers the crash).
+   */
+  readonly legend?: "inside" | "none";
 }
 
 export interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
@@ -61,6 +75,10 @@ export interface DiagramPlan {
   readonly keep: readonly Rect[];
   /** Outlines of the vehicles at final rest, output units. */
   readonly bodies: ReadonlyArray<readonly Pt[]>;
+  /** Each vehicle's body at impact and at final rest, as bounding boxes in output units (what has to read clearly). */
+  readonly vehicles: ReadonlyArray<{ readonly id: string; readonly impact: Rect; readonly rest: Rect }>;
+  /** The key's strip inside the box, or null when there is none (no symbols, or `legend: "none"`). */
+  readonly legend: Rect | null;
 }
 
 const rad2deg = (r: number) => (r * 180) / Math.PI;
@@ -285,7 +303,8 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
   const { box } = opts;
   const ins = opts.insets ?? {};
   const minTextSize = opts.minTextSize ?? 6;
-  const kinds = [...new Set(roads?.features?.map((f) => f.kind) ?? [])];
+  // The key's strip, only when it is drawn inside the box: with "none" the scene is fitted to the whole box.
+  const kinds = (opts.legend ?? "inside") === "inside" ? featureKinds(roads) : [];
   const legendEntries: Array<{ kind: typeof kinds[number]; x: number; row: number }> = [];
   let legendX = minTextSize, legendRow = 0;
   for (const kind of kinds) {
@@ -293,7 +312,7 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
     if (legendX + width > box.w - minTextSize && legendX > minTextSize) { legendRow++; legendX = minTextSize; }
     legendEntries.push({ kind, x: legendX, row: legendRow }); legendX += width;
   }
-  const legendLines = kinds.length ? wrapText("OpenStreetMap tags; positions and models schematic. Missing tags unknown.", box.w - minTextSize * 2, (text) => measure("sans", minTextSize, text)) : [];
+  const legendLines = kinds.length ? wrapText(FEATURE_LEGEND_NOTE, box.w - minTextSize * 2, (text) => measure("sans", minTextSize, text)) : [];
   const legendH = kinds.length ? (legendRow + 1) * minTextSize * 1.8 + (legendLines.length + 0.5) * minTextSize * 1.3 : 0;
   const safe: Rect = { x: box.x + (ins.left ?? 0), y: box.y + (ins.top ?? 0), w: box.w - (ins.left ?? 0) - (ins.right ?? 0), h: box.h - (ins.top ?? 0) - (ins.bottom ?? 0) - legendH };
   const legendY = safe.y + safe.h;
@@ -340,30 +359,35 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
     for (const arrow of [...taggedTurnArrows(roads), ...taggedCrosswalkPaint(roads)]) prims.push({ k: "poly", pts: arrow.points.map((p) => toPx(t, p)), stroke: { color: color("color-scene-lane"), width: Math.max(minLine, 0.15 * t.s), cap: "round", join: "round" } });
     const slots = new Map<string, number>();
     const size = Math.max(minTextSize * 1.6, Math.min(2 * t.s, minTextSize * 2.5));
+    // A symbol (or its label) that would sit under an overlay drawn over the picture afterwards (the PDF's north and scale chip) is left out, not half hidden.
+    const underOverlay = (r: Rect) => obstacles.some((o) => rectsTouch(r, o));
     for (const f of roads.features) {
       const key = `${f.source}-${f.osmId}`, slot = slots.get(key) ?? 0; slots.set(key, slot + 1);
       const anchor = toPx(t, f.position), p: Pt = [anchor[0] + slot * size * 1.3, anchor[1]];
       if (p[0] < safe.x + size || p[0] > safe.x + safe.w - size || p[1] < safe.y + size || p[1] > safe.y + safe.h - size) continue;
+      if (underOverlay({ x: p[0] - size * 0.6, y: p[1] - size * 0.6, w: size * 1.2, h: size * 1.2 })) continue;
       prims.push({ k: "circle", c: p, r: size * 0.6, fill: color("color-surface") });
       prims.push(...iconPrims(featureIcon(f.kind), p[0] - size / 2, p[1] - size / 2, size, color("color-scene-label"), f.kind === "oneway" && f.facingDeg !== null ? f.facingDeg - 90 : 0));
       if (f.kind === "speed" || f.kind === "lanes") {
         const label = f.label.replace(" (road tag; sign position unknown)", "");
         const width = measure("sans", minTextSize, label);
         const labelY = p[1] + size / 2 + slot * minTextSize * 1.3;
-        if (p[0] - width / 2 >= safe.x && p[0] + width / 2 <= safe.x + safe.w && labelY + minTextSize * 1.2 < safe.y + safe.h) {
+        if (p[0] - width / 2 >= safe.x && p[0] + width / 2 <= safe.x + safe.w && labelY + minTextSize * 1.2 < safe.y + safe.h && !underOverlay({ x: p[0] - width / 2, y: labelY, w: width, h: minTextSize * 1.2 })) {
           prims.push({ k: "poly", pts: [[p[0] - width / 2, labelY], [p[0] + width / 2, labelY], [p[0] + width / 2, labelY + minTextSize * 1.2], [p[0] - width / 2, labelY + minTextSize * 1.2]], closed: true, fill: color("color-surface") });
           prims.push({ k: "text", at: [p[0], labelY + minTextSize], text: label, font: "sans", size: minTextSize, color: color("color-text-secondary"), anchor: "middle" });
         }
       }
     }
-    // Reserve a legend strip above caller-owned cards; never paint over cars or scale/north chips.
-    prims.push({ k: "poly", pts: [[box.x, legendY], [box.x + box.w, legendY], [box.x + box.w, legendY + legendH], [box.x, legendY + legendH]], closed: true, fill: color("color-surface") });
-    for (const entry of legendEntries) {
-      const y = legendY + entry.row * minTextSize * 1.8;
-      prims.push(...iconPrims(featureIcon(entry.kind), box.x + entry.x, y, minTextSize * 1.4, color("color-text-secondary")));
-      prims.push({ k: "text", at: [box.x + entry.x + minTextSize * 1.7, y + minTextSize], text: FEATURE_NAMES[entry.kind], font: "sans", size: minTextSize, color: color("color-text-secondary") });
+    if (legendH) {
+      // The key's own strip at the bottom of the box, above caller-owned cards; the scene is fitted above it, so it never paints over cars.
+      prims.push({ k: "poly", pts: [[box.x, legendY], [box.x + box.w, legendY], [box.x + box.w, legendY + legendH], [box.x, legendY + legendH]], closed: true, fill: color("color-surface") });
+      for (const entry of legendEntries) {
+        const y = legendY + entry.row * minTextSize * 1.8;
+        prims.push(...iconPrims(featureIcon(entry.kind), box.x + entry.x, y, minTextSize * 1.4, color("color-text-secondary")));
+        prims.push({ k: "text", at: [box.x + entry.x + minTextSize * 1.7, y + minTextSize], text: FEATURE_NAMES[entry.kind], font: "sans", size: minTextSize, color: color("color-text-secondary") });
+      }
+      legendLines.forEach((text, i) => prims.push({ k: "text", at: [box.x + minTextSize, legendY + (legendRow + 1) * minTextSize * 1.8 + (i + 1) * minTextSize * 1.3], text, font: "sans", size: minTextSize, color: color("color-text-secondary") }));
     }
-    legendLines.forEach((text, i) => prims.push({ k: "text", at: [box.x + minTextSize, legendY + (legendRow + 1) * minTextSize * 1.8 + (i + 1) * minTextSize * 1.3], text, font: "sans", size: minTextSize, color: color("color-text-secondary") }));
   }
   // Impact ring.
   const ic = toPx(t, sim.impactPointM);
@@ -469,7 +493,13 @@ export function planDiagram(sim: SimulationResult, roads: RoadNetwork | null, op
     for (const pose of [rv.restPose, rv.impactPose, poseAtTime(sim, rv, -NEAR_WINDOW_S)]) keep.push(bbox(bodyPts(t, pose, rv.type, rv.lengthM, rv.widthM)));
   }
   keep.push({ x: ic[0] - 1.1 * t.s, y: ic[1] - 1.1 * t.s, w: 2.2 * t.s, h: 2.2 * t.s });
-  return { prims, scale: t.s, markers, safe, keep, bodies };
+  const vehicles = sim.vehicles.map((rv) => ({
+    id: rv.id,
+    impact: bbox(bodyPts(t, rv.impactPose, rv.type, rv.lengthM, rv.widthM)),
+    rest: bbox(bodyPts(t, rv.restPose, rv.type, rv.lengthM, rv.widthM)),
+  }));
+  const legend: Rect | null = legendH ? { x: box.x, y: legendY, w: box.w, h: legendH } : null;
+  return { prims, scale: t.s, markers, safe, keep, bodies, vehicles, legend };
 }
 
 export interface ScaleBar {

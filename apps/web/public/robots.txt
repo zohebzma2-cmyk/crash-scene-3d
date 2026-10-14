@@ -1,0 +1,4 @@
+# The app is public. The /api/ routes are its own proxy (map tiles, search, vehicle lists), not pages to crawl.
+User-agent: *
+Allow: /
+Disallow: /api/

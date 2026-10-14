@@ -442,10 +442,6 @@ kbd { font-family: var(--font-sans); font-size: var(--text-xs); padding: var(--s
 .option-body { display: flex; flex-direction: column; gap: var(--space-1); }
 .option-title { font-weight: var(--weight-bold); }
 .option-desc { font-size: var(--text-sm); color: var(--color-text-secondary); }
-.coming { display: flex; flex-direction: column; gap: var(--space-2); }
-.coming .group-label { font-size: var(--text-sm); color: var(--color-text-secondary); }
-.coming-row { font-size: var(--text-sm); color: var(--color-text-secondary); }
-.coming-row strong { color: var(--color-text); font-weight: var(--weight-semibold); }
 .stamp { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); font-size: var(--text-sm); color: var(--color-text-secondary); }
 .stamp strong { color: var(--color-text); font-weight: var(--weight-semibold); }
 .stamp.is-stale { background: var(--color-warning-tint); color: var(--color-warning-tint-text); }

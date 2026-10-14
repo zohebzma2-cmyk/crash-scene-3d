@@ -4,12 +4,13 @@
 // or drawn from a placeholder.
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Fix, type FixChange, type PlainMessage } from "@csd/core";
+import { PLACE_WORDS, ROAD_WORDS, type Fix, type FixChange, type PlainMessage } from "@csd/core";
 import { createFixtureVehicles } from "../src/services/fixtures";
 import { ANSWER_FIELDS, STORAGE_KEY, docFromScene, initialDoc, isAnswered, loadDoc, reducer, unansweredOf, type Doc } from "../src/state/doc";
 import { answerText, runGate } from "../src/state/Flow";
 import { movesAtUnaskedSpeed } from "../src/review/RefusalFixes";
 import { MINI_WAITING_TEXT } from "../src/components/MiniMap";
+import { ROAD_HINT, roadNotGivenHint } from "../src/components/LocationStep";
 import { all, click, flush, get, key, maybe, renderApp, setValue, text } from "./helpers";
 import { makeServices, tbone, withAnswers } from "./fakes";
 
@@ -287,5 +288,49 @@ describe("the vehicle cards, from a neutral start", () => {
       expect(checked(group(id, "data-fix-action")!)).toHaveLength(1);
       expect(checked(group(id, "data-fix-zone")!)).toHaveLength(1);
     }
+  });
+});
+
+describe("the road condition, from a neutral start (owner, 2026-10-14)", () => {
+  const roadGroup = () => document.querySelector<HTMLElement>('[role=radiogroup][aria-labelledby="road-label"]')!;
+
+  it("starts not given (the dry placeholder underneath), and any picked tile answers it, even dry", () => {
+    const d = initialDoc();
+    expect(d.scene.road).toEqual({ condition: "dry", conditionNotGiven: true });
+    for (const condition of ["dry", "wet"] as const) expect(reducer(d, { type: "condition", condition }).scene.road).toEqual({ condition });
+    expect(reducer(reducer(d, { type: "condition", condition: "ice" }), { type: "reset" }).scene.road.conditionNotGiven).toBe(true);
+  });
+
+  it("keeps an opened file's or example's saved condition, and a skipped one stays skipped through a reload", () => {
+    expect(docFromScene(tbone, "").scene.road).toEqual(tbone.road);
+    const skipped = docFromScene({ ...tbone, road: { condition: "dry", conditionNotGiven: true } }, "");
+    expect(skipped.scene.road.conditionNotGiven).toBe(true);
+    const store = new Map([[STORAGE_KEY, JSON.stringify(initialDoc())]]);
+    expect(loadDoc({ getItem: (k: string) => store.get(k) ?? null }).scene.road).toEqual({ condition: "dry", conditionNotGiven: true });
+  });
+
+  it("shows no road tile picked on Location, says what happens if it is left, and a tap answers it", async () => {
+    const { services } = makeServices();
+    app = await renderApp(services);
+    expect(checked(roadGroup())).toEqual([]);
+    expect(text(document.getElementById("road-hint")!)).toBe(`${ROAD_HINT} ${roadNotGivenHint("dry")}`);
+    expect(roadGroup().getAttribute("aria-describedby")).toBe("road-hint");
+    click(get("radio", "Dry", roadGroup()));
+    expect(checked(roadGroup()).map((r) => r.textContent)).toEqual(["Dry"]);
+    expect(text(document.getElementById("road-hint")!)).toBe(ROAD_HINT);
+  });
+
+  it("Review says the road surface was not given, never 'dry'; a saved condition reads as before", async () => {
+    const { services } = makeServices();
+    app = await renderApp(services, { hash: "#review", storage: docFromScene({ ...tbone, road: { condition: "dry", conditionNotGiven: true } }, "") });
+    await flush(900);
+    expect(text(get(".summary-road"))).toBe(`${PLACE_WORDS[tbone.location.place]}, road surface not given`);
+    expect(text(get("[data-testid=scene-summary]"))).toContain("The road surface was not given.");
+    expect(text(get("[data-testid=scene-summary]"))).not.toContain("The road was");
+    app.unmount(); app = null;
+    app = await renderApp(services, { hash: "#review", storage: docFromScene(tbone, "") });
+    await flush(900);
+    expect(text(get(".summary-road"))).toBe(`${PLACE_WORDS[tbone.location.place]}, ${ROAD_WORDS[tbone.road.condition]} road`);
+    expect(text(get("[data-testid=scene-summary]"))).toContain(`The road was ${ROAD_WORDS[tbone.road.condition]}.`);
   });
 });

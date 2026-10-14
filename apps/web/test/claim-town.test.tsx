@@ -2,7 +2,7 @@
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BUSY_MESSAGE, PROXY_ROUTES, type PlaceResult } from "@csd/core";
-import { BUSY_RETRY_TEXT, FAR_SUFFIX, NO_AREA_TEXT, noTownText, rankForClaim, townAfterComma } from "../src/components/SearchPanel";
+import { BUSY_RETRY_TEXT, FAR_SUFFIX, NO_AREA_TEXT, SUGGEST_SLOW_TEXT, noTownText, rankForClaim, townAfterComma } from "../src/components/SearchPanel";
 import { fakeSplitCrossingQuery } from "../src/services/fakes";
 import { searchUrl } from "../src/services/geo";
 import { ServiceError, type StreetInTown, type TownPlace } from "../src/services/types";
@@ -221,7 +221,8 @@ describe("busy: tried once more, never an empty list", () => {
     const { suggest } = await open();
     suggest.mockImplementationOnce((_q: string, o: { onBusy?: () => void }) => { o.onBusy?.(); return Promise.reject(new ServiceError(BUSY_MESSAGE, "busy", 1)); });
     await type("Main St");
-    expect(text(get("[role=listbox]").parentElement!)).toContain(BUSY_MESSAGE);
+    // Still busy after the retry: the suggestion list points to Search (the crossing list keeps the busy message, below).
+    expect(text(get("[role=listbox]").parentElement!)).toContain(SUGGEST_SLOW_TEXT);
     suggest.mockImplementation(() => new Promise<PlaceResult[]>(() => undefined));
     await type("Main S");
     await type("Main St");

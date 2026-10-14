@@ -7,10 +7,10 @@
 // Nothing is ever dropped, and nothing is ever drawn over the footer.
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFName, PDFString, type PDFImage } from "pdf-lib";
-import { DISCLAIMER_LONG, DISCLAIMER_SHORT, toLocal } from "@csd/core";
-import type { BrandFonts, RoadNetwork, Scene, SimulationResult } from "@csd/core";
+import { DISCLAIMER_LONG, DISCLAIMER_SHORT, FEATURE_NAMES, featureIcon, toLocal } from "@csd/core";
+import type { BrandFonts, RoadFeatureKind, RoadNetwork, Scene, SimulationResult } from "@csd/core";
 import { scaleChip, scaleChipPrims, type ScaleChipStyle } from "./north";
-import { planDiagram, planPinStreetLabels, planRoadOutline, scaleBars, type Box } from "./diagram";
+import { FEATURE_LEGEND_NOTE, featureKinds, planDiagram, planPinStreetLabels, planRoadOutline, scaleBars, type Box } from "./diagram";
 import { thumbnailMetersPerPixel } from "./png-meta";
 import { roundedRectPts, wrapText, type FontKey, type Pt } from "./draw";
 import { WORDMARK, drawMarkPdf, lockup } from "./logo";
@@ -33,7 +33,10 @@ const THUMB_PIN_IMAGE_PX = 7;
 const THUMB_RING_IMAGE_PX = 3;
 /** Fewest meters the fallback road outline spans across the map box. */
 const MIN_OUTLINE_SPAN_M = 80;
-/** The diagram is at least this share of the room between the header and the footer (0.3 keeps the real examples on one page). */
+/**
+ * The diagram is at least this share of the room between the header and the footer (0.3 keeps the real examples on one page).
+ * The key to its road symbols, printed under its caption, counts toward that share.
+ */
 export const MIN_DIAGRAM_FRACTION = 0.3;
 /** Longest a scale bar may be, as shares of the diagram's width, tried in turn until the chip fits a clear corner. */
 const CHIP_BAR_SHARES = [0.3, 0.24, 0.18, 0.12] as const;
@@ -114,6 +117,14 @@ export interface PdfPageReport {
     readonly keep: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
     /** Each scale bar (line, caps and end ticks) and its label, as drawn. */
     readonly bars: ReadonlyArray<{ bar: { x: number; y: number; w: number; h: number }; label: { x: number; y: number; w: number; h: number } }>;
+  };
+  /** The top-down diagram as drawn: its box, the north and scale chip, and each vehicle's body at impact and at rest. */
+  readonly diagram?: {
+    readonly box: { x: number; y: number; w: number; h: number };
+    readonly chip: { x: number; y: number; w: number; h: number };
+    readonly vehicles: ReadonlyArray<{ id: string; impact: { x: number; y: number; w: number; h: number }; rest: { x: number; y: number; w: number; h: number } }>;
+    /** The key to the road symbols drawn on the diagram (under its caption, outside the picture), or null when there are none. */
+    readonly legend: { x: number; y: number; w: number; h: number; kinds: readonly RoadFeatureKind[] } | null;
   };
   /** The street names drawn at the pin on the map picture or the outline (their boxes include the halo). */
   readonly mapLabels?: ReadonlyArray<{ text: string; rotateDeg: number; box: { x: number; y: number; w: number; h: number } }>;
@@ -410,8 +421,30 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
   const caption = "Vehicles at final rest. Dashed: path before impact. Faint outline: position at impact. Red ring: point of impact. Numbers match Key measurements.";
   const capLines = s.lines(caption, CW, "sans", small);
   const capH = capLines.length * lh(small);
-  // The diagram keeps at least MIN_DIAGRAM_FRACTION of the page's room above the footer, so it stays readable.
-  const minDia = (m.H - 2 * m.M - footerH - s.headerH) * MIN_DIAGRAM_FRACTION;
+  // The key to the road symbols on the diagram runs full width under the caption, never inside the picture (where it
+  // used to squeeze the crash into a strip): each symbol with its name, in rows, then the note, on the last row when it fits.
+  const keyKinds = featureKinds(input.roads);
+  const keyIcon = small * 1.3;
+  const keyRowH = Math.max(lh(small), keyIcon + small * 0.25);
+  const keyText = small * 0.4;
+  const keyGap = small * 1.5;
+  const keyItems: Array<{ kind: RoadFeatureKind; x: number; row: number }> = [];
+  let keyX = 0;
+  let keyRow = 0;
+  for (const kind of keyKinds) {
+    const w = keyIcon + keyText + s.cv.measure("sans", small, FEATURE_NAMES[kind]);
+    if (keyX > 0 && keyX + w > CW) { keyRow++; keyX = 0; }
+    keyItems.push({ kind, x: keyX, row: keyRow });
+    keyX += w + keyGap;
+  }
+  const keyNoteInline = keyItems.length > 0 && keyX + s.cv.measure("sans", small, FEATURE_LEGEND_NOTE) <= CW;
+  const keyNoteLines = keyItems.length && !keyNoteInline ? s.lines(FEATURE_LEGEND_NOTE, CW, "sans", small) : [];
+  const keyGapTop = gapSm * 0.3;
+  const keyBoxH = keyItems.length ? (keyRow + 1) * keyRowH + keyNoteLines.length * lh(small) : 0;
+  const keyH = keyItems.length ? keyGapTop + keyBoxH : 0;
+  // The diagram keeps at least MIN_DIAGRAM_FRACTION of the page's room above the footer, so it stays readable. Its key under
+  // the caption is part of that share: the key took far more of the picture when it was inside it.
+  const minDia = (m.H - 2 * m.M - footerH - s.headerH) * MIN_DIAGRAM_FRACTION - keyH;
   const noteH = lh(small) * 3 + gapSm;
   // With the road outline (no map picture) the place and coordinates sit as a caption under the map, in full.
   const outlineMap = !thumb && !!input.roads;
@@ -419,11 +452,13 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
     ? [...s.lines(model.place, colW, "sans", small).map((t) => ({ t, f: "sans" as FontKey })), { t: model.coordinates, f: "mono" as FontKey }]
     : [];
   const mapCaptionH = outlineMap ? mapCaption.length * lh(small) + gapSm * 0.3 : 0;
-  // Map and diagram share one row; the caption runs full width under both.
-  const rowContentH = Math.max(minDia, kvH + gapSm * 0.5 + (thumb ? colW / 2 : outlineMap ? colW / 3 : noteH) + mapCaptionH);
+  // Map and diagram share one row; the caption runs full width under both. A map picture gives the key under the caption
+  // its room (it is cropped to fit, never stretched), down to the outline map's shape, so the key doesn't push the page longer.
+  const mapNaturalH = thumb ? Math.max(colW / 2 - keyH, colW / 3) : outlineMap ? colW / 3 : noteH;
+  const rowContentH = Math.max(minDia, kvH + gapSm * 0.5 + mapNaturalH + mapCaptionH);
   const diaH = rowContentH;
   const mapH = rowContentH - kvH - gapSm * 0.5 - mapCaptionH;
-  const topH = headingH() + rowContentH + gapSm * 0.4 + capH;
+  const topH = headingH() + rowContentH + gapSm * 0.4 + capH + keyH;
 
   const top: Block = {
     h: topH, gapBefore: 0, kind: "main",
@@ -439,11 +474,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       const diaBox: Box = { x: rx, y: y + headingH(), w: colW, h: diaH };
       const cs = MIN_DIAGRAM_TEXT_PT;
       const chipStyle = pdfChipStyle(cs, lh(cs), hair);
-      const chipH = scaleChip([0, 0], [{ label: "", px: 1 }, { label: "", px: 1 }], chipStyle, sh.cv.measure).rect.h;
+      // The scene has the whole box: the key to the road symbols is printed under the caption instead (legend "none").
       const diaOpts = {
         box: diaBox, letters: true, markers: true, streetLabels: true, ghosts: true, paint: paintByLetter(model),
-        minTextSize: MIN_DIAGRAM_TEXT_PT, minLine: hair * 0.8, minTagRadius: MIN_DIAGRAM_TEXT_PT * 0.8,
-        ...(input.roads?.features?.length ? { insets: { bottom: chipH + gapSm } } : {}),
+        minTextSize: MIN_DIAGRAM_TEXT_PT, minLine: hair * 0.8, minTagRadius: MIN_DIAGRAM_TEXT_PT * 0.8, legend: "none" as const,
       };
       // The north arrow and the scale bars sit on one chip in a corner of the diagram. The picture is planned once to
       // know its scale, the chip goes in the first corner that no vehicle, run-up or impact ring is under, and the
@@ -471,6 +505,10 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
       const plan = planDiagram(input.sim, input.roads, { ...diaOpts, obstacles: [chip] }, sh.cv.measure);
       const chipLayout = scaleChip([chip.x, chip.y], barList, chipStyle, sh.cv.measure);
       const mapBox: Box = { x: M, y: ky + gapSm * 0.5, w: colW, h: mapH };
+      // The caption runs full width under the map and the diagram; the key to the road symbols follows it.
+      const capY = diaBox.y + diaH + gapSm * 0.4;
+      const keyY = capY + capH + keyGapTop;
+      const keyBox = keyItems.length ? { x: M, y: keyY, w: CW, h: keyBoxH, kinds: keyKinds } : null;
       sh.add("body", (c) => {
         const { x, y: by, w, h } = mapBox;
         if (thumb) {
@@ -545,9 +583,21 @@ function buildBlocks(s: Sheet, input: PdfInput, thumb: PDFImage | null, mode: "f
         c.poly(roundedRectPts(chip.x, chip.y, chip.w, chip.h, radius * 0.5, 3), true, color("color-surface"), { color: color("color-border"), width: hair });
         c.replay(scaleChipPrims(chipLayout, chipStyle, color("color-text"), color("color-border"), c.measure));
         c.marks.north = { arrow: chipLayout.arrow, chip, box: diaBox, keep: plan.keep, bars: chipLayout.bars.map((b) => ({ bar: b.box, label: b.labelBox })) };
+        c.marks.diagram = { box: diaBox, chip, vehicles: plan.vehicles, legend: keyBox };
         c.poly(roundedRectPts(diaBox.x, diaBox.y, diaBox.w, diaBox.h, radius, 5), true, undefined, { color: color("color-border"), width: hair });
       });
-      sh.block("body", M, diaBox.y + diaH + gapSm * 0.4, capLines, "sans", small, color("color-text-secondary"));
+      sh.block("body", M, capY, capLines, "sans", small, color("color-text-secondary"));
+      // The key: symbol and name in rows under the caption, then the note.
+      const ink = color("color-text-secondary");
+      const rowBase = (row: number) => keyY + row * keyRowH + keyRowH / 2 + small * 0.35;
+      sh.add("body", (c) => {
+        for (const it of keyItems) {
+          c.replay(iconPrims(featureIcon(it.kind), M + it.x, keyY + it.row * keyRowH + (keyRowH - keyIcon) / 2, keyIcon, ink));
+          c.text({ k: "text", at: [M + it.x + keyIcon + keyText, rowBase(it.row)], text: FEATURE_NAMES[it.kind], font: "sans", size: small, color: ink });
+        }
+        if (keyNoteInline) c.text({ k: "text", at: [M + keyX, rowBase(keyRow)], text: FEATURE_LEGEND_NOTE, font: "sans", size: small, color: ink });
+      });
+      if (keyNoteLines.length) sh.block("body", M, keyY + (keyRow + 1) * keyRowH, keyNoteLines, "sans", small, ink);
     },
   };
 
@@ -1010,6 +1060,7 @@ export async function buildPdf(input: PdfInput): Promise<PdfResult> {
       images: cv.images,
       ...(cv.marks.mapOutline ? { mapOutline: cv.marks.mapOutline as NonNullable<PdfPageReport["mapOutline"]> } : {}),
       ...(cv.marks.north ? { north: cv.marks.north as NonNullable<PdfPageReport["north"]> } : {}),
+      ...(cv.marks.diagram ? { diagram: cv.marks.diagram as NonNullable<PdfPageReport["diagram"]> } : {}),
       ...(cv.marks.mapLabels ? { mapLabels: cv.marks.mapLabels as NonNullable<PdfPageReport["mapLabels"]> } : {}),
       ...(cv.marks.mapPin ? { mapPin: cv.marks.mapPin as NonNullable<PdfPageReport["mapPin"]> } : {}),
       ...(cv.marks.mapCredit ? { mapCredit: cv.marks.mapCredit as NonNullable<PdfPageReport["mapCredit"]> } : {}),

@@ -60,6 +60,10 @@ export function formatMassLb(kg: number): string {
 export const ACTION_WORDS: Readonly<Record<Action, string>> = { straight: "going straight", "turn-left": "turning left", "turn-right": "turning right", backing: "backing up", parked: "parked" };
 export const ZONE_WORDS: Readonly<Record<Zone, string>> = { front: "front", "front-right": "front right", right: "right side", "rear-right": "rear right", rear: "rear", "rear-left": "rear left", left: "left side", "front-left": "front left" };
 export const ROAD_WORDS: Readonly<Record<RoadCondition, string>> = { dry: "dry", wet: "wet", snow: "snowy", ice: "icy" };
+/** Was the road condition given by the claimant? (A scene from before the question could be skipped always says yes.) */
+export const roadConditionGiven = (road: { readonly conditionNotGiven?: boolean | undefined }): boolean => road.conditionNotGiven !== true;
+/** Said in the summary, on Review and in the PDF when the claimant didn't say what the road was like. */
+export const ROAD_NOT_GIVEN_WORDS = "road surface not given";
 export const PLACE_WORDS: Readonly<Record<PlaceKind, string>> = { intersection: "Intersection", road: "Road", parking: "Parking lot" };
 
 /** Nearest of the four bounds for a compass bearing in degrees. */

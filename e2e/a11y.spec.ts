@@ -36,11 +36,14 @@ test.describe("keyboard", () => {
     await expect(place.getByRole("radio", { name: "Intersection" })).toHaveAttribute("aria-checked", "true");
     await expect(place.locator("[role=radio][tabindex='0']")).toHaveCount(1);
 
-    // The road condition group too.
+    // The road condition group too. A new visitor's starts with nothing picked: the first tile is the one tab stop.
     const road = page.getByRole("radiogroup", { name: "What was the road like?" });
-    await road.locator("[role=radio][aria-checked=true]").focus();
+    await expect(road.locator("[role=radio][aria-checked=true]")).toHaveCount(0);
+    await expect(road.locator("[role=radio][tabindex='0']")).toHaveText("Dry");
+    await road.locator("[role=radio][tabindex='0']").focus();
     await page.keyboard.press("ArrowLeft");
     await expect(road.getByRole("radio", { name: "Ice" })).toHaveAttribute("aria-checked", "true");
+    await expect(road.locator("[role=radio][tabindex='0']")).toHaveCount(1);
   });
 
   test("tabs rove with the arrow keys", async ({ page }) => {

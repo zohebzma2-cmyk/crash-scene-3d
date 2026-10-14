@@ -36,8 +36,8 @@ describe("step 4: save", () => {
     await flush(900);
     const boxes = () => all("input[name=fmt]") as HTMLInputElement[];
     expect(boxes().map((i) => i.value)).toEqual(["pdf", "png", "json"]);
-    expect(text()).toContain("Video clip.");
-    expect(text()).toContain("Share link.");
+    // Only what can be saved today: the roadmap (video clip, share link) lives in the README's Next version, not here.
+    expect(text()).not.toMatch(/Coming next|Video clip|Share link/);
     // PDF and picture are on, so the scene file is checked, disabled, and says why
     expect(boxes().map((i) => [i.checked, i.disabled])).toEqual([[true, false], [true, false], [true, true]]);
     expect(get("[data-testid=json-hint]").textContent).toBe("Always saved with pictures and PDFs, so the fingerprint can be checked.");
@@ -49,6 +49,17 @@ describe("step 4: save", () => {
     expect(maybe("[data-testid=json-hint]")).toBeNull();
     click(boxes()[2]!);
     expect(boxes()[2]!.checked).toBe(true);
+  });
+
+  it("puts Back and Save to my device right after the file choices, before the stamp and opening a saved file", async () => {
+    const { services } = makeServices();
+    app = await renderApp(services, example);
+    await flush(900);
+    const main = get(".split-save .split-main");
+    const order = [...main.children].filter((el) => !el.classList.contains("visually-hidden")).map((el) => el.matches("fieldset.options") ? "choices" : el.matches(".save-actions") ? "actions" : el.matches("[data-testid=stamp]") ? "stamp" : el.matches(".open-scene") ? "open" : el.className);
+    expect(order).toEqual(["choices", "actions", "stamp", "open"]);
+    const actions = get(".save-actions");
+    expect(all("button", undefined, actions).map((b) => b.textContent)).toEqual(["Back", "Save to my device"]);
   });
 
   it("saves the chosen formats from one call, shows the real time and fingerprint, and delivers one download", async () => {

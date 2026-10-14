@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BUSY_MESSAGE, type CrossStreetsResult, type PlaceResult as Suggestion } from "@csd/core";
+import { BUSY_MESSAGE, BUSY_MESSAGES, TIMEOUT_MESSAGE, TIMEOUT_MESSAGES, UPSTREAM_MESSAGES, type CrossStreetsResult, type PlaceResult as Suggestion } from "@csd/core";
 import { ServiceError } from "../src/services/types";
-import { MAX_QUERY_CHARS, MAX_STREET_CHARS, NO_AREA_TEXT, STREET_TOO_LONG_TEXT, TOO_LONG_TEXT, splitIntersection } from "../src/components/SearchPanel";
+import {
+  MAX_QUERY_CHARS, MAX_STREET_CHARS, NO_AREA_TEXT, SEARCH_FAILED_TEXT, STREET_TOO_LONG_TEXT, SUGGEST_SLOW_TEXT, TOO_LONG_TEXT, splitIntersection, suggestFailureText,
+} from "../src/components/SearchPanel";
 import { all, click, flush, get, key, maybe, renderApp, setValue, text } from "./helpers";
 import { MAIN_PARK, makeServices } from "./fakes";
 
@@ -129,15 +131,48 @@ describe("type-ahead combobox", () => {
     expect(suggest.mock.calls.at(-1)?.[1]?.bias).toEqual({ lat: 42.7654, lon: -71.4676 });
   });
 
-  it("shows a busy or failed suggestion request as text, and says so when nothing matches", async () => {
+  it("shows a failed suggestion request as text, and says so when nothing matches", async () => {
     const { services } = await open();
     const suggest = services.geo.suggest as ReturnType<typeof vi.fn>;
-    suggest.mockRejectedValueOnce(new ServiceError(BUSY_MESSAGE, "busy"));
-    await type("Busy");
-    expect(text(get("[role=listbox]").parentElement!)).toContain(BUSY_MESSAGE);
+    suggest.mockRejectedValueOnce(new ServiceError(UPSTREAM_MESSAGES.search, "upstream"));
+    await type("Broken");
+    expect(text(get("[role=listbox]").parentElement!)).toContain(UPSTREAM_MESSAGES.search);
+    suggest.mockRejectedValueOnce(new Error("no idea"));
+    await type("Stranger");
+    expect(text(get("[role=listbox]").parentElement!)).toContain(SEARCH_FAILED_TEXT);
     suggest.mockResolvedValueOnce([]);
     await type("Nothing here");
     expect(text(get("[role=listbox]").parentElement!)).toContain("No matches yet. Press Enter to search, or tap the map where it happened.");
+  });
+
+  it.each([
+    ["timed out at the proxy", new ServiceError(TIMEOUT_MESSAGES.search, "timeout", 5)],
+    ["timed out in the browser", new ServiceError(TIMEOUT_MESSAGE, "timeout")],
+    ["still busy after its retry", new ServiceError(BUSY_MESSAGES.search, "busy", 1)],
+  ])("type-ahead that %s says it is slow and points to Search, which still works", async (_how, failure) => {
+    const { services, search } = await open();
+    const suggest = services.geo.suggest as ReturnType<typeof vi.fn>;
+    suggest.mockRejectedValue(failure);
+    await type("Elm St");
+    const list = get("[role=listbox]").parentElement!;
+    expect(text(list)).toContain(SUGGEST_SLOW_TEXT);
+    expect(text(list)).not.toContain(failure.message);
+    expect(list.querySelector(".combo-note[role=status]")?.textContent).toBe(SUGGEST_SLOW_TEXT);
+    expect(options()).toHaveLength(0);
+    // Nothing else is asked while typing: the on-submit (Nominatim) search runs only when the claimant asks for it.
+    expect(search).not.toHaveBeenCalled();
+    key(input(), "Enter");
+    await flush();
+    expect(search).toHaveBeenCalledWith("Elm St", expect.anything());
+    expect(text()).toContain(MAIN_PARK.main);
+  });
+
+  it("words the failures: slow or busy points to Search, anything else keeps its own message", () => {
+    expect(suggestFailureText(new ServiceError(TIMEOUT_MESSAGES.search, "timeout"))).toBe(SUGGEST_SLOW_TEXT);
+    expect(suggestFailureText(new ServiceError(BUSY_MESSAGES.search, "busy"))).toBe(SUGGEST_SLOW_TEXT);
+    expect(suggestFailureText(new ServiceError("We couldn't reach the map service.", "network"))).toBe("We couldn't reach the map service.");
+    expect(suggestFailureText(new ServiceError(UPSTREAM_MESSAGES.search, "upstream"))).toBe(UPSTREAM_MESSAGES.search);
+    expect(suggestFailureText(new TypeError("x"))).toBe(SEARCH_FAILED_TEXT);
   });
 
   it("shows a spinner while it searches", async () => {

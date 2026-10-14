@@ -6,7 +6,9 @@
 // far from the claim goes last, labelled so. For an intersection ("X and Y", "X & Y", "X at Y", or after a
 // street is picked) a second list, "Crossing streets", offers only the streets that really cross it, and
 // picking one puts the pin exactly on the crossing; a town typed after a comma ("X and Y, Town ST") says
-// where to look instead. A busy answer is retried once ("Busy, trying again…"). Enter with nothing
+// where to look instead. A busy answer is retried once ("Busy, trying again…"). Suggestions that are still busy,
+// or too slow (the proxy gives Photon 7 s), say "Suggestions are slow right now. Press Search to look it up.":
+// Search still works, and Nominatim is never asked as you type (its usage policy forbids that). Enter with nothing
 // highlighted runs the on-submit (Nominatim) search, as before. The claim address is prefilled but nothing
 // is sent until the claimant types or taps Search.
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
@@ -34,6 +36,17 @@ export const noCrossingText = (street: string) => `No streets cross ${street} ne
 export const noTownText = (street: string, town: string) => `We couldn't find ${street} in ${town}. Check the spelling, or drop the pin on the map.`;
 /** Shown while a type-ahead or cross-streets request the proxy called busy is tried once more. */
 export const BUSY_RETRY_TEXT = "Busy, trying again…";
+/** The suggestion list's line when type-ahead timed out, or was still busy after its one retry. */
+export const SUGGEST_SLOW_TEXT = "Suggestions are slow right now. Press Search to look it up.";
+
+/**
+ * What the suggestion list says about a failed type-ahead request. Slow or busy (the proxy's "timeout" and "busy",
+ * or the browser's own time limit) points to Search, which still works; any other failure keeps its own message.
+ */
+export function suggestFailureText(e: unknown): string {
+  if (!(e instanceof ServiceError)) return SEARCH_FAILED_TEXT;
+  return e.code === "timeout" || e.code === "busy" ? SUGGEST_SLOW_TEXT : e.message;
+}
 /** Added to the "Town, ST" of a suggestion far from the claim (it is listed after the near ones). */
 export const FAR_SUFFIX = " — far from the claim";
 /** Farther than this from the claim's town is "far"; in another state, farther than FAR_OTHER_STATE_KM already is. */
@@ -220,7 +233,7 @@ export function SearchPanel({ onPicked, bias: viewBias, pin = null, claimBias = 
       setRetrying(null); // a new load: an earlier "Busy, trying again…" no longer applies
       geo.suggest(q, { bias, bbox, signal: ctrl.signal, onBusy: () => setRetrying(suggestKey) }).then(
         (value) => setSuggested({ key: suggestKey, status: "ok", value }),
-        (e: unknown) => { if (!(e instanceof DOMException && e.name === "AbortError")) setSuggested({ key: suggestKey, status: "error", message: e instanceof ServiceError ? e.message : SEARCH_FAILED_TEXT }); },
+        (e: unknown) => { if (!(e instanceof DOMException && e.name === "AbortError")) setSuggested({ key: suggestKey, status: "error", message: suggestFailureText(e) }); },
       );
     }, mapConfig.suggestDebounceMs);
     return () => { window.clearTimeout(timer); ctrl.abort(); };

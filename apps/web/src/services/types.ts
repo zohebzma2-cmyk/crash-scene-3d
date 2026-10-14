@@ -79,7 +79,8 @@ export interface GeoService {
   /**
    * Type-ahead (Photon through /api/geo/suggest): at least 3 characters, cached for the session, results
    * biased toward `bias`; each result carries "Town, State" in `sub`. Aborts with an AbortError when the
-   * signal fires.
+   * signal fires. Too slow or too busy rejects with a ServiceError coded "timeout" or "busy" (after one retry);
+   * it never falls back to the on-submit (Nominatim) search.
    */
   suggest(query: string, opts?: SuggestOptions): Promise<PlaceResult[]>;
   /** The streets that really cross `street` near a point (/api/geo/cross-streets), each with its crossing point. */

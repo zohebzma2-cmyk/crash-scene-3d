@@ -15,7 +15,7 @@ import type { Scene } from "../contracts/scene";
 import type { Assumption, ImpactData, PlainMessage, SimulationOutcome, SimulationResult, VehicleResult } from "../contracts/simulation";
 import type { Zone } from "../contracts/scene";
 import { PRESETS } from "../presets";
-import { DRIVEWAY_WORDS, ROAD_WORDS, ZONE_WORDS, formatAcceleration, formatDistance, formatMassKg, formatMassLb, formatMphNumber, formatSpeedExact } from "../format";
+import { DRIVEWAY_WORDS, ROAD_WORDS, ZONE_WORDS, roadConditionGiven, formatAcceleration, formatDistance, formatMassKg, formatMassLb, formatMphNumber, formatSpeedExact } from "../format";
 import {
   APPROACH_S, BRAKE_FACTOR, BRAKING_S, CONTACT_FRICTION, DT_S, DEFAULT_LIMIT_MPH, FRICTION, G_MPS2, IMPACT_PASSES, MAX_START_ACCEL_MPS2, MPH_TO_MPS, OVERLAP_TOLERANCE_M, PHYSICS_VERSION, RANGE_HALF_MPH,
   RANGE_STEP_MPH, RESTITUTION, TURN_RADIUS_LEFT_M, TURN_RADIUS_RIGHT_M,
@@ -727,9 +727,13 @@ const DAMAGE_DELTA_V_MPH = 3;
 function buildAssumptions(scene: Scene, bodies: readonly PlacedBody[], mu: number, range: RangeNote | null, damageShown: boolean): Assumption[] {
   const out: Assumption[] = [];
   const cond = scene.road.condition;
+  const table = `(dry ${FRICTION.dry} · wet ${FRICTION.wet} · snow ${FRICTION.snow} · ice ${FRICTION.ice})`;
   out.push({
     id: "friction",
-    text: `Road ${ROAD_WORDS[cond]}, as entered: friction ${mu} for the whole road (dry ${FRICTION.dry} · wet ${FRICTION.wet} · snow ${FRICTION.snow} · ice ${FRICTION.ice}).`,
+    // Not given: the physics still needs a grip, and runs on the condition's placeholder; say which, never "as entered".
+    text: roadConditionGiven(scene.road)
+      ? `Road ${ROAD_WORDS[cond]}, as entered: friction ${mu} for the whole road ${table}.`
+      : `Road surface not given: the picture uses ${ROAD_WORDS[cond]}-road friction ${mu} for the whole road ${table}.`,
     value: mu,
   });
   out.push({ id: "flat-ground", text: "The road surface is flat. The terrain shown is for looks only and does not change the motion." });

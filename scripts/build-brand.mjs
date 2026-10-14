@@ -5,6 +5,8 @@
 //   favicon-32.png / apple-touch-icon.png  plain resampling of logo-mark.png
 //                        (the apple icon is laid on the official white, because iOS
 //                        paints transparent icons black).
+//   favicon.ico          the same resampling at 16, 32 and 48 px, each a PNG inside one
+//                        .ico file, for the browsers and crawlers that ask for /favicon.ico.
 // Run: node scripts/build-brand.mjs   (a test fails if the checked-in files are stale)
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -58,7 +60,36 @@ export async function buildFavicons(markPng) {
     ctx.drawImage(img, 0, 0, size, size);
     return cv.toBuffer("image/png");
   };
-  return { "favicon-32.png": make(32, false), "apple-touch-icon.png": make(180, true) };
+  return { "favicon-32.png": make(32, false), "apple-touch-icon.png": make(180, true), "favicon.ico": icoFromPngs(ICO_SIZES.map((s) => [s, make(s, false)])) };
+}
+
+/** The sizes inside favicon.ico. */
+export const ICO_SIZES = [16, 32, 48];
+
+/**
+ * An .ico file holding PNG images (allowed since Windows Vista; every current browser reads it): a 6-byte header,
+ * one 16-byte entry per image (size, colour depth 32, byte length, offset), then the PNG files themselves.
+ * `images` is [[size in px, PNG bytes], ...].
+ */
+export function icoFromPngs(images) {
+  const header = Buffer.alloc(6 + 16 * images.length);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(images.length, 4);
+  let offset = header.length;
+  images.forEach(([size, png], i) => {
+    const at = 6 + 16 * i;
+    header.writeUInt8(size >= 256 ? 0 : size, at); // width (0 = 256)
+    header.writeUInt8(size >= 256 ? 0 : size, at + 1); // height
+    header.writeUInt8(0, at + 2); // no palette
+    header.writeUInt8(0, at + 3); // reserved
+    header.writeUInt16LE(1, at + 4); // colour planes
+    header.writeUInt16LE(32, at + 6); // bits per pixel
+    header.writeUInt32LE(png.length, at + 8);
+    header.writeUInt32LE(offset, at + 12);
+    offset += png.length;
+  });
+  return Buffer.concat([header, ...images.map(([, png]) => png)]);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -69,5 +100,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   writeFileSync(`${pub}favicon.svg`, mark);
   writeFileSync(`${pub}insurifyai-mark.svg`, mark); // the header <img> (a real file on our origin, never inlined)
   for (const [name, buf] of Object.entries(await buildFavicons(readFileSync(`${brand}logo-mark.png`)))) writeFileSync(`${pub}${name}`, buf);
-  console.log("wrote design/brand/insurifyai-mark.svg and apps/web/public/{favicon.svg,insurifyai-mark.svg,favicon-32.png,apple-touch-icon.png}");
+  console.log("wrote design/brand/insurifyai-mark.svg and apps/web/public/{favicon.svg,insurifyai-mark.svg,favicon-32.png,apple-touch-icon.png,favicon.ico}");
 }

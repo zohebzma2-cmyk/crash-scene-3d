@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Records the README demo GIF (docs/demo.gif): the T-bone walkthrough in fixtures mode, start to Save.
+// Records a short GIF (docs/demo.gif): the T-bone walkthrough in fixtures mode, start to Save. The README no longer
+// uses it (since 2026-10-14 its demo and pictures come from record-demo-full.mjs), so the file is not committed.
 //
 //   node scripts/record-demo.mjs            build (VITE_FIXTURES=1), serve on :4333, record, convert
 //   node scripts/record-demo.mjs --no-build reuse apps/web/dist from an earlier build

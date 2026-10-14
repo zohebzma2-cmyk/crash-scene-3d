@@ -1,12 +1,14 @@
 # crash-scene-3d
 
-![Demo: the full flow. Search "Main Street and Park Street, Nashua NH" and pick the crossing; on Vehicles type 2019 Chevrolet Silverado 1500 (red) for A and 2021 Honda Accord (blue) for B, with their stock photos, directions and hit sides; play the 3D timeline to the impact on Review, switch to Aftermath, press "Looks right: save it" and save the files as one ZIP.](docs/media/demo-flow.gif)
+A browser tool that turns a driver's account of a car crash into a 3D illustration on the real road layout from OpenStreetMap. The claimant enters the place, the vehicles, their directions and speeds, and where each one was hit; a small, fixed physics model shows the vehicles arriving, touching and coming to rest. The PDF, pictures and scene file are all made in the browser, and every one of them says it illustrates what the claimant described and does not decide fault.
 
-A recording of a local fixtures build (`VITE_FIXTURES=1`) with synthetic data: a made-up claim on real public roads, a synthetic car photo and 3D model, illustration only. [MP4 version](docs/media/demo-flow.mp4) · [shorter T-bone GIF](docs/demo.gif)
+**[Live demo](https://crash-scene-3d.netlify.app)** · [T-bone example](https://crash-scene-3d.netlify.app/?example=t-bone-intersection#review) · TypeScript · React · three.js · OpenStreetMap · [MIT license](LICENSE)
 
-<sub>Regenerate: `FFMPEG=/path/to/ffmpeg node scripts/record-demo-full.mjs` (builds with `VITE_FIXTURES=1`, serves on port 4521, records 1280x720 with Playwright, writes `docs/media/demo-flow.gif` and `.mp4`); `--stills=desktop` and `--stills=phone` write the step screenshots under `docs/media/steps/`; add `--no-build` to reuse an earlier build. The shorter T-bone GIF comes from `node scripts/record-demo.mjs` (port 4333, `docs/demo.gif`).</sub>
+![Demo: the full flow. The first-visit welcome opens and is dismissed; search "Main Street and Park Street, Nashua NH", pick the crossing and answer Dry for the road; on Vehicles type a 2019 Chevrolet Silverado 1500 (red) as your car and a 2021 Honda Accord (blue) as the other car, with their catalog photos, what each was doing, directions, speeds and hit sides; play the 3D timeline to the impact on Review, switch to Aftermath, press "Looks right: save it" and save the files as one ZIP.](docs/media/demo-flow.gif)
 
-crash-scene-3d is a browser tool for InsurifyAI. A claimant enters the place, the vehicles, their directions and speeds, and where each vehicle was hit. The tool draws a 3D recreation on the real road layout from OpenStreetMap. It runs a small, fixed physics model so the vehicles arrive, touch and come to rest in a plausible way. It saves a PDF, PNG pictures and a scene file, all made in the browser. It is an illustration of what the claimant described. It does not find out what happened.
+Recorded from a local fixtures build (`VITE_FIXTURES=1`) with synthetic data: a made-up claim on real public roads in Nashua, NH, with synthetic car photos and 3D models. Illustration only. [MP4 version](docs/media/demo-flow.mp4)
+
+crash-scene-3d was built as a browser tool for InsurifyAI. It is an illustration of what the claimant described; it does not find out what happened. Every screen and every file carries one of these two disclaimers:
 
 > **Short disclaimer (screens, PNGs):** "Illustration only. This shows what you described. It is not an expert reconstruction and does not decide fault."
 >
@@ -26,7 +28,7 @@ The GIF at the top walks through the whole flow. The stills below come from the 
 
 A first visit opens a short welcome (what the tool is, the illustration disclaimer, four steps, "Try an example"); it is not shown again on that browser, and never on an example or shared link. The header follows vehicle A as it is typed; the claim number is optional (a saved file without one is named by date and time).
 
-1. **Location.** Search "Main Street and Park Street, Nashua NH", pick the crossing, and the pin lands where the two streets meet (drag it to where the vehicles hit).
+1. **Location.** Search "Main Street and Park Street, Nashua NH", pick the crossing, and the pin lands where the two streets meet (drag it to where the vehicles hit). The road surface is asked here too, with nothing picked; the demo answers Dry. Left unanswered, the picture uses dry-road grip and the files say the road surface was not given.
 
    ![Step 1, Location: the search result "Main Street & Park Street" picked and the pin set on the crossing](docs/media/steps/desktop-location.png)
 
@@ -40,15 +42,15 @@ A first visit opens a short welcome (what the tool is, the illustration disclaim
 
 4. **Aftermath.** One tap shows where both vehicles came to rest, with the path before impact dashed.
 
-   ![Step 3, Review: the Aftermath view, both vehicles at final rest](docs/media/steps/desktop-aftermath.png)
+   ![Step 3, Review: the Aftermath view, both vehicles at final rest, dented where they were hit, with how far each one moved after the impact](docs/media/steps/desktop-aftermath.png)
 
-5. **Save.** "Looks right: save it" leads to the save step; "Save to my device" makes the PDF, PNGs and scene file in the browser and saves them as one ZIP.
+5. **Save.** "Looks right: save it" leads to the save step, with a preview of each file; "Save to my device" makes the PDF, PNGs and scene file in the browser and saves them as one ZIP.
 
-   ![Step 4, Save: the files to save and the Save to my device button](docs/media/steps/desktop-save.png)
+   ![Step 4, Save: the files to save, Back and Save to my device right under them, and a preview of the PDF](docs/media/steps/desktop-save.png)
 
-6. **The PDF.** Page 1 of the saved report: place, top-down diagram, vehicles with stock photos, key measurements, assumptions, the long disclaimer and the SHA-256 fingerprint.
+6. **The PDF.** Page 1 of the saved report: place, map, the top-down diagram of the whole crash with the key to the road symbols under its caption, vehicles with stock photos, key measurements, assumptions, the long disclaimer and the SHA-256 fingerprint. This one runs to a second page for the last assumptions.
 
-   ![Page 1 of the saved PDF, rendered at 110 dpi](docs/media/steps/desktop-pdf.png)
+   ![Page 1 of the saved PDF, rendered at 110 dpi: the diagram shows both vehicles at final rest and the red impact ring](docs/media/steps/desktop-pdf.png)
 
 On a phone (390 px, Pixel 7), the same steps:
 
@@ -72,7 +74,9 @@ On a phone (390 px, Pixel 7), the same steps:
 - App: https://crash-scene-3d.netlify.app (Netlify, with the `/api/*` proxy function)
 - Repo: https://github.com/zohebzma2-cmyk/crash-scene-3d
 
-## Quick start
+## Development
+
+### Quick start
 
 Needs Node 22 or newer and npm 11. npm 10 crashes on Vitest's peer set.
 
@@ -110,7 +114,7 @@ The e2e suite builds the app with `VITE_FIXTURES=1` and serves it on `E2E_PORT` 
 | `webkit-desktop`, `webkit-phone` | WebKit, 1440 x 900 and 390 x 844 (iPhone 15) | the cross-browser subset: tests tagged `@xb` |
 
 ```text
-npx --no-install playwright install webkit   # once
+npx --no-install playwright install chromium webkit   # once
 npm run e2e          # default: Chromium everything + WebKit @xb (what check.sh runs)
 npm run e2e:xb       # only the @xb subset, on every project
 npm run e2e:full     # E2E_FULL=1: every spec on every project
@@ -122,13 +126,28 @@ npm run e2e:full     # E2E_FULL=1: every spec on every project
 - `e2e/download.spec.ts` unpacks the saved ZIP for each example and checks every file in it (names, scene file against the app's schema, PDF, every PNG's size, footer band and the footer text drawn into it).
 - Chrome-only tests (CDP CPU throttling) skip on WebKit with a reason.
 
+### README media
+
+The GIF, the MP4 and the step pictures above come from one script, run on a local fixtures build. Every run needs ffmpeg (`FFMPEG=/path/to/ffmpeg`):
+
+```text
+node scripts/record-demo-full.mjs                             # docs/media/demo-flow.gif and .mp4
+node scripts/record-demo-full.mjs --stills=desktop --no-build  # docs/media/steps/desktop-*.png, with page 1 of the PDF
+node scripts/record-demo-full.mjs --stills=phone --no-build    # docs/media/steps/phone-strip.png
+```
+
+- It builds with `VITE_FIXTURES=1` (`--no-build` reuses that build), serves it on `DEMO_PORT` (default 4521) and drives Chromium with Playwright; the video is 1280 x 720.
+- The video opens on the first-visit welcome and dismisses it; the stills start with it already seen.
+- A fixtures build shows an "Example data" chip on every screen. The live site shows it only on an example, so the recordings hide it.
+- The PDF still needs `pdftoppm` and `unzip`. The phone run also writes one picture per step (`phone-<step>.png`); only the strip is committed.
+
 ## Architecture
 
 npm workspaces. Versions are pinned to releases at least two weeks old.
 
 | Package | Owns | Purity rules |
 |---|---|---|
-| `packages/core` | Contracts (zod Scene v3, RoadNetwork, SimulationResult, exports, proxy routes and `ProviderConfig`), physics, projection, placement, lanes, the formatter, canonical JSON and SHA-256, vehicle presets | Pure TypeScript. No DOM, no three, no React (ESLint enforces it). SI units. Runs server-side later. |
+| `packages/core` | Contracts (zod Scene v4, RoadNetwork, SimulationResult, exports, proxy routes and `ProviderConfig`), physics, projection, placement, lanes, the formatter, canonical JSON and SHA-256, vehicle presets | Pure TypeScript. No DOM, no three, no React (ESLint enforces it). SI units. Runs server-side later. |
 | `packages/mapdata` | Overpass JSON to RoadNetwork, "X and Y" crossings, search-result merging, Overpass query builders, Terrarium decoding and the terrain grid | Pure TypeScript. No DOM. Fetching is injected or done by the proxy. |
 | `packages/exports` | The PDF (pdf-lib, fonts embedded), PNG pictures, the scene file | Canvas and fonts are injected, so it can run on a server later. |
 | `packages/proxy` and `netlify/functions/api.mts` | The `/api/*` proxy to Nominatim, Overpass, OSM tiles, Terrarium and NHTSA vPIC | Server only. Every provider detail lives in one `ProviderConfig` value. |
@@ -137,7 +156,7 @@ npm workspaces. Versions are pinned to releases at least two weeks old.
 ### Data flow
 
 1. The claimant fills in four steps: where, which vehicles, check the picture, save.
-2. The state is one **Scene v3** object, checked by zod (`parseScene`). A saved scene file goes through `parseSceneFile`.
+2. The state is one **Scene v4** object, checked by zod (`parseScene`). A saved scene file goes through `parseSceneFile`, which opens a v3 file as v4.
 3. The pin goes to the proxy. Overpass JSON comes back and `parseOverpass` turns it into a **RoadNetwork** in local meters: ways, buildings, parking lots, terrain.
 4. `checkScene` makes plain-language warnings. **Placement** snaps each vehicle to a lane and puts the vehicles in contact at the impact point.
 5. `simulate` runs the approach, the impact and the slide to rest. It returns a **SimulationResult**.
@@ -147,7 +166,7 @@ npm workspaces. Versions are pinned to releases at least two weeks old.
   claimant (4 steps)                          browser | server
         |                                             |
         v                                             |
-  Scene v3 (zod) <--- scene file (1 MB cap)           |
+  Scene v4 (zod) <--- scene file (1 MB cap)           |
         |                                             |
         | pin lat/lon ------- GET /api/geo/overpass --+--> proxy --> Overpass
         |                     GET /api/geo/terrain/.. +--> proxy --> Terrarium
@@ -194,7 +213,7 @@ Errors are JSON `{ code, message, retryAfterS? }` with `code` one of `busy`, `ti
 
 ## The physics
 
-This section follows the code in `packages/core/src/physics/` on `feat/physics-2` (`PHYSICS_VERSION` = "3.0.0"). Constant names are in code font. Change a constant and the model changes with it.
+This section follows the code in `packages/core/src/physics/` (`PHYSICS_VERSION` = "3.0.0"). Constant names are in code font. Change a constant and the model changes with it.
 
 ### Units and frames
 
@@ -349,7 +368,7 @@ The mass line is built from `PRESETS`. Example: "Vehicle A is treated as a typic
 Read these before you rely on a picture.
 
 - **Flat road.** There is no slope, banking or camber in the motion. Terrain is visual only: it never changes a speed, a distance or a stopping point.
-- **Rigid bodies.** Each vehicle is a rectangle of class-average weight and size. Nothing deforms. The exact vehicle is rarely known, so the presets stand in for it.
+- **Rigid bodies.** Each vehicle is a rectangle of class-average weight and size. Nothing deforms in the motion; the dents and crumple in the 3D view are drawn for illustration only. The exact vehicle is rarely known, so the presets stand in for it.
 - **No secondary collisions after t = 0.** After the impact each vehicle slides on its own. Vehicles do not hit each other again. Only buildings stop a slide.
 - **Turns are arcs.** A turn is a circular arc of `TURN_RADIUS_LEFT_M` = 10 m or `TURN_RADIUS_RIGHT_M` = 6 m, not a measured path. There is no steering, no swerving and no skid before the impact.
 - **No roundabouts.** OSM roundabouts parse as one-way roads, and nothing in placement understands a circular junction.
@@ -417,7 +436,7 @@ Files are made in the browser and saved with the browser's download. Nothing is 
 Nothing else leaves: no claim number, names, vehicles, speeds, scene or exports. There are no uploads. Exports are saved to the device. Attaching them to a claim uses InsurifyAI's existing document upload, outside this tool.
 
 - **User-Agent.** Every upstream request carries `InsurifyAI-CrashScene/1.0 (+https://github.com/zohebzma2-cmyk/crash-scene-3d)`. The contact is the repo URL, `DEFAULT_CONTACT`, held only in `ProviderConfig`. No client headers or cookies are passed on.
-- **Rate limits.** Nominatim, Overpass and vPIC: 1 request per second, globally and per user (`limits.minIntervalMs` = `limits.perUserMinIntervalMs` = 1000). Each Overpass mirror has its own slot. Over the global limit, a request waits up to 1.2 s, then gets `busy` with `Retry-After`. A caller's own Overpass slot is reserved (KvStore.reserveSlot: one read and one conditional write, no polling) and waited for, up to 2 s, instead of refused, so at most two requests per caller wait and the rest are refused at once, because picking a street asks for its roads and its cross streets a third of a second apart (`USER_QUEUE_MS`); Nominatim's per-user slot still refuses at once. Tiles and terrain use token buckets: per user burst 64, refill 16/s; global burst 256, refill 64/s (`tileBurst`). Type-ahead (Photon) too: per user burst 12, refill 3/s; global burst 20, refill 10/s (`suggestBurst`). Only real upstream calls take a token. Cache hits are free. The app retries a `busy` type-ahead or cross-streets answer once, after its `Retry-After` (at most 2 s), and shows "Busy, trying again…" meanwhile.
+- **Rate limits.** Nominatim, Overpass and vPIC: 1 request per second, globally and per user (`limits.minIntervalMs` = `limits.perUserMinIntervalMs` = 1000). Each Overpass mirror has its own slot. Over the global limit, a request waits up to 1.2 s, then gets `busy` with `Retry-After`. A caller's own Overpass slot is reserved (KvStore.reserveSlot: one read and one conditional write, no polling) and waited for, up to 2 s, instead of refused, so at most two requests per caller wait and the rest are refused at once, because picking a street asks for its roads and its cross streets a third of a second apart (`USER_QUEUE_MS`); Nominatim's per-user slot still refuses at once. Tiles and terrain use token buckets: per user burst 64, refill 16/s; global burst 256, refill 64/s (`tileBurst`). Type-ahead (Photon) too: per user burst 12, refill 3/s; global burst 20, refill 10/s (`suggestBurst`). Only real upstream calls take a token. Cache hits are free. The app retries a `busy` type-ahead or cross-streets answer once, after its `Retry-After` (at most 2 s), and shows "Busy, trying again…" meanwhile. Type-ahead waits up to 7 s for Photon (`SUGGEST_DEADLINE_MS`, inside the 8 s request deadline and the browser's 9.5 s); when it times out, or is still busy after the retry, the list says "Suggestions are slow right now. Press Search to look it up." and nothing falls back to Nominatim while typing.
 - **Media limits.** CarImages and logo.dev have their own token buckets (`media.carimages.burst`, `media.logodev.burst`), separate from the map's, and a rolling 24-hour soft cap on keyed calls kept in Blobs (`dailyCap`: 120 for CarImages, 60 for logo.dev), of which each caller may spend at most `perUserDailyCap` (15 and 10); past it, or for 15 minutes after a provider 429, the media routes answer their fallback at once.
 - **Caching.** Search 1 day, Overpass 7 days, tiles 7 days (or longer if OSM's headers say so, with ETag and If-Modified-Since revalidation), terrain 30 days, vPIC 30 days (`cacheTtlS`). Vehicle photos and 3D models 30 days, logos 1 year, the CarImages catalog 7 days (`media.cacheTtlS`), all in their own Blobs store `csd-proxy-media` so they can be wiped together if the CarImages subscription ends (its terms require that). A provider's `no-store` is honored. Stale copies are served only when a provider is failing.
 - **Retention.**
@@ -510,6 +529,7 @@ Feature freeze (Zoheb, 2026-10-09): after the impact and aftermath work, new ide
 - **Satellite / street toggle** on the location map. Candidate: USGS The National Map imagery (public domain, US only), through the proxy. Cut from this version.
 - **Locate me** button on the location map (browser geolocation, pans the map only; needs `Permissions-Policy: geolocation=(self)`). Cut from this version.
 - **Measure two points** on the Review step (DESIGN §7), if it doesn't make this version.
+- **Video clip and share link exports** (DESIGN.md section 8, "Coming next"): a video clip of the replay needs an in-browser encoder choice and a size and length limit; a share link needs hosting for scene files, link expiry, control over who can open it and a privacy review, because it would be the first thing that uploads a scene. Listed here only; the Save step shows just what it can save.
 - **A live-tile test for the PDF map thumbnail**: with the cached OSM tiles gone, test mode draws every tile, so the copy-tiles-to-canvas e2e test (e2e/map.spec.ts) is skipped as known-stale. It needs a run against the deployed proxy instead.
 - **Firefox in the e2e matrix** (this version runs Chromium and WebKit at 1440 and 390).
 - **Dark-mode e2e matrix**: run the functional and axe suites in the dark theme on every browser and width.
@@ -520,10 +540,13 @@ Feature freeze (Zoheb, 2026-10-09): after the impact and aftermath work, new ide
 - **Cross-user fixer learning, opt-in only** (docs/decisions/0009-fixer-learning.md): today the fixer learns only from the repo's regression corpus and, on each device, from the kinds of fix picked there. Learning across users would need consent, an anonymised count-only upload, a retention limit and a new proxy route; not built.
 - **Road features and optional questions, first version (2026-10-12):** shipped. Known gaps from the handoff (CODEX-NOTES.md): the compact scene icons have no distinct yes/no/not-sure states yet (the summary and PDF carry the full answers); lane choices on merged roads whose lane counts disagree stay "unknown"; the braking recollection and the parked/manoeuvre reducer need one more consistency pass; visual QA covered the examples' automatic lighting in both themes, not every lighting/weather answer; the solar prefill is untested at polar and date-line locations; the Review step's first frame is within 8% of the base (was 2×) after the road furniture moved behind the first frame; a one-tap fix button may flicker under heavy CPU load (seen once in review, not reproduced).
 - **Vehicle type auto-fill edge cases:** vPIC's model lists have no BodyClass, so vans and pickups are split by a curated model-name table; a name that matches both (e.g. an "Express 1500" van) can land as a pickup; the override tiles reappear when vPIC has no answer.
-- **Picker follow-ups:** parking-aisle choices are ordered by distance from the pin (west-to-east would read better); the README's vehicles screenshot still shows the type tiles, which are now an override; accented free-typed makes are ASCII-folded before lookup.
+- **Picker follow-ups:** parking-aisle choices are ordered by distance from the pin (west-to-east would read better); accented free-typed makes are ASCII-folded before lookup.
 - **Directions from the roads, paths along the lanes (2026-10-12), follow-ups:** a roundabout offers no turn choices yet (its ring is one of the roads; a way out whose only road behind is the ring is not offered); the fixer never moves the pin to repair a turn with no road to turn from, and never tries a lane change for a "passes through" (bench-no-road-001, bench-prop-018); the fixer's work budget doubled (440 checks, 2,000,000 units) so three benchmark scenes fix again on road-following paths, which roughly doubles the slowest search (~0.8 s warm in Node, off the main thread in the worker); `npm run fixer:bench:browser` has not been re-timed and docs/FIXER-BENCHMARK.md still shows the old numbers; the catalog 3D model's fit guard (a model that sticks out of the physics footprint by more than 1 cm is refused and our model stays) has no unit test; bench-prop-081 still has no fix (it would need about 3,000,000 units).
-- **Two more scene rules (queued, specs agreed 2026-10-12):** vehicles stay on the road after the impact too (obstacles in the physics, "Did A end up off the road?", a Parked option) and single-vehicle crashes ("What was hit?": objects from OSM, leaving the road, fixed-object physics, a guard-rail example); plus Codex's scenario corpus as a `npm run check:scenarios` gate in check.sh. Then: context questions answered only from OSM data at the pin (lanes, signals, signs, turns, speed limit, lot, conditions; "As described" in the PDF); crash damage drawn at the contact patch and the real scene (signals facing traffic, signs, markings, kerbs, buildings with heights, trees, lamps, night and weather, a legend); a research spike on realistic surroundings (Google 3D Tiles, Cesium, NAIP + OSM massing); a README demo recorded on the live site with real catalog media (after checking CarImages and logo.dev terms).
-- **Welcome dialog and claim number, follow-ups:** on phones the "About this tool" link lives inside the About dialog (axe's target-size rule forced it). New visitors' vehicles start neutral since 2026-10-12 (no type, action, direction, speed or hit side prefilled); the road condition still starts on "Dry".
+- **Vehicles stay on the road (queued, spec agreed 2026-10-12):** after the impact too, with obstacles in the physics, "Did A end up off the road?" and a Parked option.
+- **One-vehicle crashes (queued, spec agreed 2026-10-12):** "What was hit?", with objects from OSM, leaving the road, fixed-object physics and a guard-rail example. Today every crash needs two vehicles or more.
+- **After those two rules:** Codex's scenario corpus as a `npm run check:scenarios` gate in check.sh. Then: context questions answered only from OSM data at the pin (lanes, signals, signs, turns, speed limit, lot, conditions; "As described" in the PDF); the real scene (signals facing traffic, signs, markings, kerbs, buildings with heights, trees, lamps, night and weather, a legend); a research spike on realistic surroundings (Google 3D Tiles, Cesium, NAIP + OSM massing); a README demo recorded on the live site with real catalog media (after checking CarImages and logo.dev terms).
+- **2026-10-14 release, follow-ups:** the highway example still opens too far out in the Top view (a framing decision, DESIGN.md section 7); in the parking-lot example neither car's speed changes by more than 3 mph in the hit, so no crumple or dents are drawn; the PDF's road-symbol key lists every symbol in the road data, including ones outside the picture; the crossing-streets list does not use the new "Suggestions are slow right now" message yet.
+- **Welcome dialog and claim number, follow-ups:** on phones the "About this tool" link lives inside the About dialog (axe's target-size rule forced it). New visitors' vehicles start neutral since 2026-10-12 (no type, action, direction, speed or hit side prefilled), and the road condition since 2026-10-14: no tile is picked until the claimant answers, the summary and the PDF say "road surface not given", and the picture runs on dry-road friction, which the assumptions list says.
 - **Smoke script (`npm run smoke`) follow-ups:** drive the Save step the user's way (today it jumps to `#export` and times out on Chromium); say "upstream" when a proxy route answers 500 after its retries (seen once on `/api/vehicles/makes` and on five tile/terrain requests in one minute on a draft, all 200 on every probe since). In the app, after the makes list fails it is not asked for again for 30 s; a shorter wait after an upstream 500 would let a second try succeed sooner.
 - **Slow vehicle lists (seen 2026-10-12):** `/api/vehicles/makes` took about 5 s on production even when cached, and a cold model list (Honda, which spans cars and motorcycles) took 6 to 20 s on drafts; the card says "Looking up…" and, past the timeout, "The vehicle list is slow to answer right now. Pick the type below." Worth profiling the proxy's cached path. The release smoke now waits up to 45 s for a model list.
 - **Netlify Blobs token expiry (fixed 2026-10-12):** the proxy kept its Blobs stores for a function instance's whole life, and a warm instance outlived the access token ("Failed to decode token: Token expired"), so drafts answered 500 on tiles, logos and the vehicle lists. Stores are now opened per call (`perCallStore`). Production never showed it, but had the same code.
@@ -537,11 +560,11 @@ Feature freeze (Zoheb, 2026-10-09): after the impact and aftermath work, new ide
 
 ## How this was built
 
-This was built in one long Claude Code session, steered by Zoheb, from 2026-10-09 to 2026-10-10.
+This was built with Claude Code (a lead session plus parallel agents in worktrees) and Codex, steered by Zoheb, from 2026-10-09 to 2026-10-14.
 
 **Workflow**
 - **Plan, then design.** Plan mode produced the build plan first: repo shape, contracts, milestones, and what to cut early. The design was locked before any app code: DESIGN.md, the tokens and the prototype. CLAUDE.md held the hard rules: synthetic data, no secrets, nothing public without asking, the physics is an illustration, the browser talks only to its own origin.
-- **Contracts first.** The shared types (Scene v3, RoadNetwork, SimulationResult, exports, proxy) were locked in `packages/core` before the parallel work started, so agents built against the same interfaces.
+- **Contracts first.** The shared types (Scene v3 then, v4 since 2026-10-12; RoadNetwork, SimulationResult, exports, proxy) were locked in `packages/core` before the parallel work started, so agents built against the same interfaces.
 - **Parallel agents in worktrees.** Each piece went to its own agent in its own git worktree and branch, with strict file ownership and its own port: physics, map data and proxy, app shell, exports, viewer, and later compass, tips, refusal fixes, tests. The lead integrated continuously on a trial branch (`integ/m2`) and squashed it into `main`.
 - **Review by risk.** Every merge into the trial had an Opus review. Physics and security-sensitive code (proxy, parsing, CSP and headers) got the full review. Visual changes were reviewed by screenshot at 1440 and 390. A commit added after a review was re-reviewed before merge. See [ADR 0007](docs/decisions/0007-review-depth-by-risk.md).
 - **Handoffs.** `PROGRESS.md` and small, frequent commits let work resume after context limits and account switches.
@@ -549,12 +572,13 @@ This was built in one long Claude Code session, steered by Zoheb, from 2026-10-0
 - **Decisions.** The real judgment calls are written up in [docs/decisions](docs/decisions/README.md).
 - **Red team.** A fresh agent with only this README and the running build tried to break the app. Its findings are in [docs/RED-TEAM.md](docs/RED-TEAM.md).
 
-**The last round (round A) and the final numbers**
+**Round A (2026-10-10) and what came after**
 - **Fixer v2.** Measured first: a fixed benchmark of 573 refused scenes (docs/FIXER-BENCHMARK.md), run against the old code unpacked from git. Before: 59% got a working fix, worst search 2.8 s on the main thread. After: 84% (96% for two vehicles), worst 0.1 s in a Web Worker on Chromium and WebKit. Exact physics speedups (about 4× faster) were checked by an identical `simulate()` digest over 9,168 scenes with warm caches. A regression corpus of 576 cases fails the build if a case loses its fix. What the user picks is remembered only on their device ([ADR 0009](docs/decisions/0009-fixer-learning.md)).
 - **Target missed, said plainly.** The goal was 95% of refusals fixed under 300 ms. The 300 ms target was met; 95% was not. A bigger search budget reached 88.8% but took 0.55 s, so the time limit won. Most of what's left are three- or four-vehicle scenes where nothing meets anything.
 - **Missing vehicles.** The bug was reproduced with an opt-in sweep (15,336 vehicle views over 302 scenes) and traced to camera framing, not to missing meshes (docs/VISIBILITY-SWEEP.md). The fix needs design decisions, so it is written up in "Next version", not shipped.
-- **Cut at close-out.** Round B (vehicle picker, maker logos, vehicle colours) was not started, and the camera-framing fixes wait for a design decision. Both are in "Next version" with where they stand.
-- **Totals.** 1,583 unit and property tests and 353 browser tests, all green; every branch had an Opus review before it merged.
+- **At the end of round A:** 1,583 unit and property tests and 353 browser tests, all green; every branch had an Opus review before it merged. The camera-framing fixes wait for a design decision ("Next version").
+- **After round A.** Round B (vehicle picker, maker logos, vehicle colours, catalog photos and 3D models) shipped on 2026-10-11. The 2026-10-12 release added Codex's road features and optional questions, the first-visit welcome, directions taken from the roads and neutral defaults. The 2026-10-14 release fixed the PDF diagram and slow address suggestions, made catalog 3D models crumple where they were hit, and tidied the phone and Save layouts.
+- **Totals today.** 2,198 unit and property tests and 575 browser tests, all green (see Status).
 
 **Retrospective**
 - **What worked.**
@@ -564,7 +588,7 @@ This was built in one long Claude Code session, steered by Zoheb, from 2026-10-0
   - Small fixed limits (8 pt minimum, one page, one ZIP) that kept the exports honest.
 - **What went wrong or cost time.**
   - Shared resources between parallel agents: a preview server killed by a process-name kill, a port taken by another agent's server, a shared scratch file overwritten. Fix: per-agent ports and "never kill by name" from the start.
-  - Personal data: a personal street reached test fixtures and the first parking example sat near a personal address. Both were caught and removed before anything was published. A pre-commit privacy hook would have caught them on day one, and it now exists.
+  - Synthetic-data slips in early test files were caught and removed before anything was published. A pre-commit privacy hook would have caught them on day one, and it now exists.
   - A bulk set of cached OSM tiles was committed for test mode before anyone checked it against OSM's tile policy. It was removed ([ADR 0003](docs/decisions/0003-no-bulk-tiles.md)).
   - Load-sensitive end-to-end tests (label layout under SwiftShader, timing) flaked when many agents ran suites at once.
 - **What I'd do differently.**
@@ -572,19 +596,28 @@ This was built in one long Claude Code session, steered by Zoheb, from 2026-10-0
   - Write the decision records as the decisions are made.
   - Keep one machine-wide test queue instead of overlapping full suites.
 
+## License
+
+The code is released under the MIT License: see [LICENSE](LICENSE). The InsurifyAI name and logo are not covered by it (see Trademarks below). Map data stays under the ODbL, as described in "Data sources and attribution".
+
 ## Trademarks
 
 InsurifyAI, the InsurifyAI name and the InsurifyAI logo are trademarks of InsurifyAI. They are not covered by this repository's code license, and you may not use them without permission. The logo files in `design/brand/` are included only so this tool can show the official mark.
 
 ## Status
 
-Deployed to https://crash-scene-3d.netlify.app from this repository's `main` (first deploy 2026-10-10, live fixes and round A the same night). Every deploy is checked against the live site on Chromium and WebKit at 1440 and 390:
+Live at https://crash-scene-3d.netlify.app, deployed from this repository's `main` (first deploy 2026-10-10, live fixes and round A the same night). Releases since then:
+
+- **2026-10-12:** road features and optional questions, the first-visit welcome, directions taken from the roads and paths along the lanes, and neutral defaults (nothing prefilled).
+- **2026-10-14:** the PDF diagram shows the whole crash, with the key to the road symbols under its caption; address suggestions wait up to 7 s and say when they are slow; catalog 3D models crumple where they were hit; on phones the catalog-model note sits under the timeline and can be closed; the Save buttons come right after the file choices; the road condition is no longer prefilled; shared links get a description and a preview picture.
+
+Each release is smoke-tested on a draft deploy (`npm run smoke`) before it goes live, and checked against the live site on Chromium and WebKit at 1440 and 390:
 - Search near the claim finds the Nashua crossing and its streets through the proxy, with no request leaving the site's own origin.
 - The three examples draw.
 - Save delivers one ZIP whose PDF fingerprint equals the scene file's SHA-256.
 - No CSP violations on any step.
 
-Locally, `./check.sh` passes: 2,133 unit and property tests, and 543 browser tests on Chromium and WebKit (WebKit runs the cross-browser subset; 58 opt-in tests skipped).
+Locally, `./check.sh` passes on the 2026-10-14 release: 2,198 unit and property tests, and 575 browser tests on Chromium and WebKit (WebKit runs the cross-browser subset; 64 opt-in tests skipped).
 
 ## Close-out
 
@@ -613,7 +646,7 @@ It is built as an illustration of what the claimant described, not as evidence o
 - **Reproducibility.** This part already exists: the physics is deterministic and versioned, and the same scene file redraws the same picture, so the result can be re-run independently.
 
 **How it plugs into InsurifyAI**
-- **Claim in, files out.** The app already has the claim header (claim number, vehicle) and a "Close and go back to the claim" control. The claim is a made-up default for now, so passing the real claim in is the first integration step.
+- **Claim in, files out.** The app already has the claim header (claim number, vehicle) and a "Close and go back to the claim" control. The claim number is optional today (typed on the Location step or passed as `?claim=`), so passing the real claim in from InsurifyAI is the first integration step.
 - **Same origin.** The page forbids being framed (`frame-ancestors 'none'`), so it should be served as part of the InsurifyAI app on its own origin rather than in an iframe. The `/api/*` proxy and its single `ProviderConfig` can move into InsurifyAI's backend as they are.
 - **Server-side checks.** `packages/core` is pure TypeScript with no DOM. InsurifyAI's server can re-run the simulation from a saved scene file and re-check the fingerprint before attaching the ZIP to a case as an exhibit.
 - **Brand.** The UI already uses the InsurifyAI app theme and the official logo.
