@@ -42,7 +42,12 @@ export default defineConfig(({ mode }) => ({
   worker: { format: "es" },
   // Same strict CSP as netlify.toml, so preview and e2e run under production rules.
   // (Dev mode needs Vite's inline HMR preamble, so CSP is enforced on preview/production only.)
-  preview: { headers: {
+  preview: {
+    // The demo recording (scripts/record-demo-full.mjs sets DEMO_MEDIA_PROXY=1) proxies /api to the live site
+    // so ?media=proxy / ?models=proxy fetch the real catalog photos and 3D models. Off by default, so a plain
+    // `npm run preview` and the e2e stay self-contained.
+    ...(process.env.DEMO_MEDIA_PROXY === "1" ? { proxy: { "/api": { target: "https://crash-scene-3d.netlify.app", changeOrigin: true, secure: true } } } : {}),
+    headers: {
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",

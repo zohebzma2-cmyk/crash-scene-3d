@@ -106,7 +106,10 @@ export function createServices(opts: CreateServicesOptions): Services {
   // production build, so the demo never depends on a live Overpass call. Everything else (vehicles, media,
   // geo) stays live, so the example still shows real catalog vehicles.
   const exampleMap = !fx && new URLSearchParams(search).has("example");
-  const mediaFetch = fx ? createFixtureMediaFetch(fixtureMediaMode(search)) : fetchFn;
+  // ?media=proxy (fixture builds only, like ?vehicles=proxy / ?models=proxy): fetch the real catalog photos
+  // and logos through /api instead of the synthetic fixture files, so a demo recording shows real vehicles.
+  const mediaProxy = fixturesAllowed() && new URLSearchParams(search).get("media") === "proxy";
+  const mediaFetch = fx && !mediaProxy ? createFixtureMediaFetch(fixtureMediaMode(search)) : fetchFn;
   const media = createMediaService(mediaFetch);
   return {
     mode: fx ? "fixtures" : "live",

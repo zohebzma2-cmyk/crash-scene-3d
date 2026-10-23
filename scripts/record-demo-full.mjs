@@ -45,7 +45,7 @@ function squeeze(src, out) {
   execFileSync(FFMPEG, ["-y", "-i", src, "-vf", "split[a][b];[a]palettegen=max_colors=256:stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a", out], { stdio: "ignore" });
 }
 
-const server = spawn("npx", ["--no-install", "vite", "preview", "--port", String(PORT), "--strictPort"], { cwd: join(root, "apps/web"), stdio: "ignore" });
+const server = spawn("npx", ["--no-install", "vite", "preview", "--port", String(PORT), "--strictPort"], { cwd: join(root, "apps/web"), stdio: "ignore", env: { ...process.env, DEMO_MEDIA_PROXY: "1" } });
 const work = mkdtempSync(join(tmpdir(), "csd-demo-full-"));
 let browser;
 try {
@@ -116,7 +116,7 @@ try {
   };
 
   // Fresh start on step 1 (the first frames are trimmed away below).
-  await page.goto(`${BASE}/?media=on${STILLS ? "" : "&welcome=1"}#location`);
+  await page.goto(`${BASE}/?media=proxy&models=proxy${STILLS ? "" : "&welcome=1"}#location`);
   await page.evaluate(() => { try { sessionStorage.clear(); } catch { /* ignore */ } });
   await page.reload();
   await page.locator("main h1").waitFor();
@@ -165,7 +165,7 @@ try {
     await type(card.getByLabel("Make"), make);
     await type(card.getByLabel("Model"), model);
     await card.locator(".lookup").filter({ hasText: /from NHTSA vPIC/ }).waitFor({ timeout: 15_000 }).catch(() => {});
-    await pause(1200);   // the photo and badge load
+    await pause(STILLS ? 1200 : 4000);   // the photo and badge load (the real catalog photo can be a cold fetch)
     await click(card.locator(`[data-paint-picker]`).getByRole("radio", { name: colour, exact: true }));
     await pause(500);
     // Nothing is prefilled: the type only if vPIC didn't fill it, what it was doing, then direction, speed and where it was hit.
@@ -211,6 +211,13 @@ try {
     if (!phone) await page.mouse.move(ib.x + ib.width / 2, ib.y + ib.height / 2, { steps: 20 });
     await page.mouse.click(ib.x + ib.width / 2, ib.y + ib.height / 2);
     await pause(1800);
+  }
+  // Show the crash from every camera (Top is current): Wide, then both driver views, then back to Top.
+  if (!STILLS) {
+    for (const name of ["Wide", "Driver A", "Driver B", "Top"]) {
+      const v = page.getByRole("radio", { name, exact: true }).or(page.getByRole("button", { name, exact: true })).first();
+      if (await v.isVisible().catch(() => false)) { await click(v); await pause(1700); }
+    }
   }
   await page.evaluate(() => scrollTo(0, 0));
   await shot("review");
@@ -272,7 +279,7 @@ try {
     const ss = ["-ss", tStart.toFixed(2)];
     const src = ["-i", join(work, "demo.webm")];
     const mp4 = join(MEDIA, "demo-flow.mp4");
-    execFileSync(FFMPEG, ["-y", ...ss, ...src, "-vf", `setpts=PTS/${SPEED},scale=1280:-2`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "30", "-preset", "slow", "-movflags", "+faststart", "-an", mp4], { stdio: "ignore" });
+    execFileSync(FFMPEG, ["-y", ...ss, ...src, "-vf", `setpts=PTS/${SPEED},scale=1280:-2`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-preset", "slow", "-movflags", "+faststart", "-an", mp4], { stdio: "ignore" });
     const gif = join(MEDIA, "demo-flow.gif");
     const palette = join(work, "palette.png");
     execFileSync(FFMPEG, ["-y", ...ss, ...src, "-vf", `${vf},palettegen=max_colors=${GIF_COLORS}:stats_mode=diff`, palette], { stdio: "ignore" });
