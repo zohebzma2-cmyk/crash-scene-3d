@@ -8,6 +8,8 @@ A browser tool that turns a driver's account of a car crash into a 3D illustrati
 
 Recorded from a local fixtures build (`VITE_FIXTURES=1`) with synthetic data: a made-up claim on real public roads in Nashua, NH, with synthetic car photos and 3D models. Illustration only. [MP4 version](docs/media/demo-flow.mp4)
 
+A second clip plays the T-bone example back from every camera (Top, Wide, and both driver views) with the live catalog vehicle models: [all-angles MP4](docs/media/crash-3d-all-angles.mp4). The example scenes now ship their cached road data, so `?example=` opens instantly from cache and never waits on a live map request.
+
 crash-scene-3d was built as a browser tool for InsurifyAI. It is an illustration of what the claimant described; it does not find out what happened. Every screen and every file carries one of these two disclaimers:
 
 > **Short disclaimer (screens, PNGs):** "Illustration only. This shows what you described. It is not an expert reconstruction and does not decide fault."
