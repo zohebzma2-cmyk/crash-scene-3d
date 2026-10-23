@@ -102,13 +102,17 @@ export function createServices(opts: CreateServicesOptions): Services {
     ? () => new Worker(new URL("../fixer/fixer.worker.ts", import.meta.url), { type: "module", name: "fixer" }) as unknown as WorkerLike
     : null;
   const search = opts.search ?? (typeof window !== "undefined" ? window.location.search : "");
+  // An example scene (/?example=<name>) serves its roads and terrain from the bundled cache even in a live
+  // production build, so the demo never depends on a live Overpass call. Everything else (vehicles, media,
+  // geo) stays live, so the example still shows real catalog vehicles.
+  const exampleMap = !fx && new URLSearchParams(search).has("example");
   const mediaFetch = fx ? createFixtureMediaFetch(fixtureMediaMode(search)) : fetchFn;
   const media = createMediaService(mediaFetch);
   return {
     mode: fx ? "fixtures" : "live",
     media,
     geo: fx && !opts.geoFromProxy ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
-    roads: shareRoadLoads(fx ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps)),
+    roads: shareRoadLoads(fx || exampleMap ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps)),
     vehicles: fx && !opts.vehiclesFromProxy ? createFixtureVehicles() : createVehiclesService(fetchFn),
     physics,
     fixer: createFixer({ makeWorker, run: (scene, roads, o) => physics.suggestFixes(scene, roads, o) }),

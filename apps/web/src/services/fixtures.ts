@@ -28,10 +28,13 @@ export function fixturesRequested(search: string, env: FixtureEnv = import.meta.
   return p.get("fixtures") === "1" || env.VITE_FIXTURES === "1" || p.has("example");
 }
 
-// The map data is only bundled where fixtures are allowed; elsewhere these are empty and the code is dropped.
 const FIXTURE_BUILD = import.meta.env.DEV || import.meta.env.VITE_FIXTURES === "1";
-const osmModules = (FIXTURE_BUILD ? import.meta.glob("../../../../examples/*/osm.json", { import: "default" }) : {}) as Record<string, () => Promise<unknown>>;
-const terrainModules = (FIXTURE_BUILD ? import.meta.glob("../../../../examples/*/terrain/*.png", { query: "?url", import: "default" }) : {}) as Record<string, () => Promise<string>>;
+// The example scenes' cached map data (osm.json, terrain) ships in every build, like their scene.json, so
+// /?example=<name> renders from cache and never waits on a live Overpass call (slow and often unavailable).
+// Each file is a lazily-loaded chunk, fetched only when an example is opened. The synthetic e2e road sites
+// below stay fixture-build-only.
+const osmModules = import.meta.glob("../../../../examples/*/osm.json", { import: "default" }) as Record<string, () => Promise<unknown>>;
+const terrainModules = import.meta.glob("../../../../examples/*/terrain/*.png", { query: "?url", import: "default" }) as Record<string, () => Promise<string>>;
 
 export interface FixtureOsm {
   readonly fetchedAt?: string;
