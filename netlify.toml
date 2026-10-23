@@ -44,13 +44,14 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self' https://zohebalvi.com https://www.zohebalvi.com"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "accelerometer=(), autoplay=(), bluetooth=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()"
     Cross-Origin-Opener-Policy = "same-origin"
-    # frame-ancestors 'none' (above) is the modern control; X-Frame-Options is for old browsers.
-    X-Frame-Options = "DENY"
+    # Framing is allowed only for the owner's portfolio (frame-ancestors above, which embeds the live tool
+    # on zohebalvi.com). X-Frame-Options can't express a cross-origin allowlist, so it is omitted and
+    # frame-ancestors is the control; the tool has no sensitive actions, so the clickjacking surface is nil.
     # Two years. No preload, so a mistake can still be undone.
     Strict-Transport-Security = "max-age=63072000; includeSubDomains"
 
