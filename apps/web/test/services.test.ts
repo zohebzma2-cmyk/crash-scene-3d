@@ -103,7 +103,7 @@ describe("search etiquette", () => {
 });
 
 describe("timeouts", () => {
-  it("waits 9.5 s for every /api call, so the proxy's own 8 s answer is never cut off", async () => {
+  it("waits 10 s for every /api call, so the proxy's own 9.3 s answer is never cut off", async () => {
     vi.useFakeTimers();
     try {
       let aborted = false;
@@ -117,7 +117,7 @@ describe("timeouts", () => {
       expect(aborted).toBe(false);
       const never = (_url: string, init?: RequestInit) => new Promise<Response>((_r, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
       const q = getJson(never, "/api/vehicles/makes").catch((e: unknown) => e);
-      await vi.advanceTimersByTimeAsync(9499);
+      await vi.advanceTimersByTimeAsync(9999);
       let settled = false;
       void q.then(() => { settled = true; });
       await vi.advanceTimersByTimeAsync(0);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipPolyline, overpassAroundQuery, overpassBboxQuery, parseOverpass } from "../src";
+import { clipPolyline, overpassAroundQuery, overpassBboxLiveQuery, overpassBboxQuery, overpassBboxRoadsQuery, parseOverpass } from "../src";
 import { loadExample } from "./helpers";
 
 const FRAME = { origin: { lat: 42.7, lon: -71.4 } };
@@ -39,6 +39,27 @@ describe("overpassAroundQuery", () => {
   });
   it("rounds noisy coordinates to 7 decimals", () => {
     expect(overpassAroundQuery({ lat: 42.762732312345, lon: -71.46613241234 }, 250.4)).toContain("around:250,42.7627323,-71.4661324");
+  });
+});
+
+describe("live-route queries (short timeout, roads-first fallback)", () => {
+  const center = { lat: 42.7627323, lon: -71.4661324 };
+  it("the primary live query is the bbox query with the short 25 s timeout and buildings", () => {
+    const live = overpassBboxLiveQuery(center, 250);
+    expect(live).toMatch(/^\[out:json\]\[timeout:25\];\(/);
+    expect(live).toContain('["building"]');
+    expect(live).toContain('["amenity"="parking"]');
+    expect(live).toContain("traffic_signals|stop|give_way|crossing|street_lamp");
+    // The same square as the examples' query, only a shorter server timeout (so the examples' cached query is unchanged).
+    expect(live).toBe(overpassBboxQuery(center, 250).replace("[timeout:60]", "[timeout:25]"));
+  });
+  it("the roads-only fallback drops buildings but keeps roads, parking and controls", () => {
+    const roads = overpassBboxRoadsQuery(center, 250);
+    expect(roads).toMatch(/^\[out:json\]\[timeout:25\];\(/);
+    expect(roads).not.toContain('["building"]');
+    expect(roads).toContain('["highway"~');
+    expect(roads).toContain('["amenity"="parking"]');
+    expect(roads).toContain('["footway"="crossing"]');
   });
 });
 

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 4,
+  "claim": {
+    "number": "CLM-EX-2102",
+    "vehicle": {
+      "year": 2021,
+      "make": "Honda",
+      "model": "Civic"
+    }
+  },
+  "location": {
+    "lat": 41.8820455,
+    "lon": -87.6278089,
+    "label": "State Street & Madison Street, Chicago, Illinois",
+    "nearLabel": "",
+    "source": "example",
+    "place": "intersection"
+  },
+  "occurred": {
+    "date": "2026-08-27",
+    "time": "08:15"
+  },
+  "road": {
+    "condition": "wet"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2021,
+      "make": "Honda",
+      "model": "Civic",
+      "type": "car",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 351,
+        "roadId": null,
+        "roadName": "State Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 25
+      },
+      "braking": true,
+      "zone": "right"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2018,
+      "make": "Chevrolet",
+      "model": "Tahoe",
+      "type": "suv",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 263,
+        "roadId": null,
+        "roadName": "Madison Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 22
+      },
+      "braking": false,
+      "zone": "front"
+    }
+  ]
+}

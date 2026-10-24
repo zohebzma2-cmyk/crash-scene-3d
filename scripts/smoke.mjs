@@ -39,7 +39,11 @@ export const ANSWERS = Object.freeze({
   A: { type: "Pickup", action: "Straight", mph: 25, zone: "Hit on the right side" },
   B: { type: "Car", action: "Straight", mph: 30, zone: "Hit on the front" },
 });
-export const EXAMPLES = ["t-bone-intersection", "highway-rear-end", "parking-lot-backing"];
+export const EXAMPLES = [
+  "t-bone-intersection", "highway-rear-end", "parking-lot-backing",
+  // Curated famous intersections, pre-baked so they never wait on a live Overpass call.
+  "nyc-5th-42nd", "chicago-state-madison", "la-hollywood-highland", "sf-haight-ashbury",
+];
 export const ENGINES = Object.freeze({
   chromium: { label: "Chromium 1440", device: "Desktop Chrome", width: 1440, height: 900 },
   webkit: { label: "WebKit 390", device: "iPhone 15", width: 390, height: 844 },

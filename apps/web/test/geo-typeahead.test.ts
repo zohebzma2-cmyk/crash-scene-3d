@@ -84,10 +84,10 @@ describe("suggest (/api/geo/suggest)", () => {
     }
   });
 
-  it("each time limit sits inside the next: Photon 7 s < the proxy's request 8 s < the browser's 9.5 s", () => {
+  it("each time limit sits inside the next: Photon 7 s < the proxy's request 9.3 s < the browser's 10 s", () => {
     expect(SUGGEST_DEADLINE_MS).toBeLessThan(defaultProviderConfig().limits.timeoutMs);
     expect(defaultProviderConfig().limits.timeoutMs).toBeLessThan(API_TIMEOUT_MS);
-    expect([SUGGEST_DEADLINE_MS, defaultProviderConfig().limits.timeoutMs, API_TIMEOUT_MS]).toEqual([7000, 8000, 9500]);
+    expect([SUGGEST_DEADLINE_MS, defaultProviderConfig().limits.timeoutMs, API_TIMEOUT_MS]).toEqual([7000, 9300, 10000]);
   });
 
   it("does not cache a failure, and rejects with the busy error once the one retry is busy too", async () => {

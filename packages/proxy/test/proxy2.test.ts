@@ -281,13 +281,15 @@ describe("overall deadline", () => {
     expect(Date.now() - START).toBeLessThanOrEqual(8000);
   });
 
-  it("answers with a JSON timeout error by 8 s when everything hangs", async () => {
+  it("answers with a JSON timeout error by the deadline when everything hangs", async () => {
     const t = setup(hang);
     const res = await settle(t.get(path));
     expect(res.status).toBe(504);
     expect(res.headers.get("content-type")).toContain("application/json");
     expect(await res.json()).toMatchObject({ code: "timeout", message: TIMEOUT_MESSAGE });
-    expect(Date.now() - START).toBeLessThanOrEqual(8100);
+    // The primary (roads + buildings) query times out, then the roads-only retry runs with the time held back
+    // for it and also times out: the request still answers by its own deadline, never past it.
+    expect(Date.now() - START).toBeLessThanOrEqual(config.limits.timeoutMs + 200);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -296,7 +298,7 @@ describe("overall deadline", () => {
     const res = await settle(t.get(`${PROXY_ROUTES.crossing}?a=Main%20St&b=Amherst%20St&near=Nashua%20NH`));
     expect(res.status).toBe(200);
     expect(((await res.json()) as PlaceResult[])[0]!.kind).toBe("city"); // the plain-search answer
-    expect(Date.now() - START).toBeLessThan(8000);
+    expect(Date.now() - START).toBeLessThan(config.limits.timeoutMs);
     // The error fallback isn't cached.
     expect(t.setKeys.some((k) => k.startsWith("geo/crossing?"))).toBe(false);
   });

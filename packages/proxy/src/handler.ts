@@ -4,7 +4,7 @@ import {
   type CrossStreetsResult, type PlaceResult, type ProviderConfig, type ProxyCapabilities, type ProxyError, type ProxyTopic, type VehicleModelResult,
 } from "@csd/core";
 import {
-  findCrossings, findCrossStreets, matchCrossStreet, mergeSearchResults, overpassBboxQuery, overpassCrossingQuery,
+  findCrossings, findCrossStreets, matchCrossStreet, mergeSearchResults, overpassBboxLiveQuery, overpassBboxRoadsQuery, overpassCrossingQuery,
   overpassCrossStreetsQuery, type StreetSelector,
 } from "@csd/mapdata";
 import { NO_TILE_PNG } from "./fixture-tiles";
@@ -27,6 +27,12 @@ const json = (v: unknown) => ({ bytes: new TextEncoder().encode(JSON.stringify(v
 const CROSSING_RADII_M = [1500, 5000] as const;
 const MAX_CROSSINGS = 3;
 const FALLBACK_RESERVE_MS = 1500;
+/**
+ * The roads-around-a-pin query asks for buildings too, but in a dense city the building geometry is heavy and
+ * can time out. So the primary query gets all but this much of the request's deadline, and this much is held
+ * back to retry ROADS on their own if it times out: the scene is never left without its roads.
+ */
+const ROADS_FALLBACK_RESERVE_MS = 3500;
 /** Entries built from what people typed are kept at most this long, even as stale fallbacks. */
 const SEARCH_KEEP_S = 7 * 24 * 60 * 60;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -35,8 +41,8 @@ const isPng = (b: Uint8Array) => b.byteLength >= PNG_SIGNATURE.length && PNG_SIG
  * Type-ahead gives up on Photon after this long, and the app then says "Suggestions are slow right now. Press
  * Search to look it up." (the on-submit search; Nominatim is never asked as you type). The public Photon server
  * takes about 4.8 s for a query it hasn't cached (measured 2026-10-14), so 4 s failed every new street. It stays
- * under the request's own deadline (`limits.timeoutMs`, 8 s), which stays under the browser's (API_TIMEOUT_MS,
- * 9.5 s in apps/web/src/services/http.ts), so a slow Photon is always answered with a timeout the app can word.
+ * under the request's own deadline (`limits.timeoutMs`, 9.3 s), which stays under the browser's (API_TIMEOUT_MS,
+ * 10 s in apps/web/src/services/http.ts), so a slow Photon is always answered with a timeout the app can word.
  */
 export const SUGGEST_DEADLINE_MS = 7000;
 /** Photon is asked for more than we show, so merging pieces of one street still leaves enough. */
@@ -269,23 +275,42 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     // The pin is rounded to 5 decimals (about 1 m): nearby pins share one cache entry, and the entry
     // (stored in the dated geo store, so kept at most 7 days) only ever records the rounded spot.
     const center = { lat: Number(p.data.lat.toFixed(5)), lon: Number(p.data.lon.toFixed(5)) };
-    const query = overpassBboxQuery(center, p.data.radius);
-    const entry = await fetchUpstream(ctx, {
-      cacheKey: keyOf("geo/overpass", { lat: center.lat.toFixed(5), lon: center.lon.toFixed(5), radius: p.data.radius, features: 1 }),
-      ttlS: config.cacheTtlS.overpass,
-      calls: overpassCalls(query),
-      // Same shape as examples/*/osm.json, so the app treats live and cached data alike.
-      process: (bytes, _ct, call, nowMs) => {
-        const body = checkOverpass(bytes);
-        // Our fields go after the body so nothing in the upstream JSON can overwrite them.
-        return json({
-          ...body,
-          fetchedAt: new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, "Z"),
-          source: call.url, center, radiusM: p.data.radius, query,
-        });
-      },
-    });
-    return dataResponse(entry, config.cacheTtlS.overpass);
+    const radiusM = p.data.radius;
+    const latS = center.lat.toFixed(5);
+    const lonS = center.lon.toFixed(5);
+    // Same shape as examples/*/osm.json, so the app treats live and cached data alike. Our fields go after
+    // the upstream body so nothing in its JSON can overwrite them.
+    const shape = (query: string) => (bytes: Uint8Array, _ct: string, call: UpstreamCall, nowMs: number) => {
+      const body = checkOverpass(bytes);
+      return json({ ...body, fetchedAt: new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, "Z"), source: call.url, center, radiusM, query });
+    };
+    // Primary: roads, buildings, parking and controls in one query (buildings are a nice backdrop). It carries
+    // a short Overpass timeout so a stuck mirror fails over fast, and is given all but ROADS_FALLBACK_RESERVE_MS
+    // of the request's deadline, so a timeout still leaves time to fetch roads on their own below.
+    const liveQuery = overpassBboxLiveQuery(center, radiusM);
+    try {
+      const reserved = { ...ctx, deadline: Math.max(ctx.deps.now(), ctx.deadline - ROADS_FALLBACK_RESERVE_MS) };
+      const entry = await fetchUpstream(reserved, {
+        cacheKey: keyOf("geo/overpass", { lat: latS, lon: lonS, radius: radiusM, features: 1 }),
+        ttlS: config.cacheTtlS.overpass,
+        calls: overpassCalls(liveQuery),
+        process: shape(liveQuery),
+      });
+      return dataResponse(entry, config.cacheTtlS.overpass);
+    } catch (e) {
+      // Only a timeout with nothing cached falls back to roads-only: the heavy building geometry is the usual
+      // cause, and ROADS are what the scene needs. A 429 (the caller's own limit) or a 502 (every mirror down)
+      // wouldn't be helped by asking again without the buildings, so those propagate unchanged.
+      if (!(e instanceof ProxyFailure) || e.status !== 504) throw e;
+      const roadsQuery = overpassBboxRoadsQuery(center, radiusM);
+      const entry = await fetchUpstream(ctx, {
+        cacheKey: keyOf("geo/overpass", { lat: latS, lon: lonS, radius: radiusM, features: 1, roads: 1 }),
+        ttlS: config.cacheTtlS.overpass,
+        calls: overpassCalls(roadsQuery),
+        process: shape(roadsQuery),
+      });
+      return dataResponse(entry, config.cacheTtlS.overpass);
+    }
   }
 
   async function crossing(ctx: Ctx, url: URL): Promise<Response> {

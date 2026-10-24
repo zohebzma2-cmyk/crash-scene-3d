@@ -25,8 +25,10 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     // Order matters. Checked live on 2026-10-10: the main server and its two official backends often
     // answered a street-name query with 504 "dispatcher timeout" after many seconds (2 of 9 probes
     // succeeded), while overpass.openstreetmap.fr (OSM France) answered every probe, usually in
-    // under a second; the two community mirrors at the end answered HTTP 500 to everything that day
-    // but may recover. A mirror that fails is tried last for two minutes (see byHealth).
+    // under a second; the two community mirrors answered HTTP 500 to everything that day but may
+    // recover. A mirror that fails is tried last for two minutes (see byHealth). More mirrors = more
+    // chances one is healthy on a fresh/uncached location; the extra ones (OSM Switzerland and OSM
+    // Japan) are reputable public instances tried only after the faster ones above.
     overpass: {
       urls: [
         "https://overpass.openstreetmap.fr/api/interpreter",
@@ -34,6 +36,8 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
         "https://lz4.overpass-api.de/api/interpreter",
         "https://overpass.private.coffee/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.osm.ch/api/interpreter",
+        "https://overpass.osm.jp/api/interpreter",
       ],
       attribution: "© OpenStreetMap contributors (ODbL)",
     },
@@ -44,8 +48,12 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
       attribution: "Elevation: Terrarium tiles, AWS Open Data Terrain Tiles (Mapzen/Tilezen; USGS 3DEP, SRTM)",
     },
     vehicles: { url: "https://vpic.nhtsa.dot.gov/api/vehicles", attribution: "Vehicle data: NHTSA vPIC" },
-    // Nominatim and Overpass: 1 request a second, globally and per user.
-    limits: { minIntervalMs: 1000, perUserMinIntervalMs: 1000, timeoutMs: 8000 },
+    // Nominatim and Overpass: 1 request a second, globally and per user. The per-request deadline is
+    // 9.3 s: as much of Netlify's ~10 s synchronous-function cap as we can safely use (leaving room for
+    // the response to be sent), so a slow-but-not-dead Overpass mirror has longer to answer before we
+    // give up. It stays under the browser's own 10 s (API_TIMEOUT_MS, apps/web/src/services/http.ts), so
+    // the browser always receives the proxy's own JSON answer (a 504 at worst), never a bare abort.
+    limits: { minIntervalMs: 1000, perUserMinIntervalMs: 1000, timeoutMs: 9300 },
     // Map and elevation tiles use token buckets, not 1 req/s (approved by Zoheb, 2026-10-09): a
     // 1440 px map view needs ~35 tiles at once and Leaflet doesn't retry a refused tile. Tiles and
     // terrain each get their own global bucket. Tiles are cached at least `cacheTtlS.tile`.

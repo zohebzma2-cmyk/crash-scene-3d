@@ -8,7 +8,16 @@
 |---|---|---|
 | The app | `apps/web` → `apps/web/dist` (`npm run build`) | Static files. Hashed files in `/assets/*`. |
 | The proxy | `netlify/functions/api.mts` → route `/api/*` | One function. It claims the route itself (`config.path`), so `netlify.toml` has no redirect rule. |
+| Keep-warm | `netlify/functions/warm.mts` → scheduled `*/5 * * * *` | A scheduled function that pings the site's own `/` and `/api/vehicles/makes` every 5 minutes so the app and the proxy don't go cold between visitors. It calls no upstream provider (makes is cache-served), writes nothing, and swallows every error. Scheduled Functions are available on all Netlify plans; nothing to enable. Check it on the first deploy: Netlify → Functions shows `warm` with a schedule, and its log shows a run every 5 minutes. |
 | Headers | `netlify.toml` | CSP, HSTS and the rest on every path. See below. |
+
+## Reliability of the road geometry
+
+The one provider that can be slow on a fresh (uncached) location is Overpass. Three things keep the tool usable:
+
+- **Curated, pre-baked locations.** `examples/<slug>/` ships baked OSM road data + terrain for famous public intersections (NYC 5th & 42nd, Chicago State & Madison, LA Hollywood & Highland, SF Haight & Ashbury) as well as the three NH scenario examples. `/?example=<slug>` renders entirely from this bundled data and never calls Overpass. Re-capture with `node scripts/fetch-curated.mjs` (run by hand, with network).
+- **Roads-first live query.** The live `/api/geo/overpass` route asks for roads + buildings in one query with a short 25 s Overpass timeout; if that times out (usually a dense city's heavy building geometry), it retries a roads-only query so the scene still gets its roads. The per-request deadline is 9.3 s (`packages/proxy/src/config.ts`, under Netlify's ~10 s cap), across 7 mirrors.
+- **Graceful fallback.** If a live fetch still fails and the pin sits on a bundled example, the app serves that baked data; otherwise it shows the map tiles and the scene with an honest "roads couldn't load" notice and a Retry, never a broken/empty scene.
 
 ## Node version
 

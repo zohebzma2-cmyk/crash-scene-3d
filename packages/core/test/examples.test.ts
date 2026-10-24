@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseScene } from "../src";
 
-const EXAMPLES = ["t-bone-intersection", "highway-rear-end", "parking-lot-backing"];
+const EXAMPLES = [
+  "t-bone-intersection", "highway-rear-end", "parking-lot-backing",
+  // Curated, famous public intersections pre-baked so a recruiter never waits on a live Overpass call.
+  "nyc-5th-42nd", "chicago-state-madison", "la-hollywood-highland", "sf-haight-ashbury",
+];
 
 describe("example scenes", () => {
   for (const name of EXAMPLES) {

@@ -18,10 +18,11 @@ import {
 } from "./fakes";
 import { withFallback } from "./fallbacks";
 import { createExamplesService } from "./examples";
-import { createFixtureGeo, createFixtureRoads, createFixtureVehicles, fixturesAllowed, fixturesRequested } from "./fixtures";
+import { createFixtureGeo, createFixtureRoads, createFixtureVehicles, fixturesAllowed, fixturesRequested, loadCuratedRoads } from "./fixtures";
 import { createGeoService } from "./geo";
 import { createPdfPreviewService } from "./pdfPreview";
-import { createRoadsService, shareRoadLoads } from "./roads";
+import { createRoadsService, shareRoadLoads, ROAD_RADIUS_M, type RoadsDeps } from "./roads";
+import type { RoadsService } from "./types";
 import { loadTerrain } from "./terrain";
 import type { Services } from "./types";
 import { createFixer, type WorkerLike } from "../fixer/client";
@@ -77,6 +78,26 @@ export function modelsFromProxyRequested(search: string): boolean {
   return fixturesAllowed() && new URLSearchParams(search).get("models") === "proxy";
 }
 
+/**
+ * Live roads, but if a live Overpass fetch fails and the pin sits right on a bundled example location (a famous
+ * curated intersection, or an NH example), serve that example's baked roads instead of an empty scene. Nowhere
+ * bundled nearby: the live failure is re-thrown, so the app shows its honest "roads couldn't load" notice over
+ * the map tiles and the recreation still plays (the person can pick directions by hand).
+ */
+function withCuratedFallback(live: RoadsService, deps: RoadsDeps): RoadsService {
+  return {
+    async load(center, radiusM = ROAD_RADIUS_M, onProgress) {
+      try {
+        return await live.load(center, radiusM, onProgress);
+      } catch (e) {
+        const curated = await loadCuratedRoads(center, radiusM, deps, onProgress).catch(() => null);
+        if (curated) return curated;
+        throw e;
+      }
+    },
+  };
+}
+
 export function createServices(opts: CreateServicesOptions): Services {
   // Fixtures exist only in a dev server or a VITE_FIXTURES=1 build, whatever the caller asks for.
   const fx = opts.fixtures && fixturesAllowed();
@@ -115,7 +136,7 @@ export function createServices(opts: CreateServicesOptions): Services {
     mode: fx ? "fixtures" : "live",
     media,
     geo: fx && !opts.geoFromProxy ? createFixtureGeo(split, roadsDeps) : createGeoService(fetchFn, { splitCrossing: split, mergeResults: merge }),
-    roads: shareRoadLoads(fx || exampleMap ? createFixtureRoads(roadsDeps) : createRoadsService(fetchFn, roadsDeps)),
+    roads: shareRoadLoads(fx || exampleMap ? createFixtureRoads(roadsDeps) : withCuratedFallback(createRoadsService(fetchFn, roadsDeps), roadsDeps)),
     vehicles: fx && !opts.vehiclesFromProxy ? createFixtureVehicles() : createVehiclesService(fetchFn),
     physics,
     fixer: createFixer({ makeWorker, run: (scene, roads, o) => physics.suggestFixes(scene, roads, o) }),

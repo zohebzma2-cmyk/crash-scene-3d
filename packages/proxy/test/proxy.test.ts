@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BUSY_MESSAGE, BUSY_MESSAGES, PROXY_ROUTES, TIMEOUT_MESSAGES, UPSTREAM_MESSAGES, type PlaceResult, type ProxyError, type VehicleModelResult } from "@csd/core";
-import { overpassBboxQuery } from "@csd/mapdata";
+import { overpassBboxLiveQuery, overpassBboxRoadsQuery } from "@csd/mapdata";
 import { MIRROR_HOSTS, MIRROR_URLS, START, config, hang, jsonResponse, nominatimRows, settle, setup, type Call } from "./helpers";
 
 beforeEach(() => { vi.useFakeTimers({ now: START }); });
@@ -203,9 +203,10 @@ describe("overpass", () => {
     expect(call.method).toBe("POST");
     expect(call.url).toBe(MIRROR_URLS[0]);
     const data = new URLSearchParams(call.body).get("data")!;
-    expect(data).toBe(overpassBboxQuery({ lat: 42.76273, lon: -71.46613 }, 250)); // the pin is rounded to 5 decimals
+    expect(data).toBe(overpassBboxLiveQuery({ lat: 42.76273, lon: -71.46613 }, 250)); // the pin is rounded to 5 decimals
     expect(data).not.toContain("around"); // a square, so the whole radiusM square is fetched
-    expect(data).toMatch(/^\[out:json\]\[timeout:60\];\(way\([\d.,-]+\)\["highway"~/);
+    expect(data).toContain('["building"]'); // the primary query asks for buildings too (best-effort backdrop)
+    expect(data).toMatch(/^\[out:json\]\[timeout:25\];\(way\([\d.,-]+\)\["highway"~/); // short timeout so a stuck mirror fails over fast
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({ source: MIRROR_URLS[0], radiusM: 250, center: { lat: 42.76273, lon: -71.46613 }, query: data });
     expect(body.fetchedAt).toBe("2026-10-09T12:00:00Z");
@@ -230,6 +231,21 @@ describe("overpass", () => {
     const res = await settle(t.get(path));
     expect(res.status).toBe(200);
     expect(t.calls).toHaveLength(2);
+  });
+
+  it("drops buildings and still returns roads when the building-heavy query times out everywhere", async () => {
+    // The primary query asks for buildings; make every mirror hang on it (a dense city's building geometry).
+    // The roads-only retry (no buildings) is answered, so the scene still gets its roads, not a hard 504.
+    const bodyData = (c: Call) => new URLSearchParams(c.body).get("data") ?? "";
+    const t = setup((c, s) => (bodyData(c).includes('["building"]') ? hang(c, s) : jsonResponse(OVERPASS_OK)));
+    const res = await settle(t.get(path));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.query).toBe(overpassBboxRoadsQuery({ lat: 42.76273, lon: -71.46613 }, 250));
+    expect(body.query as string).not.toContain('["building"]');
+    expect(body.elements).toHaveLength(1);
+    // The call that answered is the roads-only one (every building-query attempt hung first).
+    expect(bodyData(t.calls.at(-1)!)).not.toContain('["building"]');
   });
 
   it("reports an upstream error when every instance is down and nothing is cached", async () => {

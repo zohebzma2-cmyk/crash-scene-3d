@@ -42,9 +42,12 @@ describe("fixtures are gated", () => {
 });
 
 describe("examples", () => {
-  it("lists the three example scenes and loads one scene file on demand", async () => {
+  it("lists every example scene and loads one scene file on demand", async () => {
     const svc = createExamplesService();
-    expect(svc.names()).toEqual(["highway-rear-end", "parking-lot-backing", "t-bone-intersection"]);
+    expect(svc.names()).toEqual([
+      "chicago-state-madison", "highway-rear-end", "la-hollywood-highland", "nyc-5th-42nd",
+      "parking-lot-backing", "sf-haight-ashbury", "t-bone-intersection",
+    ]);
     const scene = await svc.load("t-bone-intersection");
     expect(scene?.claim.number).toBe("CLM-EX-1001");
     expect(await svc.load("nope")).toBeNull();

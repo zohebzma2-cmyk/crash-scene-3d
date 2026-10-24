@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 4,
+  "claim": {
+    "number": "CLM-EX-2101",
+    "vehicle": {
+      "year": 2020,
+      "make": "Toyota",
+      "model": "Camry"
+    }
+  },
+  "location": {
+    "lat": 40.7534805,
+    "lon": -73.9808792,
+    "label": "5th Avenue & 42nd Street, Manhattan, New York",
+    "nearLabel": "",
+    "source": "example",
+    "place": "intersection"
+  },
+  "occurred": {
+    "date": "2026-09-15",
+    "time": "16:40"
+  },
+  "road": {
+    "condition": "dry"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2020,
+      "make": "Toyota",
+      "model": "Camry",
+      "type": "car",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 210,
+        "roadId": null,
+        "roadName": "5th Avenue",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 20
+      },
+      "braking": true,
+      "zone": "right"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2019,
+      "make": "Ford",
+      "model": "Transit",
+      "type": "van",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 117,
+        "roadId": null,
+        "roadName": "42nd Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 18
+      },
+      "braking": false,
+      "zone": "front"
+    }
+  ]
+}

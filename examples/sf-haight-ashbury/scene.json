@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 4,
+  "claim": {
+    "number": "CLM-EX-2104",
+    "vehicle": {
+      "year": 2019,
+      "make": "Subaru",
+      "model": "Outback"
+    }
+  },
+  "location": {
+    "lat": 37.7700148,
+    "lon": -122.4469519,
+    "label": "Haight Street & Ashbury Street, San Francisco, California",
+    "nearLabel": "",
+    "source": "example",
+    "place": "intersection"
+  },
+  "occurred": {
+    "date": "2026-09-21",
+    "time": "11:50"
+  },
+  "road": {
+    "condition": "dry"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2019,
+      "make": "Subaru",
+      "model": "Outback",
+      "type": "suv",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 81,
+        "roadId": null,
+        "roadName": "Haight Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 22
+      },
+      "braking": true,
+      "zone": "right"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2020,
+      "make": "Toyota",
+      "model": "Tacoma",
+      "type": "pickup",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 353,
+        "roadId": null,
+        "roadName": "Ashbury Street",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 18
+      },
+      "braking": false,
+      "zone": "front"
+    }
+  ]
+}

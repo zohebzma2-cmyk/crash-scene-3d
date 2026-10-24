@@ -190,9 +190,9 @@ describe("/api/geo/suggest", () => {
     expect(t.setKeys).toEqual([]); // a timeout is not remembered
   });
 
-  it("gives Photon 7 s, inside the request's 8 s deadline (the browser waits 9.5 s, apps/web/src/services/http.ts)", () => {
+  it("gives Photon 7 s, inside the request's 9.3 s deadline (the browser waits 10 s, apps/web/src/services/http.ts)", () => {
     expect(SUGGEST_DEADLINE_MS).toBe(7000);
-    expect(config.limits.timeoutMs).toBe(8000);
+    expect(config.limits.timeoutMs).toBe(9300);
     expect(SUGGEST_DEADLINE_MS).toBeLessThan(config.limits.timeoutMs);
   });
 

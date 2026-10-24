@@ -4,8 +4,12 @@ import { ServiceError, type ServiceErrorCode } from "./types";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** Every /api call gives up after this. The proxy always answers (with a JSON ProxyError at worst) by about 8 s. */
-export const API_TIMEOUT_MS = 9500;
+/**
+ * Every /api call gives up after this. The proxy's own per-request deadline is 9.3 s (config.ts limits.timeoutMs),
+ * so it always answers (with a JSON ProxyError at worst) by then; the browser waits a little longer so it receives
+ * that answer — a worded "roads couldn't load" notice — rather than aborting first into a bare network error.
+ */
+export const API_TIMEOUT_MS = 10000;
 
 export const NETWORK_MESSAGE = "We couldn't reach the map service. Check your connection and try again.";
 export const GENERIC_MESSAGE = "Something went wrong with the map service. Please try again in a moment.";

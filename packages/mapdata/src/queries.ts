@@ -32,18 +32,49 @@ export function overpassAroundQuery(center: LatLon, radiusM: number): string {
   return `[out:json][timeout:60];(way(${around})["highway"~"^(${hw})$"];way(${around})["building"];way(${around})["amenity"="parking"];${featureQuery(around)});out body geom;`;
 }
 
-/**
- * Overpass QL for drivable roads, buildings and parking in the square of half-size radiusM
- * around a point, so everything inside the scene square (parseOverpass clips to it) is fetched.
- */
-export function overpassBboxQuery(center: LatLon, radiusM: number): string {
+/** The bbox string for the square of half-size radiusM around a point (coordinates rounded to 7 decimals). */
+function bboxOf(center: LatLon, radiusM: number): string {
   const r = radius(radiusM);
   const m = metersPerDegree(center.lat);
   const dLat = r / m.lat;
   const dLon = r / m.lon;
-  const bbox = [center.lat - dLat, center.lon - dLon, center.lat + dLat, center.lon + dLon].map(coord).join(",");
+  return [center.lat - dLat, center.lon - dLon, center.lat + dLat, center.lon + dLon].map(coord).join(",");
+}
+
+/**
+ * Overpass QL for drivable roads, buildings and parking in the square of half-size radiusM
+ * around a point, so everything inside the scene square (parseOverpass clips to it) is fetched.
+ * The cached examples (examples/\*\/osm.json) carry this exact string in their `query` field, so its
+ * output must not change; the live proxy uses the shorter-timeout builders below instead.
+ */
+export function overpassBboxQuery(center: LatLon, radiusM: number): string {
+  const bbox = bboxOf(center, radiusM);
   const hw = DRIVABLE_HIGHWAYS.join("|");
   return `[out:json][timeout:60];(way(${bbox})["highway"~"^(${hw})$"];way(${bbox})["building"];way(${bbox})["amenity"="parking"];${featureQuery(bbox)});out body geom;`;
+}
+
+/**
+ * The live proxy's primary query: the same roads, buildings, parking and controls as overpassBboxQuery, but
+ * with a SHORT server timeout (25 s, not 60) so a stuck mirror gives up and we fail over sooner, well inside
+ * the request's own deadline. If this times out (usually because a dense city's building geometry is heavy),
+ * the proxy retries overpassBboxRoadsQuery so the scene still gets its roads (buildings are only backdrop).
+ */
+export function overpassBboxLiveQuery(center: LatLon, radiusM: number): string {
+  const bbox = bboxOf(center, radiusM);
+  const hw = DRIVABLE_HIGHWAYS.join("|");
+  return `[out:json][timeout:25];(way(${bbox})["highway"~"^(${hw})$"];way(${bbox})["building"];way(${bbox})["amenity"="parking"];${featureQuery(bbox)});out body geom;`;
+}
+
+/**
+ * Roads, parking and the on-road controls the scene draws — but NOT buildings — in the square, at the short
+ * 25 s timeout. The proxy falls back to this when overpassBboxLiveQuery times out: dropping the (often heavy)
+ * building geometry is what lets the roads come back even on a slow, dense location. Same output shape as
+ * examples/\*\/osm.json (minus building ways), so the app treats it like any other roads response.
+ */
+export function overpassBboxRoadsQuery(center: LatLon, radiusM: number): string {
+  const bbox = bboxOf(center, radiusM);
+  const hw = DRIVABLE_HIGHWAYS.join("|");
+  return `[out:json][timeout:25];(way(${bbox})["highway"~"^(${hw})$"];way(${bbox})["amenity"="parking"];${featureQuery(bbox)});out body geom;`;
 }
 
 function featureQuery(area: string): string {

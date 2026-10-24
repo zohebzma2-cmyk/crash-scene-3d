@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 4,
+  "claim": {
+    "number": "CLM-EX-2103",
+    "vehicle": {
+      "year": 2022,
+      "make": "Tesla",
+      "model": "Model 3"
+    }
+  },
+  "location": {
+    "lat": 34.1015452,
+    "lon": -118.3387179,
+    "label": "Hollywood Boulevard & Highland Avenue, Los Angeles, California",
+    "nearLabel": "",
+    "source": "example",
+    "place": "intersection"
+  },
+  "occurred": {
+    "date": "2026-09-02",
+    "time": "19:05"
+  },
+  "road": {
+    "condition": "dry"
+  },
+  "vehicles": [
+    {
+      "id": "A",
+      "role": "claimant",
+      "year": 2022,
+      "make": "Tesla",
+      "model": "Model 3",
+      "type": "car",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 90,
+        "roadId": null,
+        "roadName": "Hollywood Boulevard",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 30
+      },
+      "braking": true,
+      "zone": "left"
+    },
+    {
+      "id": "B",
+      "role": "other",
+      "year": 2017,
+      "make": "Jeep",
+      "model": "Wrangler",
+      "type": "suv",
+      "typeSource": "manual",
+      "action": "straight",
+      "travel": {
+        "bearingDeg": 180,
+        "roadId": null,
+        "roadName": "Highland Avenue",
+        "lane": null
+      },
+      "speed": {
+        "kind": "known",
+        "mph": 20
+      },
+      "braking": false,
+      "zone": "front"
+    }
+  ]
+}

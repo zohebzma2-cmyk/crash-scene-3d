@@ -7,7 +7,7 @@ import { mapConfig } from "../config/map";
 import { dist, nearestOnPolyline, polylineCrossings } from "../lib/geometry";
 import { fakeToLatLon, fakeToLocal } from "./fakes";
 import { exampleName, loadAllExamples } from "./examples";
-import type { GeoService, RoadsService, VehiclesService } from "./types";
+import type { GeoService, RoadsProgress, RoadsService, VehiclesService } from "./types";
 import { countingTiles, type RoadsDeps } from "./roads";
 import { townLookups } from "./towns";
 import { ServiceError } from "./types";
@@ -46,15 +46,46 @@ export interface FixtureOsm {
 let scenesPromise: Promise<Map<string, Scene>> | null = null;
 const allScenes = () => (scenesPromise ??= loadAllExamples());
 
-/** Nearest example to a point within about a kilometer, or null. */
-async function nearestExample(p: LatLon): Promise<string | null> {
+/** Nearest example to a point within `maxM` metres, or null. */
+async function nearestExample(p: LatLon, maxM = 1000): Promise<string | null> {
   const scenes = await allScenes();
   let best: { name: string; d: number } | null = null;
   for (const [name, s] of scenes) {
     const d = dist(fakeToLocal({ origin: s.location }, p), { x: 0, y: 0 });
-    if (d < 1000 && (!best || d < best.d)) best = { name, d };
+    if (d < maxM && (!best || d < best.d)) best = { name, d };
   }
   return best?.name ?? null;
+}
+
+/**
+ * How close a live pin must be to a bundled example's centre for the curated fallback (below) to stand in for a
+ * failed live Overpass fetch: well inside the 250 m scene square, so the baked roads actually cover the pin.
+ */
+const CURATED_FALLBACK_M = 150;
+
+/**
+ * Live-failover roads. When a LIVE Overpass fetch fails or times out, if the pin sits right on one of the bundled
+ * example locations (a famous curated intersection, or an NH example), this serves that example's baked roads and
+ * terrain so the recreation is whole instead of empty. Returns null when nothing bundled is close enough (or the
+ * baked window holds no roads), so the caller can surface the live failure honestly rather than show a bare scene.
+ */
+export async function loadCuratedRoads(center: LatLon, radiusM: number, deps: RoadsDeps, onProgress?: (p: RoadsProgress) => void): Promise<RoadNetwork | null> {
+  const name = await nearestExample(center, CURATED_FALLBACK_M);
+  const key = name ? Object.keys(osmModules).find((k) => exampleName(k) === name) : undefined;
+  const loader = key ? osmModules[key] : undefined;
+  if (!name || !loader) return null;
+  const frame = { origin: center };
+  const osm = (await loader()) as FixtureOsm;
+  const net = deps.parseOverpass(osm, frame, radiusM, osm.fetchedAt ?? new Date().toISOString());
+  if (net.ways.length === 0) return null;
+  const terrain = await deps.terrain(frame, radiusM, countingTiles(center, radiusM, async (z, x, y) => {
+    const tkey = Object.keys(terrainModules).find((k) => exampleName(k) === name && k.endsWith(`/${z}-${x}-${y}.png`));
+    const url = tkey ? await (terrainModules[tkey] as () => Promise<string>)() : null;
+    if (!url) throw new ServiceError("No cached terrain tile.", "not-found");
+    const res = await fetch(url);
+    return new Uint8Array(await res.arrayBuffer());
+  }, onProgress));
+  return terrain ? ({ ...net, terrain } satisfies RoadNetwork) : net;
 }
 
 /**
