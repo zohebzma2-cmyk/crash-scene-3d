@@ -279,7 +279,10 @@ export function createProxy(config: ProviderConfig, deps: ProxyDeps): (req: Requ
     const latS = center.lat.toFixed(5);
     const lonS = center.lon.toFixed(5);
     // Same shape as examples/*/osm.json, so the app treats live and cached data alike. Our fields go after
-    // the upstream body so nothing in its JSON can overwrite them.
+    // the upstream body so nothing in its JSON can overwrite them. An empty body is accepted on purpose: with
+    // only planet-wide mirrors configured (see config.ts), an empty result means a genuinely road-free area
+    // (open water) and is cached as a clean "no roads here" (breakit.test.ts "a crash in the ocean"). The guard
+    // against a mirror wrongly returning empty for a real location is the mirror LIST: no regional extracts.
     const shape = (query: string) => (bytes: Uint8Array, _ct: string, call: UpstreamCall, nowMs: number) => {
       const body = checkOverpass(bytes);
       return json({ ...body, fetchedAt: new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, "Z"), source: call.url, center, radiusM, query });

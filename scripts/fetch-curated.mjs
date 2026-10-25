@@ -61,12 +61,28 @@ function tileOf(lat, lon, z) {
   return { x, y };
 }
 
+/**
+ * Privacy (CLAUDE.md hard rule 1: never house numbers, no personal data). Strip addresses and contact info
+ * from building tags before anything is written. Keep addr:city (consumed by packages/mapdata/src/cross.ts)
+ * and all road geometry/tags. The road network needs none of what this removes.
+ */
+function scrubPersonal(json) {
+  for (const el of json.elements || []) {
+    if (!el.tags) continue;
+    for (const k of Object.keys(el.tags)) {
+      if ((k.startsWith("addr:") && k !== "addr:city") || k === "phone" || k === "email" || k.startsWith("contact:")) delete el.tags[k];
+    }
+  }
+  return json;
+}
+
 async function capture(name, center, extra) {
   const dir = new URL(`../examples/${name}/`, import.meta.url);
   await mkdir(new URL("terrain/", dir), { recursive: true });
   console.log(`${name}: Overpass around ${center.lat}, ${center.lon} (${RADIUS_M} m)${NO_BUILDINGS ? " [no buildings]" : ""}`);
   const query = aroundQuery(center.lat, center.lon, RADIUS_M);
   const { json, url } = await overpass(query);
+  scrubPersonal(json); // remove house numbers and contact info before writing (privacy)
   const fetchedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await writeFile(new URL("osm.json", dir), JSON.stringify({ fetchedAt, source: url, center, radiusM: RADIUS_M, query, ...json }));
   // Terrain: the zoom-15 tile under the center plus its 8 neighbours (≈ 1.2 km square at this latitude).
@@ -86,7 +102,7 @@ async function capture(name, center, extra) {
 - Roads, buildings and parking: © OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0. https://www.openstreetmap.org/copyright
   Fetched ${fetchedAt} from ${url}.
 - Elevation: Terrarium tiles from the AWS Terrain Tiles open dataset (Mapzen/Tilezen; sources include USGS 3DEP and SRTM). https://registry.opendata.aws/terrain-tiles/
-- The claim, people and vehicles in scene.json are made up. The place is a famous public intersection; no house numbers or personal data.
+- The claim, people and vehicles in scene.json are made up. The place is a famous public intersection. House numbers and contact details have been stripped from the OSM building tags (scripts/fetch-curated.mjs): only public road geometry, street names and the town (addr:city) remain.
 ${extra ?? ""}`);
   const ways = json.elements.filter((e) => e.type === "way");
   console.log(`  ${ways.filter((w) => w.tags?.highway).length} roads, ${ways.filter((w) => w.tags?.building).length} buildings, ${ways.filter((w) => w.tags?.amenity === "parking").length} parking areas, ${tiles.length} terrain tiles`);

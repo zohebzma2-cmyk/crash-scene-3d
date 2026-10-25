@@ -25,10 +25,12 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
     // Order matters. Checked live on 2026-10-10: the main server and its two official backends often
     // answered a street-name query with 504 "dispatcher timeout" after many seconds (2 of 9 probes
     // succeeded), while overpass.openstreetmap.fr (OSM France) answered every probe, usually in
-    // under a second; the two community mirrors answered HTTP 500 to everything that day but may
-    // recover. A mirror that fails is tried last for two minutes (see byHealth). More mirrors = more
-    // chances one is healthy on a fresh/uncached location; the extra ones (OSM Switzerland and OSM
-    // Japan) are reputable public instances tried only after the faster ones above.
+    // under a second; the two community mirrors at the end answered HTTP 500 to everything that day
+    // but may recover. A mirror that fails is tried last for two minutes (see byHealth). IMPORTANT: every
+    // mirror here must serve the WHOLE planet. Regional-extract instances (e.g. overpass.osm.ch, which
+    // covers Switzerland; overpass.osm.jp, Japan) are deliberately NOT listed: they answer 200 with an empty
+    // body for a pin outside their region, which the proxy would cache as a (wrong) "no roads here". Because
+    // every listed mirror is planet-wide, an empty answer means a genuinely road-free area (e.g. open water).
     overpass: {
       urls: [
         "https://overpass.openstreetmap.fr/api/interpreter",
@@ -36,8 +38,6 @@ export function defaultProviderConfig(contact: string = DEFAULT_CONTACT): Provid
         "https://lz4.overpass-api.de/api/interpreter",
         "https://overpass.private.coffee/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.osm.ch/api/interpreter",
-        "https://overpass.osm.jp/api/interpreter",
       ],
       attribution: "© OpenStreetMap contributors (ODbL)",
     },
