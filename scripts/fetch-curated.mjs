@@ -70,7 +70,7 @@ function scrubPersonal(json) {
   for (const el of json.elements || []) {
     if (!el.tags) continue;
     for (const k of Object.keys(el.tags)) {
-      if ((k.startsWith("addr:") && k !== "addr:city") || k === "phone" || k === "email" || k.startsWith("contact:")) delete el.tags[k];
+      if ((k.startsWith("addr:") && k !== "addr:city") || k === "phone" || k === "fax" || k === "email" || k.startsWith("contact:")) delete el.tags[k];
     }
   }
   return json;

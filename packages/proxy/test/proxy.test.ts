@@ -272,6 +272,23 @@ describe("overpass", () => {
     await settle(t.get(`${PROXY_ROUTES.overpass}?lat=42.9&lon=-71.5&radius=250`, "u3"));
     expect(new URL(t.calls[later]!.url).host).toBe(MIRROR_HOSTS[0]);
   });
+
+  it("every configured mirror is a whole-planet instance (no regional extract can creep back in)", () => {
+    // A regional extract (e.g. overpass.osm.ch, overpass.osm.jp) answers 200 with an empty body for pins
+    // outside its region, which the proxy would cache as a wrong "no roads here". Only planet-wide hosts
+    // belong here; this fails if one is added. See packages/proxy/src/config.ts.
+    const PLANET_WIDE = new Set([
+      "overpass-api.de", "lz4.overpass-api.de", "overpass.openstreetmap.fr",
+      "overpass.private.coffee", "overpass.kumi.systems",
+    ]);
+    expect(config.overpass.urls.length).toBeGreaterThan(0);
+    for (const raw of config.overpass.urls) {
+      const u = new URL(raw);
+      expect(u.protocol, raw).toBe("https:");
+      expect(u.pathname, raw).toBe("/api/interpreter");
+      expect(PLANET_WIDE.has(u.host), `${u.host} is not a known planet-wide Overpass mirror`).toBe(true);
+    }
+  });
 });
 
 describe("tiles and terrain", () => {
