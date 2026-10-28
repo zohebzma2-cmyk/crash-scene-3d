@@ -4,7 +4,7 @@ import { parseScene } from "../src";
 
 const EXAMPLES = [
   "t-bone-intersection", "highway-rear-end", "parking-lot-backing",
-  // Curated, famous public intersections pre-baked so a recruiter never waits on a live Overpass call.
+  // Curated, famous public intersections pre-baked so a reviewer never waits on a live Overpass call.
   "nyc-5th-42nd", "chicago-state-madison", "la-hollywood-highland", "sf-haight-ashbury",
 ];
 
