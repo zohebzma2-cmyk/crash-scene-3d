@@ -1,7 +1,7 @@
 // One-off capture of the cached map data for the CURATED example locations (examples/<slug>/), run by
 // hand with network access. Same shape and policy as scripts/fetch-fixtures.mjs (descriptive User-Agent,
 // ≥2 s between requests, a long Overpass timeout, fallback instances when the main one is busy), so the
-// bundled data a recruiter opens never waits on a live Overpass call.
+// bundled data a reviewer opens never waits on a live Overpass call.
 //
 // These are FAMOUS, verified-public, drivable intersections in major US cities, far from any personal
 // address (see the privacy rule in CLAUDE.md). The scene.json beside each is made up; only the public
